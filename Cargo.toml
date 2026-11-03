@@ -1,0 +1,26 @@
+[package]
+name = "pulseforge"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "A Rust-native pattern-based digital audio workstation"
+
+[workspace]
+members = ["crates/pulseforge-core", "crates/pulseforge-plugins", "crates/pulseforge-hosting"]
+resolver = "3"
+
+[dependencies]
+eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+midir = "0.10.1"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+pulseforge-core = { path = "crates/pulseforge-core" }
+pulseforge-plugins = { path = "crates/pulseforge-plugins" }
+pulseforge-hosting = { path = "crates/pulseforge-hosting" }
+vst3-host = { version = "0.10", default-features = false, features = ["process-isolation"] }
+clack-host = "0.2"
+clack-extensions = "0.2"
+raw-window-handle = "0.6"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

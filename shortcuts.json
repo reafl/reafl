@@ -1,0 +1,206 @@
+{
+  "version": 5,
+  "description": "PulseForge shortcut template. Runtime bindings live in settings.json; this file documents the shipped defaults and the action identifiers accepted by Settings::bind.",
+  "programmatic_api": {
+    "rust": [
+      "settings.bind(ShortcutAction::Undo, \"Ctrl+U\");",
+      "settings.unbind(ShortcutAction::Redo);",
+      "settings.keys_for(ShortcutAction::Undo);",
+      "settings.actions_for_chord(\"Ctrl+Z\");",
+      "settings.reset_shortcuts();"
+    ],
+    "notes": "Chords are plain data (Ctrl/Shift/Alt plus a key name from settings::KEY_NAMES). Adding a command means adding a ShortcutAction variant and a handler in PulseForgeApp::perform."
+  },
+  "shortcuts": [
+    {
+      "keys": "Space",
+      "action": "TransportToggle",
+      "enabled": true
+    },
+    {
+      "keys": "L",
+      "action": "ToggleLoop",
+      "enabled": true
+    },
+    {
+      "keys": "Ctrl+Shift+P",
+      "action": "TogglePatternPlayback",
+      "enabled": true
+    },
+    {
+      "keys": "Ctrl+M",
+      "action": "ToggleMetronome",
+      "enabled": true
+    },
+    {
+      "keys": "Shift+Comma",
+      "action": "SnapDown",
+      "enabled": true
+    },
+    {
+      "keys": "Shift+Period",
+      "action": "SnapUp",
+      "enabled": true
+    },
+    {
+      "keys": "F6",
+      "action": "WindowChannelRack",
+      "enabled": true
+    },
+    {
+      "keys": "F7",
+      "action": "WindowPianoRoll",
+      "enabled": true
+    },
+    {
+      "keys": "F9",
+      "action": "WindowMixer",
+      "enabled": true
+    },
+    {
+      "keys": "Shift+F9",
+      "action": "WindowRouting",
+      "enabled": true
+    },
+    {
+      "keys": "F10",
+      "action": "WindowAutomation",
+      "enabled": true
+    },
+    {
+      "keys": "F8",
+      "action": "WindowMidi",
+      "enabled": true
+    },
+    {
+      "keys": "F11",
+      "action": "WindowSamples",
+      "enabled": true
+    },
+    {
+      "keys": "Ctrl+Comma",
+      "action": "WindowSettings",
+      "enabled": true
+    },
+    {
+      "keys": "P",
+      "action": "ToolPen",
+      "enabled": true
+    },
+    {
+      "keys": "S",
+      "action": "ToolSelect",
+      "enabled": true
+    },
+    {
+      "keys": "B",
+      "action": "ToolBrush",
+      "enabled": true
+    },
+    {
+      "keys": "J",
+      "action": "ToolJoin",
+      "enabled": true
+    },
+    {
+      "keys": "C",
+      "action": "ToolCut",
+      "enabled": true
+    },
+    {
+      "keys": "Ctrl+Shift+V",
+      "action": "ControlVelocity",
+      "enabled": true
+    },
+    {
+      "keys": "Ctrl+Shift+R",
+      "action": "ControlRepeats",
+      "enabled": true
+    },
+    {
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "enabled": true
+    },
+    {
+      "keys": "Ctrl+Shift+Z",
+      "action": "Redo",
+      "enabled": true
+    },
+    {
+      "keys": "Ctrl+D",
+      "action": "DuplicateClip",
+      "enabled": true
+    },
+    {
+      "keys": "Delete",
+      "action": "DeleteSelection",
+      "enabled": true
+    },
+    {
+      "keys": "F2",
+      "action": "RenameTrack",
+      "enabled": true
+    },
+    {
+      "keys": "Ctrl+L",
+      "action": "RouteToFreeInsert",
+      "enabled": true
+    },
+    {
+      "keys": "Escape",
+      "action": "ClearSelection",
+      "enabled": true
+    },
+    {
+      "keys": "Home",
+      "action": "ResetPan",
+      "enabled": true
+    },
+    {
+      "keys": "Ctrl+S",
+      "action": "SaveProject",
+      "enabled": true
+    },
+    {
+      "keys": "Ctrl+O",
+      "action": "LoadProject",
+      "enabled": true
+    },
+    {
+      "keys": "Shift+Up",
+      "action": "NoteUp",
+      "enabled": true
+    },
+    {
+      "keys": "Shift+Down",
+      "action": "NoteDown",
+      "enabled": true
+    },
+    {
+      "keys": "Ctrl+Shift+Up",
+      "action": "NoteOctaveUp",
+      "enabled": true
+    },
+    {
+      "keys": "Ctrl+Shift+Down",
+      "action": "NoteOctaveDown",
+      "enabled": true
+    },
+    {
+      "keys": "Shift+Left",
+      "action": "NoteLeft",
+      "enabled": true
+    },
+    {
+      "keys": "Shift+Right",
+      "action": "NoteRight",
+      "enabled": true
+    }
+  ],
+  "unbound_actions": [
+    "TransportStop",
+    "WindowRender"
+  ],
+  "notes": "Ctrl+Wheel zooms, Alt+Wheel changes the step size. Shift+click toggles a selection; ctrl+click extends it to a range."
+}
