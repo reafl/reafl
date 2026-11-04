@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod expr;
 pub mod hosted;
 /// Re-export of the plug-in layer so existing call sites keep one import path.
 pub mod plugins {

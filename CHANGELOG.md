@@ -4,7 +4,63 @@ All notable changes to PulseForge. Commits written by AI are marked `AI:`.
 
 ## Unreleased
 
+### Fixed
+
+- Selection with Ctrl: ranges now resolve to entries of the same kind (clips and
+  channels used to be looked up in the note list), a first Ctrl+click selects
+  the item, and Ctrl+click no longer starts a clip drag.
+- Ctrl+drag in the piano roll rubber-band selects notes.
+- The tool hotkeys (P/S/B/J/C) set the arrangement tool too, so `S` switches to
+  Select outside the piano roll (Join stays piano-roll only).
+
+- Locked power switches (tracks, instruments, insert slots) can be turned off
+  and on directly again; the lock now only shields them from solo and other
+  global operations.
+- The loop, metronome and pattern-playback buttons show whether they are active.
+- `Ctrl+A` selects every note in the piano roll (bindable as "Select all notes").
+- The mixer strip's pan knob no longer draws a label.
+- Ctrl+clicking an insert's power switch solos that insert, like the channel
+  strip's own switch.
+- Repeated notes draw a divider at every retrigger point in the piano roll.
+- The piano roll's cut tool previews the exact split point as a dashed line.
+- The clip picker highlights the pattern the arrangement pen will place.
+
 ### Added
+
+- `pulseforge_core::expr`: a dependency-free formula evaluator (`+ - * / % ^`,
+  `exp ln sqrt abs floor round sin cos tan`, `pi`, `e`, variable `x`) with
+  tests, plus a formula field in the automation window that samples an
+  expression into a real curve lane.
+- The piano-roll control lane is pinned under the grid and can be collapsed
+  with the "Lane" toggle.
+- The cut tool previews its split point as a dashed line in the arrangement and
+  the piano roll.
+
+- Interface scale setting (Settings → Graphics), applied with `Context::set_zoom_factor`
+  and stored as `ui_scale`, so the UI can be sized like a DPI setting.
+- Ten insert slots per mixer channel and on the master (`INSERT_SLOTS`); the
+  strip's insert list scrolls so every slot stays reachable.
+- "FX bypass" on each mixer strip: the channel renders dry while every insert
+  keeps its settings and enable state.
+
+### Changed
+
+- The mixer inspector is one page (EQ, stereo width, inserts); level and pan
+  stay on the strips.
+- Each mixer strip has a stereo-width knob backed by a mid/side scale in the
+  engine (`ArrangementLane::width`, 0 = mono, 2 = double).
+- A "+ Track" button closes the mixer strip row.
+- Automation envelopes are sampled on a fixed quarter-step grid, so zooming no
+  longer makes MIDI envelopes jitter.
+- Automation clips, curves and points are clipped to the timeline grid instead
+  of painting over the track header.
+- Plug-in settings use two columns (routing next to the arpeggiator).
+- The mixer fader is a dB scale down to −100 dB; the bottom of the travel is
+  exactly silent.
+- The toolbar's zoom slider and Help menu are gone (zoom stays on Ctrl+wheel and
+  in Settings → Graphics).
+- Horizontal zoom range widened from 0.35–4× to 0.2–8×; Ctrl+click on the
+  arrangement ruler resets it to 100 %.
 
 - `pulseforge-profiling` crate: an in-editor debugger.
   - Lock-free span recorder (`profile_scope!`, `profile_span!`) that is safe on

@@ -55,6 +55,7 @@ pub enum ShortcutAction {
     // Editing
     Undo,
     Redo,
+    SelectAll,
     DuplicateClip,
     DeleteSelection,
     RenameTrack,
@@ -101,6 +102,7 @@ impl ShortcutAction {
             Self::NoteRight => "Move notes right by the snap",
             Self::Undo => "Undo",
             Self::Redo => "Redo",
+            Self::SelectAll => "Select all notes",
             Self::DuplicateClip => "Duplicate selection",
             Self::DeleteSelection => "Delete selection",
             Self::RenameTrack => "Rename track",
@@ -145,6 +147,7 @@ impl ShortcutAction {
             | Self::NoteRight => "Piano roll",
             Self::Undo
             | Self::Redo
+            | Self::SelectAll
             | Self::DuplicateClip
             | Self::DeleteSelection
             | Self::RenameTrack
@@ -191,6 +194,7 @@ impl ShortcutAction {
             Self::NoteRight,
             Self::Undo,
             Self::Redo,
+            Self::SelectAll,
             Self::DuplicateClip,
             Self::DeleteSelection,
             Self::RenameTrack,
@@ -330,6 +334,8 @@ pub struct Settings {
     pub fancy_animations: bool,
     /// Arrangement horizontal zoom multiplier.
     pub zoom: f32,
+    /// DPI-like interface scale applied to the whole UI.
+    pub ui_scale: f32,
     /// Step size used by Alt+wheel, in ticks.
     pub wheel_step_ticks: u64,
     /// Theme accent colour, edited on the (placeholder) Theming page.
@@ -488,6 +494,7 @@ impl Default for Settings {
             tooltip_delay: 0.6,
             fancy_animations: false,
             zoom: 1.0,
+            ui_scale: 1.0,
             wheel_step_ticks: 4,
             accent: [112, 208, 190],
             restore_last_project: false,
@@ -527,6 +534,7 @@ pub fn default_shortcuts() -> Vec<ShortcutBinding> {
         ShortcutBinding::new(ShortcutAction::ControlRepeats, "Ctrl+Shift+R"),
         ShortcutBinding::new(ShortcutAction::Undo, "Ctrl+Z"),
         ShortcutBinding::new(ShortcutAction::Redo, "Ctrl+Shift+Z"),
+        ShortcutBinding::new(ShortcutAction::SelectAll, "Ctrl+A"),
         ShortcutBinding::new(ShortcutAction::DuplicateClip, "Ctrl+D"),
         ShortcutBinding::new(ShortcutAction::DeleteSelection, "Delete"),
         ShortcutBinding::new(ShortcutAction::RenameTrack, "F2"),
@@ -575,7 +583,8 @@ impl Settings {
         self.default_track_height = self.default_track_height.clamp(34.0, 260.0);
         self.default_velocity = self.default_velocity.clamp(1, 127);
         self.tooltip_delay = self.tooltip_delay.clamp(0.0, 5.0);
-        self.zoom = self.zoom.clamp(0.35, 4.0);
+        self.zoom = self.zoom.clamp(0.2, 8.0);
+        self.ui_scale = self.ui_scale.clamp(0.6, 2.5);
         self.wheel_step_ticks = self.wheel_step_ticks.clamp(1, 64);
         self.autosave_minutes = self.autosave_minutes.min(120);
         // An empty binding list would silently disable every shortcut.

@@ -48,6 +48,9 @@ const VELOCITY_LANE_HEIGHT: f32 = 46.0;
 const TOOL_CURSOR_SVG: &str = include_str!("../assets/tool_cursors.svg");
 /// Global snap values offered by the toolbar and the snap shortcuts.
 const SNAP_STEPS: &[u64] = &[1, 2, 4, 8, 16, 32, 64, 128];
+/// Horizontal zoom limits for the arrangement and the editors.
+const MIN_ZOOM: f32 = 0.2;
+const MAX_ZOOM: f32 = 8.0;
 
 const AUTOMATED_TARGETS_KEY: &str = "pulseforge.automated_targets";
 const TOOLTIP_MODE_KEY: &str = "pulseforge.tooltip_mode";
@@ -640,7 +643,6 @@ struct PulseForgeApp {
     selected_instrument: usize,
     selected_lane: usize,
     selected_mixer_channel: usize,
-    mixer_inspector_fx: bool,
     automation_effect_mode: bool,
     automation_instrument_id: usize,
     automation_instrument_parameter: InstrumentParameter,
@@ -681,6 +683,8 @@ struct PulseForgeApp {
     last_pixels_per_point: f32,
     /// Rubber-band origin for the select tool.
     box_select_start: Option<egui::Pos2>,
+    /// Rubber-band origin (tick, pitch) for ctrl+drag in the piano roll.
+    piano_box_origin: Option<(u64, u8)>,
     /// Modifier state sampled once per frame for selection helpers.
     mod_shift: bool,
     mod_ctrl: bool,
@@ -739,6 +743,8 @@ struct PulseForgeApp {
     arrangement_tool: PianoTool,
     /// Which control lane is shown under the piano roll.
     control_lane: ControlLane,
+    /// Hides the control lane, giving the grid the full height.
+    control_lane_collapsed: bool,
     /// Search filters for the settings and plug-in picker lists.
     settings_search: String,
     shortcut_search: String,
@@ -758,6 +764,8 @@ struct PulseForgeApp {
     routing_gain_route: Option<(usize, usize)>,
     new_audio_path: String,
     new_audio_length_steps: u64,
+    /// Text of the automation window's formula field.
+    formula_text: String,
     render_path: String,
     project_path: String,
     status: String,
@@ -835,7 +843,6 @@ impl PulseForgeApp {
             selected_instrument: 0,
             selected_lane: 0,
             selected_mixer_channel: 0,
-            mixer_inspector_fx: false,
             automation_effect_mode: false,
             automation_instrument_id: 0,
             automation_instrument_parameter: InstrumentParameter::Gain,
@@ -859,6 +866,7 @@ impl PulseForgeApp {
             main_hwnd: 0,
             last_pixels_per_point: 1.0,
             box_select_start: None,
+            piano_box_origin: None,
             mod_shift: false,
             mod_ctrl: false,
             arrangement_pan_steps: 0,
@@ -900,6 +908,7 @@ impl PulseForgeApp {
             track_resize_dirty: false,
             arrangement_tool: PianoTool::Pen,
             control_lane: ControlLane::Velocity,
+            control_lane_collapsed: false,
             settings_search: String::new(),
             shortcut_search: String::new(),
             plugin_search: String::new(),
@@ -914,6 +923,7 @@ impl PulseForgeApp {
             new_audio_path: String::new(),
             new_audio_length_steps: 64,
             render_path: "pulseforge.wav".to_owned(),
+            formula_text: "0.5 + 0.4 * sin(2 * pi * x)".to_owned(),
             project_path: "session.json".to_owned(),
             status: "Ready · drag a pattern or audio clip onto the timeline".to_owned(),
             midi_ports,
@@ -1131,6 +1141,7 @@ impl PulseForgeApp {
             ShortcutAction::NoteRight => self.shift_selected_notes(0, 1, true),
             ShortcutAction::Undo => self.undo(),
             ShortcutAction::Redo => self.redo(),
+            ShortcutAction::SelectAll => self.select_all_notes(),
             ShortcutAction::DuplicateClip => self.duplicate_selected_clip(),
             ShortcutAction::DeleteSelection => self.delete_selected_clip(),
             ShortcutAction::RenameTrack => self.begin_rename_track(),
@@ -1687,11 +1698,16 @@ impl PulseForgeApp {
             } else {
                 format!("{} unsoloed.", track.name)
             };
-        } else if track.locked {
-            self.status = "Track is locked; shift+click to unlock.".to_owned();
-            return;
         } else {
+            // Lock freezes the switch against solo and other global operations,
+            // but a direct click always flips it so a locked channel can still
+            // be muted or brought back.
             track.enabled = !track.enabled;
+            self.status = if track.locked {
+                format!("{} {} (locked).", track.name, power_word(track.enabled))
+            } else {
+                format!("{} {}.", track.name, power_word(track.enabled))
+            };
         }
         self.push_history();
         self.sync_project();
@@ -1717,11 +1733,15 @@ impl PulseForgeApp {
             } else {
                 format!("{} unsoloed.", item.name)
             };
-        } else if item.locked {
-            self.status = "Instrument is locked; shift+click to unlock.".to_owned();
-            return;
         } else {
+            // See `toggle_lane_switch`: a lock protects against global changes,
+            // never against the user's own click.
             item.enabled = !item.enabled;
+            self.status = if item.locked {
+                format!("{} {} (locked).", item.name, power_word(item.enabled))
+            } else {
+                format!("{} {}.", item.name, power_word(item.enabled))
+            };
         }
         self.push_history();
         self.sync_project();
@@ -1765,21 +1785,26 @@ impl PulseForgeApp {
             return;
         }
         if ctrl {
-            // Ctrl+click selects a range from the anchor when one exists.
+            // Ctrl+click extends to a range from the anchor. The range is built
+            // from the concrete entries of the same kind, so clips and channels
+            // no longer resolve to notes.
             if let Some(anchor) = self.selection_anchor
-                && let Some((from, to)) = self.selection_range(anchor, item)
+                && let Some(entries) = self.selection_between(anchor, item)
             {
+                if self.selection.is_none() {
+                    self.selection = Some(anchor);
+                }
                 self.extra_selection.clear();
-                for candidate in from..=to {
-                    if let Some(entry) = self.selection_at_index(candidate) {
-                        if self.selection != Some(entry) {
-                            self.extra_selection.push(entry);
-                        }
+                for entry in entries {
+                    if self.selection != Some(entry) && !self.extra_selection.contains(&entry) {
+                        self.extra_selection.push(entry);
                     }
                 }
                 return;
             }
-            if !self.is_selected(item) && self.selection != Some(item) {
+            if self.selection.is_none() {
+                self.selection = Some(item);
+            } else if !self.is_selected(item) {
                 self.extra_selection.push(item);
             }
             self.selection_anchor.get_or_insert(item);
@@ -1948,28 +1973,12 @@ impl PulseForgeApp {
             .collect()
     }
 
-    fn selection_at_index(&self, index: usize) -> Option<Selection> {
-        let notes = self.note_order();
-        if let Some(item) = notes.get(index) {
-            return Some(*item);
-        }
-        let clips = self.clip_order();
-        if let Some(item) = clips.get(index) {
-            return Some(*item);
-        }
-        self.channel_order().get(index).copied()
-    }
-
-    /// Mixer channels, master last, used for range selection in the mixer and
-    /// the arrangement track headers.
-    fn channel_order(&self) -> Vec<Selection> {
-        (0..=self.project.lanes.len())
-            .map(Selection::MixerChannel)
-            .collect()
-    }
-
-    /// Inclusive index range between two selections of the same kind.
-    fn selection_range(&self, from: Selection, to: Selection) -> Option<(usize, usize)> {
+    /// Every selection between two selections of the same kind, inclusive.
+    ///
+    /// Returning the entries rather than indices matters because the kinds have
+    /// separate orderings (notes, clips, channels); an index taken from one list
+    /// would address a different item in another.
+    fn selection_between(&self, from: Selection, to: Selection) -> Option<Vec<Selection>> {
         let list = match (from, to) {
             (Selection::Note { .. }, Selection::Note { .. }) => self.note_order(),
             (Selection::Clip { .. }, Selection::Clip { .. }) => self.clip_order(),
@@ -1983,7 +1992,16 @@ impl PulseForgeApp {
         };
         let start = list.iter().position(|item| *item == from)?;
         let end = list.iter().position(|item| *item == to)?;
-        Some((start.min(end), start.max(end)))
+        let (low, high) = (start.min(end), start.max(end));
+        Some(list[low..=high].to_vec())
+    }
+
+    /// Mixer channels, master last, used for range selection in the mixer and
+    /// the arrangement track headers.
+    fn channel_order(&self) -> Vec<Selection> {
+        (0..=self.project.lanes.len())
+            .map(Selection::MixerChannel)
+            .collect()
     }
 
     /// Selects an arrangement lane (and its mixer channel) honouring the
@@ -2112,9 +2130,20 @@ impl PulseForgeApp {
     /// Selects an editing tool, remembering that the arrangement has no Join.
     fn set_tool(&mut self, tool: PianoTool) {
         self.piano_tool = tool;
-        if tool == PianoTool::Join {
-            self.status = "Join merges notes in the piano roll.".to_owned();
+        // The hotkeys are shared: pressing S must select in the arrangement too,
+        // not just in the piano roll. Join exists only in the piano roll, so the
+        // arrangement keeps whatever tool it had.
+        if tool != PianoTool::Join {
+            self.arrangement_tool = tool;
         }
+        let name = match tool {
+            PianoTool::Pen => "Pen",
+            PianoTool::Select => "Select",
+            PianoTool::Brush => "Brush",
+            PianoTool::Join => "Join (piano roll only)",
+            PianoTool::Cut => "Cut",
+        };
+        self.status = format!("{name} tool.");
     }
 
     fn sender(&self) -> Option<SyncSender<AudioCommand>> {
@@ -2849,13 +2878,25 @@ impl PulseForgeApp {
             if icon_button(ui, Icon::Play, "Stop and rewind").clicked() {
                 self.perform(ShortcutAction::TransportStop);
             }
-            if icon_button(ui, Icon::Loop, "Loop selection (L)").clicked() {
+            // Stateful transport switches show their state through the button
+            // fill, so whether the loop, metronome or pattern preview is on is
+            // visible without reading the status bar.
+            if icon_button_toggle(ui, Icon::Loop, "Loop selection (L)", self.loop_enabled).clicked() {
                 self.perform(ShortcutAction::ToggleLoop);
             }
-            if icon_button(ui, Icon::Metronome, "Metronome (Ctrl+M)").clicked() {
+            if icon_button_toggle(ui, Icon::Metronome, "Metronome (Ctrl+M)", self.metronome)
+                .clicked()
+            {
                 self.perform(ShortcutAction::ToggleMetronome);
             }
-            if icon_button(ui, Icon::Solo, "Pattern playback (Ctrl+Shift+P)").clicked() {
+            if icon_button_toggle(
+                ui,
+                Icon::Solo,
+                "Pattern playback (Ctrl+Shift+P)",
+                self.selected_pattern_playback,
+            )
+            .clicked()
+            {
                 self.perform(ShortcutAction::TogglePatternPlayback);
             }
         });
@@ -2918,30 +2959,6 @@ impl PulseForgeApp {
                 self.project.snap_ticks = snap;
                 self.sync_project();
             }
-            ui.separator();
-            ui.label("Zoom");
-            let mut zoom = self.settings.zoom;
-            let zoom_text = format!("{:.0}%", zoom * 100.0);
-            if ui
-                .add_sized(
-                    [110.0, ROW_HEIGHT],
-                    egui::Slider::new(&mut zoom, 0.35..=4.0)
-                        .show_value(false)
-                        .text(zoom_text),
-                )
-                .changed()
-            {
-                self.settings.zoom = zoom;
-            }
-            ui.separator();
-            ui.menu_button("Help", |ui| {
-                ui.label("Space \u{00B7} Play / stop");
-                ui.label("Ctrl+Wheel \u{00B7} Zoom \u{00B7} Alt+Wheel \u{00B7} Step size");
-                ui.label("F2 \u{00B7} Rename track");
-                ui.label("Ctrl+Z / Ctrl+Shift+Z \u{00B7} Undo / redo");
-                ui.label("Ctrl+Comma \u{00B7} Settings");
-                ui.label("Edit the full key map in Settings \u{2192} Shortcuts");
-            });
         });
     }
 
@@ -2954,11 +2971,19 @@ impl PulseForgeApp {
             .show(ui, |ui| {
                 for pattern_id in 0..self.project.patterns.len() {
                     let name = self.project.patterns[pattern_id].name.clone();
-                    let response = ui.add_sized(
-                        [ui.available_width(), 32.0],
-                        egui::Button::new(format!("[P]  {name}"))
-                            .sense(egui::Sense::click_and_drag()),
-                    );
+                    // The selected pattern is the one the arrangement pen
+                    // places, so the picker marks it.
+                    let selected = pattern_id == self.selected_pattern;
+                    let mut button = egui::Button::new(if selected {
+                        format!("\u{25B8} [P]  {name}")
+                    } else {
+                        format!("[P]  {name}")
+                    })
+                    .sense(egui::Sense::click_and_drag());
+                    if selected {
+                        button = button.fill(self.ui_accent().gamma_multiply(0.35));
+                    }
+                    let response = ui.add_sized([ui.available_width(), 32.0], button);
                     if response.clicked() {
                         self.selected_pattern = pattern_id;
                         self.arrangement_source = Some(ClipSource::Pattern { pattern_id });
@@ -3141,6 +3166,13 @@ impl PulseForgeApp {
         let clip_end_step = track.start_step.saturating_add(track.length_steps);
         let clip_end = grid.grid_left
             + (clip_end_step as f64 - grid.start_step as f64) as f32 * grid.step_width;
+        // A clip that starts before the visible range must not paint over the
+        // track header, and one entirely off-screen is skipped.
+        if clip_end <= grid.grid_left {
+            return false;
+        }
+        let clip_start = clip_start.max(grid.grid_left);
+        let visible_span_steps = (clip_end - clip_start) / grid.step_width.max(1.0);
         let clip_rect = egui::Rect::from_min_max(
             egui::pos2(clip_start, row.top() + 4.0),
             egui::pos2(clip_end.max(clip_start + 2.0), row.bottom() - 4.0),
@@ -3212,7 +3244,9 @@ impl PulseForgeApp {
         };
         if curve_source {
             let mut curve = Vec::new();
-            let sample_count = ((clip_rect.width() / 4.0).ceil() as usize).clamp(2, 128);
+            // Samples sit on a fixed quarter-step grid instead of pixel columns,
+            // so zooming shifts the curve continuously instead of jittering.
+            let sample_count = ((visible_span_steps / 0.25).ceil() as usize).clamp(2, 512);
             for index in 0..=sample_count {
                 let x = clip_start + clip_rect.width() * index as f32 / sample_count as f32;
                 let step = grid.start_step as f64
@@ -3230,7 +3264,7 @@ impl PulseForgeApp {
         } else {
             let source = track.source.clone();
             let target = track.target;
-            let sample_count = ((clip_rect.width() / 3.0).ceil() as usize).clamp(2, 192);
+            let sample_count = ((visible_span_steps / 0.25).ceil() as usize).clamp(2, 768);
             let mut combined = Vec::with_capacity(sample_count + 1);
             let mut raw = Vec::with_capacity(sample_count + 1);
             let mut multiplier_curve = Vec::new();
@@ -4056,7 +4090,7 @@ impl PulseForgeApp {
                 }
             } else {
                 self.settings.zoom =
-                    (self.settings.zoom * (1.0 + scroll * 0.0015)).clamp(0.35, 4.0);
+                    (self.settings.zoom * (1.0 + scroll * 0.0015)).clamp(MIN_ZOOM, MAX_ZOOM);
             }
         }
         // `contains_pointer` also reports true for a floating window drawn on
@@ -4109,7 +4143,12 @@ impl PulseForgeApp {
                     .saturating_add(((position.x - left) / step_width).floor().max(0.0) as u64),
                 arrangement_snap,
             );
-            if primary_pressed {
+            if primary_pressed && self.mod_ctrl {
+                // Ctrl+click on the ruler resets the zoom, so the user never
+                // has to hunt for a slider after a deep zoom.
+                self.settings.zoom = 1.0;
+                self.status = "Zoom reset to 100%.".to_owned();
+            } else if primary_pressed {
                 self.loop_drag_start = Some(step);
                 self.loop_drag_moved = false;
             } else if primary_down
@@ -4171,6 +4210,22 @@ impl PulseForgeApp {
                 };
                 context.set_cursor_icon(icon);
                 paint_svg_cursor(ui, kind, position);
+                // The cut tool shows the exact split point, matching the piano
+                // roll's preview.
+                if self.arrangement_tool == PianoTool::Cut {
+                    let cut_x = left + step.saturating_sub(start_step) as f32 * step_width;
+                    if cut_x >= left && cut_x <= timeline_rect.right() {
+                        let stroke = egui::Stroke::new(1.4_f32, egui::Color32::from_rgb(232, 96, 88));
+                        let mut y = grid_top;
+                        while y < timeline_rect.bottom() {
+                            painter.line_segment(
+                                [egui::pos2(cut_x, y), egui::pos2(cut_x, (y + 5.0).min(timeline_rect.bottom()))],
+                                stroke,
+                            );
+                            y += 10.0;
+                        }
+                    }
+                }
             }
         }
         if primary_pressed
@@ -4232,9 +4287,12 @@ impl PulseForgeApp {
             } else {
                 self.push_history();
             }
-            if let Some((lane, clip_index, clip)) =
-                hit_clip.filter(|_| self.arrangement_tool != PianoTool::Cut)
+            if let Some((lane, clip_index, clip)) = hit_clip
+                .filter(|_| self.arrangement_tool != PianoTool::Cut)
+                .filter(|_| !self.mod_ctrl)
             {
+                // Ctrl+click only extends the selection; starting a drag here
+                // would move the clip instead of adding it to the range.
                 self.selected_lane = lane;
                 self.arrangement_source = Some(clip.source.clone());
                 if self.arrangement_tool != PianoTool::Select {
@@ -4975,6 +5033,13 @@ impl PulseForgeApp {
                         self.control_lane = lane;
                     }
                 }
+                if ui
+                    .selectable_label(!self.control_lane_collapsed, "Lane")
+                    .on_hover_text("Show or hide the control lane")
+                    .clicked()
+                {
+                    self.control_lane_collapsed = !self.control_lane_collapsed;
+                }
                 ui.separator();
                 let selected_notes = self.selected_note_count();
                 ui.label(format!("Sel {selected_notes}"));
@@ -5002,7 +5067,7 @@ impl PulseForgeApp {
             });
             ui.separator();
         });
-        egui::ScrollArea::both()
+        egui::ScrollArea::horizontal()
             .auto_shrink([false, false])
             .show(ui, |ui| self.piano_grid(ui, context));
     }
@@ -5019,6 +5084,13 @@ impl PulseForgeApp {
             .clamp(PIANO_MIN_ROW_HEIGHT, PIANO_MAX_ROW_HEIGHT);
         let width = visible_steps as f32 * step_width;
         let height = PIANO_ROWS as f32 * row_height;
+        // The control lane is pinned under the grid; collapsing it hands the
+        // space back to the notes.
+        let lane_height = if self.control_lane_collapsed {
+            0.0
+        } else {
+            VELOCITY_LANE_HEIGHT
+        };
         let (ruler_rect, keys_rect, grid_rect, response, velocity_rect, velocity_response) = ui
             .vertical(|ui| {
                 let (ruler_rect, _) =
@@ -5037,11 +5109,11 @@ impl PulseForgeApp {
                 let (velocity_rect, velocity_response) = ui
                     .horizontal(|ui| {
                         ui.allocate_exact_size(
-                            egui::vec2(54.0, VELOCITY_LANE_HEIGHT),
+                            egui::vec2(54.0, lane_height),
                             egui::Sense::hover(),
                         );
                         ui.allocate_exact_size(
-                            egui::vec2(width, VELOCITY_LANE_HEIGHT),
+                            egui::vec2(width, lane_height),
                             egui::Sense::click_and_drag(),
                         )
                     })
@@ -5188,17 +5260,40 @@ impl PulseForgeApp {
                 2.0,
                 egui::Color32::WHITE.gamma_multiply(0.35),
             );
+            // Repeats are drawn as thin dividers so a repeated note shows where
+            // each retrigger lands without leaving the piano roll.
+            if note.repeat_count > 0 {
+                let spacing = if note.repeat_ticks == 0 {
+                    note.duration_ticks().max(1)
+                } else {
+                    u64::from(note.repeat_ticks) * 4
+                };
+                let marker = egui::Stroke::new(1.0_f32, egui::Color32::WHITE.gamma_multiply(0.6));
+                for repeat in 1..=u64::from(note.repeat_count) {
+                    let repeat_tick = note.start_tick() + spacing * repeat;
+                    let marker_x = grid_rect.left()
+                        + (repeat_tick as f32 / 16.0 - absolute_start as f32) * step_width;
+                    if marker_x > rect.left() + 1.0 && marker_x < rect.right() - 1.0 {
+                        painter.line_segment(
+                            [egui::pos2(marker_x, rect.top() + 2.0), egui::pos2(marker_x, rect.bottom() - 2.0)],
+                            marker,
+                        );
+                    }
+                }
+            }
         }
 
         self.handle_piano_input(grid_rect, response, context, step_width, row_height);
-        self.velocity_lane(
-            ui,
-            context,
-            velocity_rect,
-            velocity_response,
-            step_width,
-            absolute_start,
-        );
+        if !self.control_lane_collapsed {
+            self.velocity_lane(
+                ui,
+                context,
+                velocity_rect,
+                velocity_response,
+                step_width,
+                absolute_start,
+            );
+        }
         if self.playing {
             let position = self.playhead_step();
             let x = grid_rect.left() + (position - absolute_start as f64) as f32 * step_width;
@@ -5260,7 +5355,69 @@ impl PulseForgeApp {
                 egui::Color32::from_rgb(112, 208, 190),
             );
         }
+        // Shows the Ctrl+drag rubber band while it is being dragged.
+        if let Some((origin_tick, origin_pitch)) = self.piano_box_origin
+            && let Some(pointer) = context.input(|input| input.pointer.interact_pos())
+        {
+            let row_of = |pitch: u8| {
+                let offset = pitch
+                    .saturating_sub(PIANO_MIN_PITCH)
+                    .min((PIANO_ROWS - 1) as u8);
+                (PIANO_ROWS - 1 - usize::from(offset)) as f32
+            };
+            let x0 = grid_rect.left()
+                + (origin_tick as f32 / 16.0 - absolute_start as f32) * step_width;
+            let y0 = grid_rect.top() + row_of(origin_pitch) * row_height;
+            let pointer_row = ((pointer.y - grid_rect.top()) / row_height)
+                .floor()
+                .clamp(0.0, (PIANO_ROWS - 1) as f32);
+            let y1 = grid_rect.top() + (pointer_row + 1.0) * row_height;
+            let band = egui::Rect::from_two_pos(
+                egui::pos2(x0, y0),
+                egui::pos2(
+                    pointer.x.clamp(grid_rect.left(), grid_rect.right()),
+                    y1,
+                ),
+            );
+            if band.width() > 2.0 || band.height() > 2.0 {
+                painter.rect_filled(
+                    band,
+                    0.0,
+                    egui::Color32::from_rgba_unmultiplied(112, 208, 190, 40),
+                );
+            }
+        }
         self.paint_tool_cursor(ui, context, grid_rect, step_width, row_height);
+    }
+
+    /// Selects every note whose start lies inside the rubber band.
+    fn select_notes_in_box(&mut self, from_tick: u64, to_tick: u64, from_pitch: u8, to_pitch: u8) {
+        let (low_tick, high_tick) = (from_tick.min(to_tick), from_tick.max(to_tick));
+        let (low_pitch, high_pitch) = (from_pitch.min(to_pitch), from_pitch.max(to_pitch));
+        let instrument = self.selected_instrument;
+        let hits: Vec<Selection> = self.project.patterns[self.selected_pattern]
+            .notes
+            .iter()
+            .filter(|note| {
+                note.instrument_id == instrument
+                    && note.start_tick() >= low_tick
+                    && note.start_tick() <= high_tick
+                    && note.pitch >= low_pitch
+                    && note.pitch <= high_pitch
+            })
+            .map(|note| Selection::Note {
+                pattern: self.selected_pattern,
+                instrument: note.instrument_id,
+                pitch: note.pitch,
+                start_step: note.start_step,
+            })
+            .collect();
+        if let Some(first) = hits.first().copied() {
+            self.selection = Some(first);
+        }
+        self.extra_selection = hits.iter().skip(1).copied().collect();
+        self.selection_anchor = hits.first().copied();
+        self.status = format!("{} note(s) in the box.", hits.len());
     }
 
     /// Selects every note starting inside `[start, end)` steps.
@@ -5463,6 +5620,17 @@ impl PulseForgeApp {
             self.remove_note_at(tick, pitch);
             return;
         }
+        // Ctrl+drag rubber-band selection: the Select tool has no gesture of its
+        // own, so the band is tracked separately from `piano_gesture`.
+        if self.piano_box_origin.is_some() {
+            if primary_down {
+                if let Some((from_tick, from_pitch)) = self.piano_box_origin {
+                    self.select_notes_in_box(from_tick, tick, from_pitch, pitch);
+                }
+            } else {
+                self.piano_box_origin = None;
+            }
+        }
 
         if primary_pressed {
             self.start_piano_gesture(tick, pitch, pointer, grid_rect, step_width);
@@ -5557,6 +5725,29 @@ impl PulseForgeApp {
             _ => egui::CursorIcon::Crosshair,
         };
         context.set_cursor_icon(native_icon);
+        // The cut tool previews its split point on the exact tick it will use.
+        if self.piano_tool == PianoTool::Cut && !middle_down {
+            let alt = context.input(|input| input.modifiers.alt);
+            let raw_tick = self.piano_pan_steps.saturating_mul(16)
+                + (((pointer.x - grid_rect.left()) / step_width) * 16.0)
+                    .floor()
+                    .max(0.0) as u64;
+            let tick = piano_snap_tick(raw_tick, self.project.snap_ticks, alt);
+            let cut_x = grid_rect.left()
+                + (tick as f32 / 16.0 - self.piano_pan_steps as f32) * step_width;
+            if cut_x >= grid_rect.left() && cut_x <= grid_rect.right() {
+                let stroke = egui::Stroke::new(1.4_f32, egui::Color32::from_rgb(232, 96, 88));
+                let painter = ui.painter();
+                let mut y = grid_rect.top();
+                while y < grid_rect.bottom() {
+                    painter.line_segment(
+                        [egui::pos2(cut_x, y), egui::pos2(cut_x, (y + 5.0).min(grid_rect.bottom()))],
+                        stroke,
+                    );
+                    y += 10.0;
+                }
+            }
+        }
         paint_svg_cursor(ui, cursor_kind, pointer);
     }
 
@@ -5707,6 +5898,10 @@ impl PulseForgeApp {
                     None => {
                         if !additive.0 && !additive.1 {
                             self.clear_selection();
+                        }
+                        // Ctrl+drag over empty space starts a rubber band.
+                        if additive.1 {
+                            self.piano_box_origin = Some((tick, pitch));
                         }
                     }
                 }
@@ -5972,43 +6167,68 @@ impl PulseForgeApp {
     }
 
     /// Plug-in settings tab: routing, voice count and the arpeggiator.
+    ///
+    /// The two groups sit side by side so the page stays short instead of
+    /// turning into a long vertical strip.
     fn render_plugin_routing(&mut self, ui: &mut egui::Ui, instrument_id: usize) {
         let Some(instrument) = self.project.instruments.get_mut(instrument_id) else {
             return;
         };
-        ui.label(egui::RichText::new("Routing").strong());
-        egui::Grid::new(("plugin_routing", instrument_id))
-            .num_columns(2)
-            .show(ui, |ui| {
-                ui.label("MIDI in channel");
-                ui.add(egui::DragValue::new(&mut instrument.voices.midi_in_channel).range(0..=15));
-                ui.end_row();
-                ui.label("MIDI out channel");
-                ui.add(egui::DragValue::new(&mut instrument.voices.midi_out_channel).range(0..=15));
-                ui.end_row();
-                ui.label("Audio in");
-                ui.add(egui::DragValue::new(&mut instrument.voices.audio_in).range(0..=15));
-                ui.end_row();
-                ui.label("Audio out");
-                ui.add(egui::DragValue::new(&mut instrument.voices.audio_out).range(0..=15));
-                ui.end_row();
-                ui.label("Voices");
-                ui.add(egui::DragValue::new(&mut instrument.voices.voice_count).range(1..=64));
-                ui.end_row();
-            });
-        ui.separator();
-        ui.label(egui::RichText::new("Arpeggiator").strong());
-        ui.checkbox(&mut instrument.arpeggio.enabled, "Enabled");
-        egui::ComboBox::from_id_salt(("arp_mode", instrument_id))
-            .selected_text(instrument.arpeggio.mode.label())
-            .show_ui(ui, |ui| {
-                for mode in project::ArpMode::ALL {
-                    ui.selectable_value(&mut instrument.arpeggio.mode, mode, mode.label());
-                }
-            });
-        edit_time_value(ui, instrument_id, "Rate", &mut instrument.arpeggio.rate);
-        ui.add(egui::Slider::new(&mut instrument.arpeggio.gate, 0.05..=1.0).text("Gate"));
-        ui.add(egui::Slider::new(&mut instrument.arpeggio.octaves, 1..=4).text("Octaves"));
+        ui.columns(2, |columns| {
+            let left = &mut columns[0];
+            left.label(egui::RichText::new("Routing").strong());
+            egui::Grid::new(("plugin_routing", instrument_id))
+                .num_columns(2)
+                .show(left, |ui| {
+                    ui.label("MIDI in channel");
+                    ui.add(
+                        egui::DragValue::new(&mut instrument.voices.midi_in_channel).range(0..=15),
+                    );
+                    ui.end_row();
+                    ui.label("MIDI out channel");
+                    ui.add(
+                        egui::DragValue::new(&mut instrument.voices.midi_out_channel).range(0..=15),
+                    );
+                    ui.end_row();
+                    ui.label("Audio in");
+                    ui.add(egui::DragValue::new(&mut instrument.voices.audio_in).range(0..=15));
+                    ui.end_row();
+                    ui.label("Audio out");
+                    ui.add(egui::DragValue::new(&mut instrument.voices.audio_out).range(0..=15));
+                    ui.end_row();
+                    ui.label("Voices");
+                    ui.add(egui::DragValue::new(&mut instrument.voices.voice_count).range(1..=64));
+                    ui.end_row();
+                });
+
+            let right = &mut columns[1];
+            right.label(egui::RichText::new("Arpeggiator").strong());
+            right.checkbox(&mut instrument.arpeggio.enabled, "Enabled");
+            egui::Grid::new(("plugin_arp", instrument_id))
+                .num_columns(2)
+                .show(right, |ui| {
+                    ui.label("Mode");
+                    egui::ComboBox::from_id_salt(("arp_mode", instrument_id))
+                        .selected_text(instrument.arpeggio.mode.label())
+                        .show_ui(ui, |ui| {
+                            for mode in project::ArpMode::ALL {
+                                ui.selectable_value(
+                                    &mut instrument.arpeggio.mode,
+                                    mode,
+                                    mode.label(),
+                                );
+                            }
+                        });
+                    ui.end_row();
+                    ui.label("Gate");
+                    ui.add(egui::Slider::new(&mut instrument.arpeggio.gate, 0.05..=1.0));
+                    ui.end_row();
+                    ui.label("Octaves");
+                    ui.add(egui::Slider::new(&mut instrument.arpeggio.octaves, 1..=4));
+                    ui.end_row();
+                });
+            edit_time_value(right, instrument_id, "Rate", &mut instrument.arpeggio.rate);
+        });
     }
 
     fn render_instrument_plugin(&mut self, instrument_id: usize, ui: &mut egui::Ui) {
@@ -6730,6 +6950,40 @@ impl PulseForgeApp {
         }
 
         ui.separator();
+        // Quick formula tool: an expression is sampled into a real curve lane,
+        // so the engine needs no scripting path of its own.
+        ui.horizontal(|ui| {
+            ui.label("Formula");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.formula_text)
+                    .desired_width(260.0)
+                    .hint_text("0.5 + 0.4 * sin(2 * pi * x)"),
+            );
+        });
+        match pulseforge_core::expr::Expression::parse(&self.formula_text) {
+            Ok(expression) => {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "x=0.25 \u{2192} {:.3} \u{00B7} x=0.5 \u{2192} {:.3} \u{00B7} x=0.75 \u{2192} {:.3}",
+                            expression.evaluate(0.25),
+                            expression.evaluate(0.5),
+                            expression.evaluate(0.75)
+                        ))
+                        .small()
+                        .weak(),
+                    );
+                    if ui.button("Add formula lane").clicked() {
+                        self.add_formula_automation(&expression);
+                    }
+                });
+            }
+            Err(error) => {
+                ui.colored_label(egui::Color32::LIGHT_RED, format!("formula: {error}"));
+            }
+        }
+
+        ui.separator();
         let mut changed = false;
         let mut remove_track = None;
         let target_labels: Vec<_> = self
@@ -7141,6 +7395,18 @@ impl PulseForgeApp {
             self.sync_project();
         }
     }
+    /// Adds a mixer channel (and its arrangement lane) and selects it.
+    fn add_mixer_channel(&mut self) {
+        let old_master_id = self.project.lanes.len();
+        self.project.add_lane();
+        if self.automation_channel_id == old_master_id {
+            self.automation_channel_id = old_master_id + 1;
+        }
+        self.selected_lane = self.project.lanes.len() - 1;
+        self.selected_mixer_channel = self.selected_lane;
+        self.sync_project();
+    }
+
     fn render_mixer(&mut self, ui: &mut egui::Ui) {
         profile_scope!("render_mixer");
         ui.horizontal(|ui| {
@@ -7152,14 +7418,7 @@ impl PulseForgeApp {
                 self.sync_project();
             }
             if ui.button("+ Mixer channel").clicked() {
-                let old_master_id = self.project.lanes.len();
-                self.project.add_lane();
-                if self.automation_channel_id == old_master_id {
-                    self.automation_channel_id = old_master_id + 1;
-                }
-                self.selected_lane = self.project.lanes.len() - 1;
-                self.selected_mixer_channel = self.selected_lane;
-                self.sync_project();
+                self.add_mixer_channel();
             }
             ui.label("Master stays pinned at the left edge.");
         });
@@ -7190,6 +7449,7 @@ impl PulseForgeApp {
                             pinned: None,
                             gain: &mut self.project.master.gain,
                             pan: &mut self.project.master.pan,
+                            width: None,
                             eq: &mut self.project.master.eq,
                             meter: master_meter,
                             selected: self.selected_mixer_channel == master_id,
@@ -7199,6 +7459,7 @@ impl PulseForgeApp {
                             locked: false,
                             solo: false,
                             inserts: Some(&mut self.project.master.inserts),
+                            fx_bypass: None,
                             open_inserts: &open_inserts,
                         },
                     );
@@ -7249,6 +7510,7 @@ impl PulseForgeApp {
                                                 pinned: Some(&mut lane.pinned),
                                                 gain: &mut lane.gain,
                                                 pan: &mut lane.pan,
+                                                width: Some(&mut lane.width),
                                                 eq: &mut lane.eq,
                                                 meter,
                                                 selected: self.selected_mixer_channel == lane_id,
@@ -7258,6 +7520,7 @@ impl PulseForgeApp {
                                                 locked,
                                                 solo,
                                                 inserts: Some(&mut lane.inserts),
+                                                fx_bypass: Some(&mut lane.fx_bypass),
                                                 open_inserts: &open_inserts,
                                             },
                                         )
@@ -7275,6 +7538,19 @@ impl PulseForgeApp {
                                 }
                                 for action in actions {
                                     self.apply_context_action(action);
+                                }
+                                // Add-track affordance at the end of the row, so
+                                // channels can be added where they appear.
+                                if ui
+                                    .add_sized(
+                                        [86.0, 34.0],
+                                        egui::Button::new("+ Track")
+                                            .sense(egui::Sense::click()),
+                                    )
+                                    .on_hover_text("Add a mixer channel")
+                                    .clicked()
+                                {
+                                    self.add_mixer_channel();
                                 }
                             });
                         });
@@ -7296,40 +7572,36 @@ impl PulseForgeApp {
             self.project.lanes[channel].name.clone()
         };
         ui.heading(format!("Track · {name}"));
-        ui.horizontal(|ui| {
-            if ui
-                .selectable_label(!self.mixer_inspector_fx, "Controls")
-                .clicked()
-            {
-                self.mixer_inspector_fx = false;
-            }
-            if ui
-                .selectable_label(self.mixer_inspector_fx, "Inserts")
-                .clicked()
-            {
-                self.mixer_inspector_fx = true;
-            }
-        });
         ui.separator();
         let is_master = channel == self.project.lanes.len();
-        let (gain, pan, eq, inserts) = if is_master {
+        // Level and pan live on the strips, so the inspector shows what a strip
+        // cannot: EQ, stereo width and the insert chain, on one page.
+        let (eq, inserts, width) = if is_master {
             (
-                &mut self.project.master.gain,
-                &mut self.project.master.pan,
                 &mut self.project.master.eq,
                 &mut self.project.master.inserts,
+                None,
             )
         } else {
             let lane = &mut self.project.lanes[channel];
-            (
-                &mut lane.gain,
-                &mut lane.pan,
-                &mut lane.eq,
-                &mut lane.inserts,
-            )
+            (&mut lane.eq, &mut lane.inserts, Some(&mut lane.width))
         };
         let mut changed = false;
-        if self.mixer_inspector_fx {
+        ui.label(egui::RichText::new("3-BAND EQ").strong());
+        draw_eq_curve(ui, *eq);
+        ui.horizontal(|ui| {
+            changed |= Knob::new("LOW", -12.0, 12.0, " dB").show(ui, &mut eq.low_db);
+            changed |= Knob::new("MID", -12.0, 12.0, " dB").show(ui, &mut eq.mid_db);
+            changed |= Knob::new("HIGH", -12.0, 12.0, " dB").show(ui, &mut eq.high_db);
+            if let Some(width) = width {
+                changed |= Knob::new("WIDTH", 0.0, 2.0, "")
+                    .with_default(1.0)
+                    .show(ui, width);
+            }
+        });
+        ui.separator();
+        ui.label(egui::RichText::new("INSERTS").strong());
+        {
             ui.horizontal(|ui| {
                 if ui.button("Add insert effect").clicked() {
                     if let Some(slot_id) = inserts.iter().position(|slot| slot.name.is_empty()) {
@@ -7391,13 +7663,18 @@ impl PulseForgeApp {
                             egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(230, 178, 92)),
                         );
                     }
-                    tooltip(ui, &response, "Power. Shift+click locks");
+                    tooltip(ui, &response, "Power. Shift+click locks, ctrl+click solos");
                     if response.clicked() {
                         if self.mod_shift {
                             slot.locked = !slot.locked;
+                        } else if self.mod_ctrl {
+                            // Ctrl+click solos this insert, muting the other
+                            // inserts on the same channel.
+                            slot.solo = !slot.solo;
                         } else {
+                            // The lock only shields the slot from global
+                            // operations; a direct click still bypasses it.
                             slot.enabled = !slot.enabled;
-                            slot.locked = false;
                         }
                         changed = true;
                     }
@@ -7408,29 +7685,52 @@ impl PulseForgeApp {
                     }
                 });
             }
-        } else {
-            ui.label("Channel level");
-            changed |= ui
-                .add(egui::Slider::new(gain, 0.0..=1.0).show_value(true))
-                .changed();
-            ui.horizontal(|ui| {
-                changed |= Knob::new("PAN", -1.0, 1.0, "").show(ui, pan);
-                ui.label(format!("{:.1} dB", gain_to_db(*gain)));
-            });
-            ui.separator();
-            ui.label(egui::RichText::new("3-BAND EQ").strong());
-            draw_eq_curve(ui, *eq);
-            ui.horizontal(|ui| {
-                changed |= Knob::new("LOW", -12.0, 12.0, " dB").show(ui, &mut eq.low_db);
-                changed |= Knob::new("MID", -12.0, 12.0, " dB").show(ui, &mut eq.mid_db);
-                changed |= Knob::new("HIGH", -12.0, 12.0, " dB").show(ui, &mut eq.high_db);
-            });
-            ui.separator();
-            ui.label("Select Inserts to edit built-in effects.");
         }
         if changed {
             self.sync_project();
         }
+    }
+
+    /// Samples a parsed formula into a curve lane on the current automation
+    /// target, so a formula behaves like any hand-drawn lane afterwards.
+    fn add_formula_automation(&mut self, expression: &pulseforge_core::expr::Expression) {
+        const LENGTH_STEPS: u64 = 64;
+        const POINT_COUNT: u64 = 32;
+        let target = if self.automation_effect_mode {
+            ParameterTarget::InsertEffect {
+                channel_id: self.automation_channel_id,
+                slot_id: self.automation_slot_id,
+                parameter: self.automation_effect_parameter,
+            }
+        } else {
+            ParameterTarget::Instrument {
+                instrument_id: self.automation_instrument_id,
+                parameter: self.automation_instrument_parameter,
+            }
+        };
+        let points: Vec<AutomationPoint> = (0..=POINT_COUNT)
+            .map(|index| AutomationPoint {
+                step: LENGTH_STEPS * index / POINT_COUNT,
+                value: expression
+                    .evaluate(index as f64 / POINT_COUNT as f64)
+                    .clamp(0.0, 1.0) as f32,
+                curve: AutomationCurve::Linear,
+            })
+            .collect();
+        let label = parameter_target_label(&self.project, target);
+        self.push_history();
+        self.project.automation_tracks.push(AutomationTrack {
+            name: format!("{label} (formula)"),
+            target,
+            start_step: 0,
+            length_steps: LENGTH_STEPS,
+            points,
+            modulation_points: Vec::new(),
+            enabled: true,
+            source: project::AutomationSource::Curve,
+        });
+        self.sync_project();
+        self.status = "Formula sampled into a new automation lane.".to_owned();
     }
 
     fn apply_context_action(&mut self, action: ContextAction) {
@@ -7608,7 +7908,7 @@ impl PulseForgeApp {
                         lane.locked = !lane.locked;
                     } else if solo {
                         lane.solo = !lane.solo;
-                    } else if !lane.locked {
+                    } else {
                         lane.enabled = !lane.enabled;
                     }
                 }
@@ -7621,7 +7921,7 @@ impl PulseForgeApp {
                         effect.locked = !effect.locked;
                     } else if solo {
                         effect.solo = !effect.solo;
-                    } else if !effect.locked {
+                    } else {
                         effect.enabled = !effect.enabled;
                     }
                 }
@@ -8341,6 +8641,14 @@ impl eframe::App for PulseForgeApp {
         if applied.as_deref() != Some(stamp.as_str()) {
             apply_theme(context, &self.settings.theme);
             context.data_mut(|data| data.insert_temp(theme_key, stamp));
+        }
+        // DPI-like interface scale, pushed only when it changes so the layout
+        // is not invalidated every frame.
+        let scale_key = egui::Id::new("applied_ui_scale");
+        let applied_scale: Option<f32> = context.data(|data| data.get_temp(scale_key));
+        if applied_scale != Some(self.settings.ui_scale) {
+            context.set_zoom_factor(self.settings.ui_scale);
+            context.data_mut(|data| data.insert_temp(scale_key, self.settings.ui_scale));
         }
         self.advance_playhead();
         self.poll_last_tweaked();
@@ -9072,12 +9380,18 @@ impl PulseForgeApp {
                 .text("Animation speed"),
         );
         ui.separator();
-        ui.add(egui::Slider::new(&mut self.settings.zoom, 0.35..=4.0).text("Arrangement zoom"));
+        ui.add(egui::Slider::new(&mut self.settings.zoom, MIN_ZOOM..=MAX_ZOOM).text("Arrangement zoom"));
         ui.add(
             egui::Slider::new(&mut self.settings.wheel_step_ticks, 1..=32)
                 .text("Alt+wheel step (ticks)"),
         );
+        ui.add(
+            egui::Slider::new(&mut self.settings.ui_scale, 0.6..=2.5)
+                .text("Interface scale")
+                .suffix(" x"),
+        );
         ui.label("Ctrl+wheel zooms the arrangement and editors; Alt+wheel changes the step size.");
+        ui.label("Ctrl+click the ruler to reset the zoom; the interface scale works like a DPI setting.");
         ui.separator();
         ui.label("Tooltips");
         for mode in settings::TooltipMode::ALL {
@@ -9447,13 +9761,17 @@ impl Knob {
         } else {
             rect.top() + 45.0
         };
-        painter.text(
-            egui::pos2(rect.center().x, label_y),
-            egui::Align2::CENTER_CENTER,
-            self.label,
-            egui::FontId::proportional(if compact { 8.0 } else { 10.0 }),
-            egui::Color32::from_gray(175),
-        );
+        // An empty label keeps the dial bare, which is what the mixer strips
+        // want: the pan knob is identified by position, not by text.
+        if !self.label.is_empty() {
+            painter.text(
+                egui::pos2(rect.center().x, label_y),
+                egui::Align2::CENTER_CENTER,
+                self.label,
+                egui::FontId::proportional(if compact { 8.0 } else { 10.0 }),
+                egui::Color32::from_gray(175),
+            );
+        }
         let shown = live_value.unwrap_or(*value);
         // Compact knobs omit the value text: their label sits above the dial and
         // the value stays available from the status bar and context menu.
@@ -9535,6 +9853,8 @@ struct MixerStrip<'a> {
     pinned: Option<&'a mut bool>,
     gain: &'a mut f32,
     pan: &'a mut f32,
+    /// Stereo width; absent on the master strip.
+    width: Option<&'a mut f32>,
     eq: &'a mut ThreeBandEq,
     meter: f32,
     selected: bool,
@@ -9544,6 +9864,8 @@ struct MixerStrip<'a> {
     locked: bool,
     solo: bool,
     inserts: Option<&'a mut [InsertFxSlot]>,
+    /// Channel FX bypass, absent on the master strip.
+    fx_bypass: Option<&'a mut bool>,
     /// Insert slots whose plug-in window is currently open.
     open_inserts: &'a std::collections::BTreeSet<(usize, usize)>,
 }
@@ -9780,29 +10102,49 @@ fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripResult
                         let pad = ((strip_width - pair_width) * 0.5).max(0.0);
                         ui.horizontal(|ui| {
                             ui.add_space(pad);
+                            // The fader is a dB scale: it travels down to
+                            // `FADER_MIN_DB`, and the bottom of the travel is
+                            // exact silence ("snap to 0").
+                            let mut position = fader_position(*strip.gain);
                             let response = ui.add_sized(
                                 [fader_width, fader_height],
-                                egui::Slider::new(&mut *strip.gain, 0.0..=1.0)
+                                egui::Slider::new(&mut position, 0.0..=1.0)
                                     .vertical()
                                     .show_value(false),
                             );
-                            result.changed |= response.changed();
+                            if response.changed() {
+                                *strip.gain = fader_gain(position);
+                                result.changed = true;
+                            }
                             render_meter_sized(ui, strip.meter, 13.0, fader_height);
                         });
                         ui.vertical_centered(|ui| {
-                            ui.label(
-                                egui::RichText::new(format!("{:.1} dB", gain_to_db(*strip.gain)))
-                                    .small(),
-                            );
-                            result.changed |= Knob::new("PAN", -1.0, 1.0, "")
-                                .compact()
-                                .show(ui, strip.pan);
+                            ui.label(egui::RichText::new(fader_label(*strip.gain)).small());
+                            ui.horizontal(|ui| {
+                                result.changed |= Knob::new("", -1.0, 1.0, "")
+                                    .compact()
+                                    .show(ui, strip.pan);
+                                if let Some(width) = strip.width.as_deref_mut() {
+                                    result.changed |= Knob::new("", 0.0, 2.0, "")
+                                        .with_default(1.0)
+                                        .compact()
+                                        .show(ui, width);
+                                }
+                            });
                         });
 
                         if !strip.collapsed
                             && let Some(inserts) = strip.inserts.as_deref_mut()
                         {
                             ui.separator();
+                            if let Some(bypass) = strip.fx_bypass.as_deref_mut() {
+                                // Dry/wet comparison that never touches the
+                                // individual insert enable states.
+                                if ui.selectable_label(*bypass, "FX bypass").clicked() {
+                                    *bypass = !*bypass;
+                                    result.changed = true;
+                                }
+                            }
                             let any_solo = inserts.iter().any(|slot| slot.solo && slot.enabled);
                             let rows: Vec<(usize, String, bool, bool, bool)> = inserts
                                 .iter()
@@ -9821,6 +10163,13 @@ fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripResult
                                     )
                                 })
                                 .collect();
+                            // Ten slots can be taller than the strip, so the
+                            // list scrolls and every insert stays reachable.
+                            egui::ScrollArea::vertical()
+                                .id_salt(("mixer_inserts", strip.channel_id))
+                                .max_height(150.0)
+                                .auto_shrink([false, true])
+                                .show(ui, |ui| {
                             for (index, label, enabled, solo, locked) in rows {
                                 let open = strip.open_inserts.contains(&(strip.channel_id, index));
                                 ui.horizontal(|ui| {
@@ -9945,6 +10294,7 @@ fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripResult
                                     });
                                 });
                             }
+                                });
                             ui.label(
                                 egui::RichText::new("Middle click changes an insert")
                                     .small()
@@ -10592,6 +10942,48 @@ fn icon_button(ui: &mut egui::Ui, icon: Icon, hint: &str) -> egui::Response {
     response
 }
 
+/// Icon button that also shows an on/off state.
+///
+/// Used by the transport switches so a lit button means "on" without having to
+/// read the status line.
+fn icon_button_toggle(
+    ui: &mut egui::Ui,
+    icon: Icon,
+    hint: &str,
+    active: bool,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(28.0, 24.0), egui::Sense::click());
+    let visuals = ui.style().interact(&response);
+    let fill = if active {
+        ui.visuals().selection.bg_fill
+    } else {
+        visuals.weak_bg_fill
+    };
+    ui.painter().rect_filled(rect, 3.0, fill);
+    if active || response.hovered() {
+        ui.painter()
+            .rect_stroke(rect, 3.0, visuals.bg_stroke, egui::StrokeKind::Inside);
+    }
+    let inner = egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0));
+    paint_icon(
+        ui.painter(),
+        inner,
+        icon,
+        if active {
+            egui::Color32::WHITE
+        } else {
+            visuals.fg_stroke.color
+        },
+    );
+    tooltip(ui, &response, hint);
+    response
+}
+
+/// Word used by status messages for a power switch.
+fn power_word(enabled: bool) -> &'static str {
+    if enabled { "enabled" } else { "disabled" }
+}
+
 /// Applies the configured tooltip policy. Hover text is suppressed in the
 /// default status-bar mode, where details are pushed to the status line.
 fn tooltip(ui: &egui::Ui, response: &egui::Response, text: &str) {
@@ -10683,10 +11075,42 @@ fn resize_note_start(
 }
 
 fn gain_to_db(gain: f32) -> f32 {
-    if gain <= 0.0001 {
-        -60.0
+    if gain <= 0.00001 {
+        FADER_MIN_DB
     } else {
         20.0 * gain.log10()
+    }
+}
+
+/// Lowest level a mixer fader reaches before it snaps to silence, in dB.
+const FADER_MIN_DB: f32 = -100.0;
+
+/// Fader travel position (0 = silence, 1 = unity gain) for a linear gain.
+fn fader_position(gain: f32) -> f32 {
+    if gain <= 0.0 {
+        0.0
+    } else {
+        (gain_to_db(gain) / FADER_MIN_DB).clamp(0.0, 1.0)
+    }
+}
+
+/// Linear gain for a fader position. The bottom of the travel is exactly zero,
+/// which is the "snap to 0" step at the end of the dB scale.
+fn fader_gain(position: f32) -> f32 {
+    let position = position.clamp(0.0, 1.0);
+    if position <= 0.0 {
+        0.0
+    } else {
+        10f32.powf(position * FADER_MIN_DB / 20.0)
+    }
+}
+
+/// Fader read-out: finite dB values, and the infinity sign for silence.
+fn fader_label(gain: f32) -> String {
+    if gain <= 0.0 {
+        "-\u{221E} dB".to_owned()
+    } else {
+        format!("{:.1} dB", gain_to_db(gain))
     }
 }
 
@@ -10890,6 +11314,21 @@ fn note_name(pitch: u8) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fader_curve_round_trips_and_snaps_to_silence() {
+        assert_eq!(fader_gain(0.0), 0.0);
+        assert!(fader_gain(1.0) - 1.0 < 1e-6);
+        for position in [0.05, 0.25, 0.5, 0.9, 1.0] {
+            let gain = fader_gain(position);
+            assert!(
+                (fader_position(gain) - position).abs() < 1e-3,
+                "position {position} did not round-trip through {gain}"
+            );
+        }
+        assert_eq!(fader_label(0.0), "-\u{221E} dB");
+        assert!(gain_to_db(0.0) <= FADER_MIN_DB);
+    }
 
     #[test]
     fn envelope_preview_finds_step_sequencer_hits() {

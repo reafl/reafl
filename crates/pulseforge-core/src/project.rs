@@ -5,6 +5,9 @@ pub const INITIAL_PATTERN_STEPS: u64 = 64;
 pub const MIDI_CHANNEL_COUNT: usize = 16;
 pub const MAX_SEND_GAIN_SUM: f32 = 0.95;
 
+/// Insert slots every mixer channel (and the master) provides.
+pub const INSERT_SLOTS: usize = 10;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TimeSignature {
@@ -856,8 +859,13 @@ pub struct ArrangementLane {
     pub automation_collapsed: bool,
     pub gain: f32,
     pub pan: f32,
+    /// Stereo width: 0 = mono, 1 = unchanged, 2 = double side signal.
+    pub width: f32,
     pub eq: ThreeBandEq,
     pub inserts: Vec<InsertFxSlot>,
+    /// Skips every insert on this channel without touching their enable states,
+    /// so the chain can be compared dry against wet.
+    pub fx_bypass: bool,
     pub clips: Vec<ArrangementClip>,
 }
 
@@ -873,8 +881,10 @@ impl Default for ArrangementLane {
             automation_collapsed: false,
             gain: 0.8,
             pan: 0.0,
+            width: 1.0,
             eq: ThreeBandEq::default(),
-            inserts: vec![InsertFxSlot::default(); 3],
+            inserts: vec![InsertFxSlot::default(); INSERT_SLOTS],
+            fx_bypass: false,
             clips: Vec::new(),
         }
     }
@@ -895,7 +905,7 @@ impl Default for MasterChannel {
             gain: 1.0,
             pan: 0.0,
             eq: ThreeBandEq::default(),
-            inserts: vec![InsertFxSlot::default(); 3],
+            inserts: vec![InsertFxSlot::default(); INSERT_SLOTS],
         }
     }
 }
@@ -1115,9 +1125,10 @@ impl Project {
             lane.height = finite_clamp(lane.height, 34.0, 260.0, 54.0);
             lane.gain = finite_clamp(lane.gain, 0.0, 1.0, 0.8);
             lane.pan = finite_clamp(lane.pan, -1.0, 1.0, 0.0);
+            lane.width = finite_clamp(lane.width, 0.0, 2.0, 1.0);
             Self::normalize_eq(&mut lane.eq);
-            lane.inserts.resize_with(3, InsertFxSlot::default);
-            lane.inserts.truncate(3);
+            lane.inserts.resize_with(INSERT_SLOTS, InsertFxSlot::default);
+            lane.inserts.truncate(INSERT_SLOTS);
             Self::normalize_inserts(&mut lane.inserts);
             lane.clips.retain_mut(|clip| {
                 clip.length_steps = clip.length_steps.max(1);
@@ -1148,8 +1159,8 @@ impl Project {
         self.master.gain = finite_clamp(self.master.gain, 0.0, 1.0, 1.0);
         self.master.pan = finite_clamp(self.master.pan, -1.0, 1.0, 0.0);
         Self::normalize_eq(&mut self.master.eq);
-        self.master.inserts.resize_with(3, InsertFxSlot::default);
-        self.master.inserts.truncate(3);
+        self.master.inserts.resize_with(INSERT_SLOTS, InsertFxSlot::default);
+        self.master.inserts.truncate(INSERT_SLOTS);
         Self::normalize_inserts(&mut self.master.inserts);
         let totals: Vec<f32> = (0..channel_count)
             .map(|destination| self.sends.iter().map(|row| row[destination].abs()).sum())

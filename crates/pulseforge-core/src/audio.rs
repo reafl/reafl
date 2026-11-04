@@ -780,9 +780,12 @@ impl AudioEngine {
         self.effect_processors
             .resize_with(self.project.lanes.len() + 1, Vec::new);
         for (channel, lane) in self.project.lanes.iter().enumerate() {
+            // A bypassed channel keeps its insert settings but renders with no
+            // chain at all, so the dry signal costs nothing.
+            let inserts: &[_] = if lane.fx_bypass { &[] } else { &lane.inserts };
             update_effect_chain(
                 channel,
-                &lane.inserts,
+                inserts,
                 &mut self.effect_processors[channel],
                 self.sample_rate as u32,
             );
@@ -858,9 +861,12 @@ impl AudioEngine {
         self.effect_processors.resize_with(channel_count, Vec::new);
         self.effect_processors.truncate(channel_count);
         for (channel, lane) in self.project.lanes.iter().enumerate() {
+            // A bypassed channel keeps its insert settings but renders with no
+            // chain at all, so the dry signal costs nothing.
+            let inserts: &[_] = if lane.fx_bypass { &[] } else { &lane.inserts };
             update_effect_chain(
                 channel,
-                &lane.inserts,
+                inserts,
                 &mut self.effect_processors[channel],
                 self.sample_rate as u32,
             );
@@ -1579,6 +1585,15 @@ impl AudioEngine {
             let right_gain = (1.0 + pan).clamp(0.0, 1.0);
             self.lane_inputs[lane_id][0] *= gain * left_gain;
             self.lane_inputs[lane_id][1] *= gain * right_gain;
+            // Stereo width is a mid/side scale, applied before the EQ so the
+            // shelves react to the widened signal.
+            let width = self.project.lanes[lane_id].width;
+            if (width - 1.0).abs() > 1e-4 {
+                let frame = self.lane_inputs[lane_id];
+                let mid = (frame[0] + frame[1]) * 0.5;
+                let side = (frame[0] - frame[1]) * 0.5 * width;
+                self.lane_inputs[lane_id] = [mid + side, mid - side];
+            }
             self.lane_inputs[lane_id] = process_eq(
                 self.lane_inputs[lane_id],
                 &mut self.eq_states[lane_id],
