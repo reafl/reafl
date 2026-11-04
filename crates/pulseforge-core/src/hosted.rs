@@ -6,7 +6,10 @@
 //! That costs exactly one block of latency per plug-in and no allocation in the
 //! callback.
 
+use std::{sync::Arc, time::Instant};
+
 use pulseforge_hosting::HostedAudio;
+use pulseforge_profiling::SlotCounters;
 
 /// Block size every hosted plug-in is activated with. It is also the latency a
 /// hosted insert adds (64 frames ≈ 1.3 ms at 48 kHz).
@@ -35,12 +38,20 @@ pub struct HostedSlot {
     /// Last value written per parameter, used as the automation base so a
     /// curve ends where the knob was left.
     parameter_values: Vec<(u32, f32)>,
+    /// Debug counters shared with the debug panel; written lock-free while
+    /// rendering, so a slow plug-in is visible without touching the audio path.
+    counters: Option<Arc<SlotCounters>>,
 }
 
 impl HostedSlot {
     /// Wraps an already-loaded plug-in and primes one silent block so the
     /// output never starts with uninitialised memory.
-    pub fn new(mut audio: HostedAudio, instrument: bool, sample_rate: f64) -> Self {
+    pub fn new(
+        mut audio: HostedAudio,
+        instrument: bool,
+        sample_rate: f64,
+        counters: Option<Arc<SlotCounters>>,
+    ) -> Self {
         audio.activate(sample_rate, HOST_BLOCK);
         let mut slot = Self {
             audio: Some(audio),
@@ -52,6 +63,7 @@ impl HostedSlot {
             pending_notes: Vec::new(),
             held_note: None,
             parameter_values: Vec::new(),
+            counters,
         };
         slot.flush();
         slot
@@ -139,7 +151,13 @@ impl HostedSlot {
         }
         let mut left = self.input[0];
         let mut right = self.input[1];
+        // Plug-in time is measured here rather than around the whole callback
+        // so the debug panel can rank individual slots.
+        let started = Instant::now();
         audio.process(&mut left, &mut right);
+        if let Some(counters) = &self.counters {
+            counters.record_block(started.elapsed().as_nanos() as u64);
+        }
         self.output = [left, right];
         self.input = [[0.0; HOST_BLOCK]; 2];
     }
@@ -184,7 +202,7 @@ mod tests {
         let Some(audio) = load(EFFECT_BUNDLE, false) else {
             return;
         };
-        let mut slot = HostedSlot::new(audio, false, 48_000.0);
+        let mut slot = HostedSlot::new(audio, false, 48_000.0, None);
         let mut peak = 0.0_f32;
         for index in 0..HOST_BLOCK * 4 {
             let noise = if index < HOST_BLOCK { 0.4 } else { 0.0 };
@@ -200,7 +218,7 @@ mod tests {
         let Some(audio) = load(INSTRUMENT_BUNDLE, true) else {
             return;
         };
-        let mut slot = HostedSlot::new(audio, true, 48_000.0);
+        let mut slot = HostedSlot::new(audio, true, 48_000.0, None);
         slot.play_note(60, 0.9);
         let mut peak = 0.0_f32;
         for _ in 0..HOST_BLOCK * 40 {

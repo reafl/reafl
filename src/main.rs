@@ -1,14 +1,17 @@
 mod anim;
+mod cli;
 mod context_menu;
 mod settings;
+mod tasks;
 
 use std::{
     collections::BTreeSet,
-    fs,
     sync::{Arc, Mutex, mpsc::SyncSender},
 };
 
 use anim::Animated;
+use cli::Cli;
+use clap::Parser;
 use context_menu::{ContextAction, ContextMenu, MenuItem};
 use eframe::egui;
 use midir::{Ignore, MidiInput, MidiInputConnection};
@@ -21,6 +24,10 @@ use pulseforge_core::{
         MIDI_CHANNEL_COUNT, ParameterTarget, PianoNote, Project, SignalWaveform, StepHit,
         SynthKind, ThreeBandEq, TimeSignature, disconnect_channel,
     },
+};
+use pulseforge_profiling::{
+    Channel, PluginDebug, SystemMonitor, profile_scope, set_thread_channel,
+    ui::{AudioDebug, DebugPanel, DebugWorld},
 };
 mod platform;
 
@@ -80,6 +87,12 @@ fn paint_svg_cursor(ui: &egui::Ui, kind: &str, position: egui::Pos2) {
 }
 
 fn main() -> eframe::Result<()> {
+    let cli = Cli::parse();
+    // The recorder has to exist before the audio thread starts, otherwise the
+    // first callbacks would record into nothing and the flame graph would open
+    // empty. Five seconds of history is a good default for interactive work.
+    let profiler = pulseforge_profiling::install(5_000);
+    profiler.set_enabled(true);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1440.0, 900.0])
@@ -89,7 +102,9 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "PulseForge",
         options,
-        Box::new(|creation_context| Ok(Box::new(PulseForgeApp::new(creation_context)))),
+        Box::new(move |creation_context| {
+            Ok(Box::new(PulseForgeApp::new(creation_context, &cli)))
+        }),
     )
 }
 
@@ -752,30 +767,51 @@ struct PulseForgeApp {
     midi_connection: Option<MidiInputConnection<()>>,
     midi_routes: Arc<Mutex<Vec<usize>>>,
     midi_callback_error: Arc<Mutex<Option<String>>>,
+    /// Background jobs: plug-in scans, WAV decoding and project IO.
+    tasks: tasks::Tasks,
+    /// Per-slot timing counters for hosted VST3/CLAP plug-ins.
+    plugin_debug: PluginDebug,
+    /// The debug/profiler window plus its graph history.
+    debug_panel: DebugPanel,
+    /// Compact live numbers shown in the footer while the panel is open.
+    debug_summary: String,
+    /// CPU/RAM sampler running on its own thread.
+    system_monitor: SystemMonitor,
 }
 
 impl PulseForgeApp {
-    fn new(creation_context: &eframe::CreationContext<'_>) -> Self {
-        let initial_settings = Settings::load(settings::SETTINGS_FILE);
-        apply_theme(&creation_context.egui_ctx, &initial_settings.theme);
+    fn new(creation_context: &eframe::CreationContext<'_>, cli: &Cli) -> Self {
+        // The settings path comes from the command line, so a portable install
+        // (or a CI run) can point at its own configuration.
+        let settings_path = cli.settings_path();
+        let settings = Settings::load(&settings_path);
+        apply_theme(&creation_context.egui_ctx, &settings.theme);
         let project = Project::default();
-        let (audio, audio_error) = match AudioOutput::start(&project) {
-            Ok(output) => (Some(output), None),
-            Err(error) => (None, Some(error)),
+        // `--no-audio` keeps the engine from opening a device: hosted plug-ins
+        // are then never instantiated, which is the safe way to open a project
+        // that crashes a plug-in.
+        let (audio, audio_error) = if cli.no_audio {
+            (
+                None,
+                Some("Audio disabled (--no-audio); plug-ins stay unloaded.".to_owned()),
+            )
+        } else {
+            match AudioOutput::start(&project) {
+                Ok(output) => (Some(output), None),
+                Err(error) => (None, Some(error)),
+            }
         };
         let (midi_ports, midi_discovery_error) = match Self::query_midi_ports() {
             Ok(ports) => (ports, None),
             Err(error) => (Vec::new(), Some(error)),
         };
-        let settings = Settings::load(settings::SETTINGS_FILE);
-        let (external_plugins, plugin_scan_error) = Self::scan_external_plugins(&settings);
         if let Some(audio) = &audio {
             let _ = audio.sender.try_send(AudioCommand::SetSmoothing {
                 enabled: settings.parameter_smoothing,
                 milliseconds: settings.smoothing_ms,
             });
         }
-        Self {
+        let mut app = Self {
             midi_routes: Arc::new(Mutex::new(project.midi_routes.to_vec())),
             project,
             audio,
@@ -846,10 +882,10 @@ impl PulseForgeApp {
             project_dirty: false,
             last_project_sync: std::time::Instant::now(),
             settings,
-            settings_path: settings::SETTINGS_FILE.to_owned(),
+            settings_path,
             settings_tab: SettingsTab::default(),
-            external_plugins,
-            plugin_scan_error,
+            external_plugins: Vec::new(),
+            plugin_scan_error: None,
             capturing_shortcut: None,
             shortcut_draft: String::new(),
             sample_tab: SampleTab::default(),
@@ -885,32 +921,34 @@ impl PulseForgeApp {
             selected_midi_port: None,
             midi_connection: None,
             midi_callback_error: Arc::new(Mutex::new(None)),
-        }
-    }
-
-    /// Scans the configured plug-in folders, reporting a message when nothing
-    /// was found instead of failing silently.
-    fn scan_external_plugins(
-        settings: &Settings,
-    ) -> (Vec<pulseforge_plugins::ExternalPlugin>, Option<String>) {
-        let roots = settings.plugin_roots();
-        let plugins = pulseforge_plugins::scan_plugins(&roots, 512);
-        let error = if roots.is_empty() && plugins.is_empty() {
-            Some(
-                "No plug-in folders configured yet. Add VST/VST3/CLAP locations in Settings ? Plug-ins."
-                    .to_owned(),
-            )
-        } else {
-            None
+            tasks: tasks::Tasks::new(),
+            plugin_debug: PluginDebug::default(),
+            debug_panel: DebugPanel::new(cli.debug),
+            debug_summary: String::new(),
+            system_monitor: SystemMonitor::start(),
         };
-        (plugins, error)
+        // Start-up work runs off the UI thread: a large plug-in folder or
+        // sample library no longer delays the first frame.
+        app.rescan_plugins();
+        app.refresh_sample_files();
+        if let Some(path) = cli.project_path() {
+            app.project_path = path;
+            if std::path::Path::new(&app.project_path).exists() {
+                app.load_project();
+            } else {
+                app.status = format!("Project {} not found; starting empty.", app.project_path);
+            }
+        }
+        app
     }
 
+    /// Queues a plug-in folder scan on a worker thread. The status line is set
+    /// immediately and the result arrives through [`Self::apply_task`].
     fn rescan_plugins(&mut self) {
-        let (plugins, error) = Self::scan_external_plugins(&self.settings);
-        self.status = format!("Found {} external plug-in(s).", plugins.len());
-        self.external_plugins = plugins;
-        self.plugin_scan_error = error;
+        let roots = self.settings.plugin_roots();
+        let settings_missing = roots.is_empty();
+        self.status = "Scanning plug-in folders…".to_owned();
+        self.tasks.scan_plugins(roots, settings_missing);
     }
 
     fn save_settings(&mut self) {
@@ -929,44 +967,19 @@ impl PulseForgeApp {
     }
 
     /// Refreshes the sample browser file list from the configured folders.
+    /// Directory walking happens on a worker thread so a network share or a
+    /// huge library cannot stall a frame.
     fn refresh_sample_files(&mut self) {
-        const MAX_FILES: usize = 2_000;
-        let mut files = Vec::new();
-        for root in &self.settings.sample_paths {
-            if files.len() >= MAX_FILES {
-                break;
-            }
-            let Ok(entries) = std::fs::read_dir(root) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let is_wav = path
-                    .extension()
-                    .and_then(|extension| extension.to_str())
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("wav"));
-                if is_wav && path.is_file() {
-                    files.push(path.to_string_lossy().into_owned());
-                    if files.len() >= MAX_FILES {
-                        break;
-                    }
-                }
-            }
-        }
-        files.sort();
-        self.status = format!("{} sample(s) found.", files.len());
-        self.sample_files = files;
+        let roots = self.settings.sample_paths.clone();
+        self.status = "Scanning sample folders…".to_owned();
+        self.tasks.scan_samples(roots);
     }
 
     /// Auditions a sample through the master bus.
     fn preview_sample(&mut self, path: &str) {
-        match audio::read_wav(path) {
-            Ok(sample) => {
-                self.send_audio(AudioCommand::PreviewSample(Box::new(sample)));
-                self.status = format!("Previewing {path}");
-            }
-            Err(error) => self.status = format!("Could not read {path}: {error}"),
-        }
+        self.status = format!("Loading {path}…");
+        self.tasks
+            .decode_sample(path.to_owned(), tasks::SampleUse::Preview);
     }
 
     /// Maps a chord key name to its egui key.
@@ -1100,6 +1113,7 @@ impl PulseForgeApp {
             ShortcutAction::WindowSamples => self.windows.samples = !self.windows.samples,
             ShortcutAction::WindowSettings => self.windows.settings = !self.windows.settings,
             ShortcutAction::WindowRender => self.windows.render = !self.windows.render,
+            ShortcutAction::WindowDebug => self.debug_panel.toggle(),
             ShortcutAction::ToolPen => self.set_tool(PianoTool::Pen),
             ShortcutAction::ToolSelect => self.set_tool(PianoTool::Select),
             ShortcutAction::ToolBrush => self.set_tool(PianoTool::Brush),
@@ -1278,6 +1292,23 @@ impl PulseForgeApp {
             return;
         };
         let sample_rate = f64::from(audio.sample_rate);
+        // The counters are created here and travel to the audio thread inside
+        // the load command, so block times can be attributed to this slot
+        // without any locking on the audio path.
+        let counters = self.plugin_debug.register(
+            id,
+            std::path::Path::new(path)
+                .file_stem()
+                .map_or_else(|| path.to_owned(), |stem| stem.to_string_lossy().into_owned()),
+            path,
+            if instrument {
+                pulseforge_profiling::PluginKind::Instrument
+            } else {
+                pulseforge_profiling::PluginKind::Effect
+            },
+            pulseforge_core::hosted::HOST_BLOCK as u32,
+            audio.sample_rate,
+        );
         match pulseforge_hosting::load(
             path,
             instrument,
@@ -1289,6 +1320,7 @@ impl PulseForgeApp {
                     id,
                     audio: Box::new(audio_half),
                     instrument,
+                    counters: Some(Arc::clone(&counters)),
                 });
                 // Restore the state saved with the project, if any.
                 if let Some(state) = self.stored_plugin_state(id)
@@ -1305,6 +1337,9 @@ impl PulseForgeApp {
                 self.hosted.insert(id, ui);
             }
             Err(error) => {
+                // Loading failures are the most common "why is my plug-in
+                // silent" cause, so they are also kept for the debug panel.
+                counters.record_error(&error.to_string());
                 self.hosted_errors.insert(id, error.to_string());
             }
         }
@@ -1337,6 +1372,7 @@ impl PulseForgeApp {
         if self.attached_editor == Some(id) {
             self.detach_editor();
         }
+        self.plugin_debug.unregister(id);
         if self.hosted.remove(&id).is_some()
             && let Some(audio) = self.audio.as_ref()
         {
@@ -2365,18 +2401,11 @@ impl PulseForgeApp {
             self.status = "Enter a WAV path before loading the instrument sample.".to_owned();
             return;
         }
-        match audio::read_wav(&path) {
-            Ok(sample) => {
-                let frames = sample.frames.len();
-                if self.send_audio(AudioCommand::LoadInstrumentSample {
-                    instrument_id,
-                    sample,
-                }) {
-                    self.status = format!("Loaded {frames} frames into the instrument.");
-                }
-            }
-            Err(error) => self.status = format!("Sample load failed: {error}"),
-        }
+        // Decoding happens on a worker thread; the audio side is updated when
+        // the task lands.
+        self.status = format!("Loading {path}…");
+        self.tasks
+            .decode_sample(path, tasks::SampleUse::Instrument(instrument_id));
     }
 
     fn add_audio_clip(&mut self, start_step: u64, lane: usize) {
@@ -2401,18 +2430,8 @@ impl PulseForgeApp {
             clip: clip_index,
         });
         self.sync_project();
-        match audio::read_wav(&path) {
-            Ok(sample) => {
-                let frame_count = sample.frames.len();
-                if self.send_audio(AudioCommand::LoadAudioClip {
-                    path: path.clone(),
-                    sample,
-                }) {
-                    self.status = format!("Added audio clip ({frame_count} frames).");
-                }
-            }
-            Err(error) => self.status = format!("Clip added but could not load its WAV: {error}"),
-        }
+        self.status = format!("Added audio clip from {path}; decoding…");
+        self.tasks.decode_sample(path, tasks::SampleUse::Clip);
     }
 
     fn add_arrangement_clip(
@@ -2441,34 +2460,25 @@ impl PulseForgeApp {
     }
 
     fn load_audio_clip_samples(&mut self) {
-        let Some(sender) = self.sender() else {
+        if self.sender().is_none() {
             self.status = self
                 .audio_error
                 .clone()
                 .unwrap_or_else(|| "Audio output is unavailable.".to_owned());
             return;
-        };
+        }
+        // Each clip decodes on its own worker thread; a project with many
+        // audio clips therefore loads in parallel instead of one WAV at a time.
+        let mut paths = BTreeSet::new();
         for lane in self.project.lanes.iter() {
             for clip in lane.clips.iter() {
-                let ClipSource::Audio { path } = &clip.source else {
-                    continue;
-                };
-                match audio::read_wav(path) {
-                    Ok(sample) => {
-                        if let Err(error) = sender.try_send(AudioCommand::LoadAudioClip {
-                            path: path.clone(),
-                            sample,
-                        }) {
-                            self.status = format!("Could not restore audio clip: {error}");
-                            return;
-                        }
-                    }
-                    Err(error) => {
-                        self.status = format!("Could not restore audio clip {path}: {error}");
-                        return;
-                    }
+                if let ClipSource::Audio { path } = &clip.source {
+                    paths.insert(path.clone());
                 }
             }
+        }
+        for path in paths {
+            self.tasks.decode_sample(path, tasks::SampleUse::Clip);
         }
     }
 
@@ -2532,39 +2542,96 @@ impl PulseForgeApp {
     fn save_project(&mut self) {
         self.capture_plugin_states();
         self.project.normalize();
-        match serde_json::to_string_pretty(&self.project) {
-            Ok(json) => match fs::write(&self.project_path, json) {
-                Ok(()) => self.status = format!("Saved project to {}.", self.project_path),
-                Err(error) => self.status = format!("Could not save project: {error}"),
-            },
-            Err(error) => self.status = format!("Could not serialize project: {error}"),
-        }
+        // Serialization and the write are handed to a worker thread; the clone
+        // is cheap compared with encoding a large project.
+        let path = self.project_path.clone();
+        self.status = format!("Saving {path}…");
+        self.tasks.save_project(path, self.project.clone());
     }
 
     fn load_project(&mut self) {
         let path = self.project_path.clone();
-        let loaded = fs::read_to_string(&path)
-            .map_err(|error| format!("Could not read project: {error}"))
-            .and_then(|contents| {
-                serde_json::from_str::<Project>(&contents)
-                    .map_err(|error| format!("Invalid project JSON: {error}"))
-            });
-        match loaded {
-            Ok(mut project) => {
-                project.normalize();
-                self.project = project;
-                self.selected_pattern = 0;
-                self.selected_instrument = 0;
-                self.selected_lane = 0;
-                self.selected_mixer_channel = 0;
-                self.selection = None;
-                self.sync_project();
-                self.load_audio_clip_samples();
-                self.load_instrument_samples();
-                self.restore_hosted_plugins();
-                self.status = format!("Loaded project from {path}.");
+        self.status = format!("Loading {path}…");
+        self.tasks.load_project(path);
+    }
+
+    /// Applies a project that finished loading: resets the selection, pushes it
+    /// to the engine, and restores everything the project references.
+    fn adopt_project(&mut self, mut project: Project, path: &str) {
+        project.normalize();
+        self.project = project;
+        self.selected_pattern = 0;
+        self.selected_instrument = 0;
+        self.selected_lane = 0;
+        self.selected_mixer_channel = 0;
+        self.selection = None;
+        self.sync_project();
+        self.load_audio_clip_samples();
+        self.load_instrument_samples();
+        self.restore_hosted_plugins();
+        self.status = format!("Loaded project from {path}.");
+    }
+
+    /// Drains finished background jobs; call once per frame.
+    fn poll_tasks(&mut self) {
+        while let Some(task) = self.tasks.try_recv() {
+            self.apply_task(task);
+        }
+    }
+
+    /// Applies one finished job to the app state.
+    fn apply_task(&mut self, task: tasks::Task) {
+        use tasks::{SampleUse, Task};
+        match task {
+            Task::PluginsScanned { plugins, error } => {
+                self.status = format!("Found {} external plug-in(s).", plugins.len());
+                self.external_plugins = plugins;
+                self.plugin_scan_error = error;
             }
-            Err(error) => self.status = error,
+            Task::SamplesScanned { files } => {
+                self.status = format!("{} sample(s) found.", files.len());
+                self.sample_files = files;
+            }
+            Task::SampleDecoded {
+                path,
+                purpose,
+                result,
+            } => match (result, purpose) {
+                (Ok(sample), SampleUse::Instrument(instrument_id)) => {
+                    let frames = sample.frames.len();
+                    if self.send_audio(AudioCommand::LoadInstrumentSample {
+                        instrument_id,
+                        sample,
+                    }) {
+                        self.status = format!("Loaded {frames} frames into the instrument.");
+                    }
+                }
+                (Ok(sample), SampleUse::Clip) => {
+                    let frames = sample.frames.len();
+                    if self.send_audio(AudioCommand::LoadAudioClip {
+                        path: path.clone(),
+                        sample,
+                    }) {
+                        self.status = format!("Loaded {frames} frames for {path}.");
+                    }
+                }
+                (Ok(sample), SampleUse::Preview) => {
+                    self.send_audio(AudioCommand::PreviewSample(Box::new(sample)));
+                    self.status = format!("Previewing {path}");
+                }
+                (Err(error), SampleUse::Instrument(_)) => {
+                    self.status = format!("Sample load failed: {error}");
+                }
+                (Err(error), _) => self.status = format!("Could not read {path}: {error}"),
+            },
+            Task::ProjectLoaded { path, result } => match result {
+                Ok(project) => self.adopt_project(*project, &path),
+                Err(error) => self.status = error,
+            },
+            Task::ProjectSaved { path, result } => match result {
+                Ok(()) => self.status = format!("Saved project to {path}."),
+                Err(error) => self.status = error,
+            },
         }
     }
 
@@ -2708,6 +2775,7 @@ impl PulseForgeApp {
     }
 
     fn render_toolbar(&mut self, ui: &mut egui::Ui) {
+        profile_scope!("render_toolbar");
         // Two compact icon rows: window/transport on top, tempo/grid below.
         // Every control uses the same row height so the bar stays aligned.
         const ROW_HEIGHT: f32 = 24.0;
@@ -2751,6 +2819,11 @@ impl PulseForgeApp {
                 (Icon::Midi, "MIDI routing (F8)", ShortcutAction::WindowMidi),
                 (Icon::Settings, "Settings", ShortcutAction::WindowSettings),
                 (Icon::Render, "Render WAV", ShortcutAction::WindowRender),
+                (
+                    Icon::Debug,
+                    "Debug / profiler (Ctrl+Shift+D)",
+                    ShortcutAction::WindowDebug,
+                ),
             ] {
                 if icon_button(ui, icon, hint).clicked() {
                     self.perform(action);
@@ -2951,6 +3024,7 @@ impl PulseForgeApp {
     }
 
     fn render_arrangement(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
+        profile_scope!("render_arrangement");
         // The arrangement keeps its own tool so piano-roll choices cannot place
         // clips, and Join (note-only) never becomes the arrangement tool.
         if self.arrangement_tool == PianoTool::Join {
@@ -4412,6 +4486,7 @@ impl PulseForgeApp {
     }
 
     fn render_channel_rack(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
+        profile_scope!("render_channel_rack");
         ui.horizontal(|ui| {
             ui.label("Pattern");
             let pattern_name = &self.project.patterns[self.selected_pattern].name;
@@ -4789,6 +4864,7 @@ impl PulseForgeApp {
     }
 
     fn render_piano_roll(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
+        profile_scope!("render_piano_roll");
         egui::Frame::NONE.inner_margin(4.0).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Pattern");
@@ -7065,8 +7141,8 @@ impl PulseForgeApp {
             self.sync_project();
         }
     }
-
     fn render_mixer(&mut self, ui: &mut egui::Ui) {
+        profile_scope!("render_mixer");
         ui.horizontal(|ui| {
             ui.label("Mixer");
             if ui
@@ -7672,6 +7748,7 @@ impl PulseForgeApp {
     }
 
     fn render_routing_cables(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
+        profile_scope!("render_routing_cables");
         ui.horizontal(|ui| {
             ui.heading("Routing cables");
             ui.label(
@@ -8046,6 +8123,21 @@ impl PulseForgeApp {
             } else if let Some(error) = &self.audio_error {
                 ui.colored_label(egui::Color32::LIGHT_RED, error);
             }
+            // Background jobs are visible, so a slow scan never looks like a
+            // hang.
+            let running = self.tasks.running();
+            if running > 0 {
+             
+            // Live machine/engine numbers while the debug panel is open.
+            if !self.debug_summary.is_empty() {
+                ui.separator();
+                ui.label(
+                    egui::RichText::new(self.debug_summary.clone())
+                        .small()
+                        .weak(),
+                );
+            }   ui.label(format!("{running} background job(s)"));
+            }
             ui.separator();
             // Hovered control details: name, value and unit (tooltip replacement).
             let hovered = ui.data(|data| {
@@ -8213,6 +8305,13 @@ impl PulseForgeApp {
 
 impl eframe::App for PulseForgeApp {
     fn update(&mut self, context: &egui::Context, frame: &mut eframe::Frame) {
+        // Tag this thread and wrap the frame so the flame graph shows the UI
+        // channel; nesting rank below this span is the render cost per widget
+        // group that is instrumented explicitly.
+        set_thread_channel(Channel::Ui);
+        profile_scope!("ui frame");
+        // Background results arrive here, before anything reads the state.
+        self.poll_tasks();
         // Plug-in editors are native child windows, so the DAW window's handle
         // and scale factor are needed to place them under their egui wrapper.
         self.last_pixels_per_point = context.pixels_per_point();
@@ -8517,6 +8616,7 @@ impl eframe::App for PulseForgeApp {
         self.windows.render = render_open;
 
         self.render_plugin_windows(context);
+        self.render_debug_panel(context);
 
         let callback_error = match self.midi_callback_error.lock() {
             Ok(mut error) => error.take(),
@@ -8534,6 +8634,35 @@ impl eframe::App for PulseForgeApp {
 }
 
 impl PulseForgeApp {
+    /// Draws the debug/profiler window and hands it the live engine numbers.
+    ///
+    /// The panel is a separate crate so the DAW only owns the state that comes
+    /// from the engine; everything else (sampling, aggregation, drawing) lives
+    /// in `pulseforge-profiling`.
+    fn render_debug_panel(&mut self, context: &egui::Context) {
+        let (sample_rate, block_frames, dsp_load) = match &self.audio {
+            Some(audio) => (audio.sample_rate, audio.block_frames(), audio.load()),
+            None => (0, 0, 0.0),
+        };
+        let mut world = DebugWorld {
+            profiler: pulseforge_profiling::profiler().map(std::convert::AsRef::as_ref),
+            system: Some(&self.system_monitor),
+            plugins: &mut self.plugin_debug,
+            audio: AudioDebug {
+                sample_rate,
+                block_frames,
+                dsp_load,
+                playing: self.playing,
+            },
+        };
+        self.debug_panel.show(context, &mut world);
+        self.debug_summary = if self.debug_panel.is_open() {
+            pulseforge_profiling::ui::summary_line(&world)
+        } else {
+            String::new()
+        };
+    }
+
     fn render_plugin_windows(&mut self, context: &egui::Context) {
         for instrument_id in 0..self.project.instruments.len() {
             let mut open = self.open_instrument_plugins.contains(&instrument_id);
@@ -10272,6 +10401,7 @@ enum Icon {
     Midi,
     Settings,
     Render,
+    Debug,
     Undo,
     Redo,
     Play,
@@ -10379,6 +10509,19 @@ fn paint_icon(painter: &egui::Painter, rect: egui::Rect, icon: Icon, color: egui
             line((-0.35, -0.05), (0.0, 0.3));
             line((0.35, -0.05), (0.0, 0.3));
             line((-0.7, 0.6), (0.7, 0.6));
+        }
+        Icon::Debug => {
+            // Oscilloscope inside a frame: a "profile trace" glyph.
+            painter.rect_stroke(
+                egui::Rect::from_center_size(mid, egui::vec2(unit * 1.5, unit * 1.2)),
+                2.0,
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+            let points = [at(-0.55, 0.1), at(-0.2, -0.4), at(0.1, 0.4), at(0.5, -0.25)];
+            for pair in points.windows(2) {
+                painter.line_segment([pair[0], pair[1]], stroke);
+            }
         }
         Icon::Undo | Icon::Redo => {
             let direction = if icon == Icon::Undo { -1.0 } else { 1.0 };

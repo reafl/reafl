@@ -150,6 +150,63 @@ copied audio.
 Linux builds may need the platform development packages required by CPAL and
 eframe (including ALSA and the selected X11/Wayland graphics stack).
 
+### Command line
+
+Every switch is optional; with no arguments the app uses `settings.json` and
+`session.json` in the working directory.
+
+```text
+pulseforge [-s|--settings FILE] [-p|--project FILE] [-d|--debug] [--no-audio]
+```
+
+| Option | Effect |
+| --- | --- |
+| `-s`, `--settings <FILE>` | Settings file to read at start-up and write when saving |
+| `-p`, `--project <FILE>` | Project file loaded at start-up; saves return to this path |
+| `-d`, `--debug` | Open the debug/profiler panel immediately |
+| `--no-audio` | Start without opening the audio device; hosted plug-ins stay unloaded |
+
+`--help` and `--version` are provided by `clap`. Helper scripts in
+`ai_scripts/ps/` wrap the common invocations (`run.ps1`, `check.ps1`,
+`test.ps1`, `doc.ps1`).
+
+## Debugging and profiling
+
+`pulseforge-profiling` is a separate crate with four layers:
+
+- **Recorder** (`span`): `profile_scope!("name")` records a named, nested scope
+  into a lock-free queue. Names are `&'static str`, so recording never
+  allocates, and with profiling disabled a scope costs one atomic load — it is
+  safe on the audio thread.
+- **Aggregator** (`flame`): a worker thread drains the queue every 80 ms and
+  folds the last few seconds into a call tree per channel (`Ui`, `Audio`,
+  `Worker`, `Other`), merging threads by name and computing exclusive time.
+- **System sampler** (`system`): CPU, machine RAM and process RSS from
+  `sysinfo` on its own thread, refreshed every 500 ms.
+- **Debug panel** (`ui`): Ctrl+Shift+D or `--debug`. It shows UI frame time,
+  FPS, worst frame, audio DSP load and peak, two overview strips, the flame
+  graph with inclusive/exclusive hover details, and a table of hosted plug-ins.
+
+Audio numbers come from the engine itself: the output callback publishes its
+real-time load (work versus buffer period) and block size, and every hosted
+VST3/CLAP slot records per-block time, peak time and the last error using plain
+atomics — nothing on the audio path locks.
+
+The overview strips reduce history to one min/max/mean column per two pixels.
+When the driver offers GL 4.3 that reduction runs in a compute shader
+(`gpu` feature); otherwise an identical CPU path is used and the panel says so.
+
+### Debugging plug-ins
+
+- Load failures are recorded per slot and shown in the panel next to the
+  plug-in that produced them.
+- The plug-in table ranks slots by CPU, so a hot synth or a runaway reverb is
+  obvious within a second.
+- `--no-audio` starts the UI without instantiating any plug-in, which is the
+  safe way to open a project that crashes while loading one.
+- Background work (folder scans, WAV decoding, project IO) runs on worker
+  threads and appears under the `Worker` channel in the flame graph.
+
 ## Plug-ins
 
 The plug-in layer is its own crate, `pulseforge-plugins`:

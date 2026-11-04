@@ -34,6 +34,8 @@ pub enum ShortcutAction {
     WindowSamples,
     WindowSettings,
     WindowRender,
+    /// Debug/profiler panel (CPU, RAM, flame graph, plug-in timings).
+    WindowDebug,
     // Tools
     ToolPen,
     ToolSelect,
@@ -83,6 +85,7 @@ impl ShortcutAction {
             Self::WindowSamples => "Sample browser window",
             Self::WindowSettings => "Settings window",
             Self::WindowRender => "Render window",
+            Self::WindowDebug => "Debug / profiler window",
             Self::ToolPen => "Pen tool",
             Self::ToolSelect => "Select tool",
             Self::ToolBrush => "Brush tool",
@@ -127,7 +130,8 @@ impl ShortcutAction {
             | Self::WindowMidi
             | Self::WindowSamples
             | Self::WindowSettings
-            | Self::WindowRender => "Windows",
+            | Self::WindowRender
+            | Self::WindowDebug => "Windows",
             Self::ToolPen | Self::ToolSelect | Self::ToolBrush | Self::ToolJoin | Self::ToolCut => {
                 "Tools"
             }
@@ -171,6 +175,7 @@ impl ShortcutAction {
             Self::WindowSamples,
             Self::WindowSettings,
             Self::WindowRender,
+            Self::WindowDebug,
             Self::ToolPen,
             Self::ToolSelect,
             Self::ToolBrush,
@@ -511,6 +516,7 @@ pub fn default_shortcuts() -> Vec<ShortcutBinding> {
         ShortcutBinding::new(ShortcutAction::WindowAutomation, "F10"),
         ShortcutBinding::new(ShortcutAction::WindowMidi, "F8"),
         ShortcutBinding::new(ShortcutAction::WindowSamples, "F11"),
+        ShortcutBinding::new(ShortcutAction::WindowDebug, "Ctrl+Shift+D"),
         ShortcutBinding::new(ShortcutAction::WindowSettings, "Ctrl+Comma"),
         ShortcutBinding::new(ShortcutAction::ToolPen, "P"),
         ShortcutBinding::new(ShortcutAction::ToolSelect, "S"),
@@ -576,6 +582,19 @@ impl Settings {
         if self.shortcuts.is_empty() {
             self.shortcuts = default_shortcuts();
         }
+        // Commands added by a newer build get their shipped chord when the
+        // stored file predates them. Existing entries are never touched, so a
+        // deliberate unbind (an entry with empty `keys`) survives.
+        let missing: Vec<_> = default_shortcuts()
+            .into_iter()
+            .filter(|shipped| {
+                !self
+                    .shortcuts
+                    .iter()
+                    .any(|existing| existing.action == shipped.action)
+            })
+            .collect();
+        self.shortcuts.extend(missing);
     }
 
     /// Assigns `keys` to `action`, replacing any previous chord for it.
@@ -685,6 +704,23 @@ mod tests {
             vec![ShortcutAction::Undo]
         );
         assert!(settings.actions_for_chord("Ctrl+Shift+Q").is_empty());
+    }
+
+    #[test]
+    fn older_settings_gain_new_commands_but_keep_unbinds() {
+        let mut settings = Settings::default();
+        // Simulate a file written before the debug panel existed.
+        settings
+            .shortcuts
+            .retain(|binding| binding.action != ShortcutAction::WindowDebug);
+        settings.unbind(ShortcutAction::WindowSamples);
+        settings.normalize();
+        assert_eq!(
+            settings.keys_for(ShortcutAction::WindowDebug),
+            "Ctrl+Shift+D"
+        );
+        // A deliberate unbind keeps its (empty) entry and stays unbound.
+        assert!(settings.keys_for(ShortcutAction::WindowSamples).is_empty());
     }
 
     #[test]

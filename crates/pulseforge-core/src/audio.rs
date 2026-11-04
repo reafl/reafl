@@ -3,16 +3,17 @@ use std::{
     f32::consts::TAU,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU32, AtomicU64, Ordering},
         mpsc::{self, SyncSender},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use cpal::{
     BufferSize, SampleFormat, Stream,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
+use pulseforge_profiling::{Channel, SlotCounters, profile_scope, set_thread_channel};
 
 use crate::{
     hosted::{HostedSlot, effect_host_id, instrument_host_id},
@@ -139,6 +140,9 @@ pub enum AudioCommand {
         id: u64,
         audio: Box<pulseforge_hosting::HostedAudio>,
         instrument: bool,
+        /// Debug counters owned by the UI's plug-in registry; the slot writes
+        /// its block times there so the debug panel can list them.
+        counters: Option<Arc<SlotCounters>>,
     },
     /// Drops a hosted plug-in (its editor is closed on the UI thread).
     UnloadHosted {
@@ -153,6 +157,12 @@ pub struct AudioOutput {
     /// Fractional playhead in steps, published as `f64` bits so the UI can
     /// animate it smoothly between audio buffers.
     pub playhead_position: Arc<AtomicU64>,
+    /// Callback work as a fraction of the callback period, stored as f32 bits.
+    /// This is the engine's own real-time load, the number that tells a user
+    /// whether a plug-in is about to overrun the buffer.
+    pub dsp_load: Arc<AtomicU32>,
+    /// Frames the device hands to the callback.
+    pub block_frames: Arc<AtomicU32>,
     project_updates: Arc<Mutex<Option<Box<Project>>>>,
     retired_projects: Arc<Mutex<Vec<Project>>>,
     _stream: Stream,
@@ -188,6 +198,8 @@ impl AudioOutput {
         let retired_projects = Arc::new(Mutex::new(Vec::new()));
         let playhead_steps = Arc::new(AtomicU64::new(0));
         let playhead_position = Arc::new(AtomicU64::new(0.0_f64.to_bits()));
+        let dsp_load = Arc::new(AtomicU32::new(0));
+        let block_frames = Arc::new(AtomicU32::new(0));
         // A small fixed buffer keeps monitoring latency low. The device default
         // is used when the backend refuses that size.
         let mut sender = None;
@@ -198,6 +210,8 @@ impl AudioOutput {
             let callback_retired_projects = Arc::clone(&retired_projects);
             let callback_playhead_steps = Arc::clone(&playhead_steps);
             let callback_playhead_position = Arc::clone(&playhead_position);
+            let callback_dsp_load = Arc::clone(&dsp_load);
+            let callback_block_frames = Arc::clone(&block_frames);
             let mut engine = AudioEngine::new(project.clone(), sample_rate);
             let mut stream_config = config.clone();
             stream_config.buffer_size = buffer_size;
@@ -205,6 +219,11 @@ impl AudioOutput {
                 .build_output_stream(
                     &stream_config,
                     move |output: &mut [f32], _| {
+                        // The callback owns this thread, so the profiler is told
+                        // once per buffer which channel the spans belong to.
+                        set_thread_channel(Channel::Audio);
+                        profile_scope!("audio callback");
+                        let started = Instant::now();
                         for frame in output.chunks_mut(channels) {
                             let stereo = engine.render_frame(&receiver, &callback_project_updates);
                             match frame {
@@ -217,6 +236,13 @@ impl AudioOutput {
                                 [] => {}
                             }
                         }
+                        // Load against the real-time budget of this buffer: the
+                        // single most useful audio number when a plug-in is hot.
+                        let frames = output.len() / channels.max(1);
+                        let period = frames as f32 / sample_rate as f32;
+                        let load = started.elapsed().as_secs_f32() / period.max(f32::EPSILON);
+                        callback_dsp_load.store(load.to_bits(), Ordering::Relaxed);
+                        callback_block_frames.store(frames as u32, Ordering::Relaxed);
                         if let Ok(mut published) = callback_meters.try_lock() {
                             published.clone_from(&engine.meter_levels);
                         }
@@ -252,11 +278,23 @@ impl AudioOutput {
             meters,
             playhead_steps,
             playhead_position,
+            dsp_load,
+            block_frames,
             project_updates,
             retired_projects,
             _stream: stream,
             sample_rate,
         })
+    }
+
+    /// Latest callback load as a fraction of the buffer period.
+    pub fn load(&self) -> f32 {
+        f32::from_bits(self.dsp_load.load(Ordering::Relaxed))
+    }
+
+    /// Frames per callback the device is currently using.
+    pub fn block_frames(&self) -> u32 {
+        self.block_frames.load(Ordering::Relaxed)
     }
 
     pub fn set_project(&self, project: Project) -> Result<(), String> {
@@ -1737,8 +1775,14 @@ impl AudioEngine {
                     id,
                     audio,
                     instrument,
+                    counters,
                 } => {
-                    let slot = HostedSlot::new(*audio, instrument, f64::from(self.sample_rate));
+                    let slot = HostedSlot::new(
+                        *audio,
+                        instrument,
+                        f64::from(self.sample_rate),
+                        counters,
+                    );
                     if instrument {
                         let instrument_id = id as usize;
                         if !self.hosted_instruments.contains(&instrument_id) {
