@@ -11987,7 +11987,12 @@ fn instrument_parameter_options(kind: SynthKind) -> Vec<InstrumentParameter> {
     if matches!(kind, SynthKind::SignalGenerator) {
         parameters.push(InstrumentParameter::Waveform);
     }
-    parameters.push(InstrumentParameter::ArpMode);
+    parameters.extend([
+        InstrumentParameter::ArpMode,
+        InstrumentParameter::ArpGate,
+        InstrumentParameter::ArpOctaves,
+        InstrumentParameter::ArpRate,
+    ]);
     parameters
 }
 

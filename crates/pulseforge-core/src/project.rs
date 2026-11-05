@@ -499,6 +499,12 @@ pub enum InstrumentParameter {
     Waveform,
     /// Index into [`ArpMode`]: an enum automated as a plain integer.
     ArpMode,
+    /// Arpeggiator note length as a fraction of its step.
+    ArpGate,
+    /// Arpeggiator octave span, rounded to a whole number.
+    ArpOctaves,
+    /// Arpeggiator rate amount, in whatever unit the arp rate uses.
+    ArpRate,
 }
 
 impl InstrumentParameter {
@@ -508,6 +514,7 @@ impl InstrumentParameter {
         match self {
             Self::Waveform => Some(SignalWaveform::ALL.len() as u32),
             Self::ArpMode => Some(ArpMode::ALL.len() as u32),
+            Self::ArpOctaves => Some(7),
             _ => None,
         }
     }
@@ -631,6 +638,9 @@ impl ParameterTarget {
                 // Enums are addressed as integers, so their range is the index.
                 InstrumentParameter::Waveform => (0.0, (SignalWaveform::ALL.len() - 1) as f32),
                 InstrumentParameter::ArpMode => (0.0, (ArpMode::ALL.len() - 1) as f32),
+                InstrumentParameter::ArpGate => (0.01, 1.0),
+                InstrumentParameter::ArpOctaves => (1.0, 8.0),
+                InstrumentParameter::ArpRate => (0.1, 64.0),
             },
             Self::InsertEffect { parameter, .. } => match parameter {
                 EffectParameter::Mix
@@ -687,6 +697,9 @@ impl InstrumentParameter {
             Self::FmIndex => "FM index",
             Self::Waveform => "Waveform",
             Self::ArpMode => "Arp mode",
+            Self::ArpGate => "Arp gate",
+            Self::ArpOctaves => "Arp octaves",
+            Self::ArpRate => "Arp rate",
         }
     }
 }
@@ -1512,6 +1525,9 @@ impl Project {
                     InstrumentParameter::FmIndex => instrument.fm_index,
                     InstrumentParameter::Waveform => instrument.signal_waveform.index() as f32,
                     InstrumentParameter::ArpMode => instrument.arpeggio.mode.index() as f32,
+                    InstrumentParameter::ArpGate => instrument.arpeggio.gate,
+                    InstrumentParameter::ArpOctaves => f32::from(instrument.arpeggio.octaves),
+                    InstrumentParameter::ArpRate => instrument.arpeggio.rate.amount,
                 })
             }
             ParameterTarget::AutomationLane {

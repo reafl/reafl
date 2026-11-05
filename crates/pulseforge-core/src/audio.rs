@@ -1080,15 +1080,29 @@ impl AudioEngine {
                         _ => {}
                     }
                 }
-                // Enumerated instrument parameters are applied as whole indices.
+                // Parameters that live on the instrument and are read when a
+                // note is played are written straight onto the project.
                 ParameterTarget::Instrument {
                     instrument_id,
                     parameter,
-                } if parameter.is_discrete() => {
+                } if matches!(
+                    parameter,
+                    InstrumentParameter::Waveform
+                        | InstrumentParameter::ArpMode
+                        | InstrumentParameter::ArpGate
+                        | InstrumentParameter::ArpOctaves
+                        | InstrumentParameter::ArpRate
+                ) => {
                     let Some(base) = self.project.parameter_value(target) else {
                         continue;
                     };
-                    let value = self.automated_value(target, base, position).round();
+                    let value = self.automated_value(target, base, position);
+                    // Enums and octaves are whole numbers.
+                    let value = if parameter.is_discrete() {
+                        value.round()
+                    } else {
+                        value
+                    };
                     let Some(instrument) = self.project.instruments.get_mut(instrument_id) else {
                         continue;
                     };
@@ -1100,6 +1114,16 @@ impl AudioEngine {
                         InstrumentParameter::ArpMode => {
                             instrument.arpeggio.mode =
                                 crate::project::ArpMode::from_index(value.max(0.0) as u32);
+                        }
+                        InstrumentParameter::ArpGate => {
+                            instrument.arpeggio.gate = finite_clamp(value, 0.01, 1.0, 0.6)
+                        }
+                        InstrumentParameter::ArpOctaves => {
+                            instrument.arpeggio.octaves =
+                                finite_clamp(value, 1.0, 8.0, 1.0) as u8
+                        }
+                        InstrumentParameter::ArpRate => {
+                            instrument.arpeggio.rate.amount = finite_clamp(value, 0.1, 64.0, 1.0)
                         }
                         _ => {}
                     }

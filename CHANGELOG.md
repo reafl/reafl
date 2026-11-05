@@ -31,6 +31,9 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
   amount and LFO shape. Shared `automation_context_menu` / and a
   `lane_parameter_slider` helper put the "Add automation lane..." entry on the
   width, waveform, arp-mode and lane-source controls.
+- The arpeggiator's own values are automatable too: `InstrumentParameter::ArpGate`,
+  `::ArpOctaves` (rounded) and `::ArpRate` join `::ArpMode` and `::Waveform`, so
+  the whole per-instrument value set now has targets.
 
 ### Fixed
 
