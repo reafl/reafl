@@ -3208,13 +3208,9 @@ impl PulseForgeApp {
             ],
             egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(91, 67, 110)),
         );
-        // Right-clicking the automation clip offers duplication so one
-        // parameter can carry several clips side by side.
-        let clip_response = ui.interact(
-            clip_rect,
-            egui::Id::new(("automation_clip", track_id)),
-            egui::Sense::click(),
-        );
+        // Right-clicking the lane offers duplication so one parameter can carry
+        // several clips side by side, plus the transition chooser for the
+        // segment under the pointer.
         let automation_menu = ContextMenu {
             items: vec![
                 MenuItem::Action {
@@ -3232,12 +3228,6 @@ impl PulseForgeApp {
                 },
             ],
         };
-        let mut picked_action = None;
-        clip_response.context_menu(|ui| picked_action = automation_menu.show(ui));
-        if let Some(action) = picked_action {
-            self.apply_context_action(action);
-            return false;
-        }
         let multiplier_points = track.modulation_points.clone();
         let curve_source = matches!(track.source, project::AutomationSource::Curve);
         let points = if curve_source {
@@ -3347,8 +3337,14 @@ impl PulseForgeApp {
                 changed = true;
             }
             response.context_menu(|ui| {
-                if curve_source {
-                    ui.label("Curve to this node");
+                if curve_source && point_id == 0 {
+                    // The first point has no incoming segment, so there is no
+                    // transition to shape; say so instead of offering a menu
+                    // that changes nothing.
+                    ui.label("First point: no incoming transition");
+                    ui.separator();
+                } else if curve_source {
+                    ui.label(format!("Curve into this node (step {})", point.step));
                     for curve in [
                         project::AutomationCurve::Linear,
                         project::AutomationCurve::Smooth,
@@ -3411,6 +3407,78 @@ impl PulseForgeApp {
             egui::Id::new(("automation_track", track_id)),
             egui::Sense::click(),
         );
+        // The lane response is registered last, so it wins the pointer wherever
+        // no point sits on top. Resolve the segment under a right-click now and
+        // remember it, so the menu keeps pointing at the same transition while
+        // it stays open.
+        let lane_menu_key = egui::Id::new(("automation_lane_menu", track_id));
+        if response.secondary_clicked()
+            && let Some(pointer) = context.input(|input| input.pointer.interact_pos())
+        {
+            let step_at = grid.start_step as f64
+                + f64::from(pointer.x - grid.grid_left) / f64::from(grid.step_width);
+            let lane_points = if curve_source {
+                &track.points
+            } else {
+                &track.modulation_points
+            };
+            let mut index = lane_points
+                .iter()
+                .position(|point| point.step as f64 >= step_at)
+                .unwrap_or(lane_points.len().saturating_sub(1));
+            if index == 0 {
+                index = 1;
+            }
+            if index < lane_points.len() {
+                context.data_mut(|data| data.insert_temp(lane_menu_key, index));
+            }
+        }
+        let mut picked_action = None;
+        response.context_menu(|ui| {
+            let segment = ui.data(|data| data.get_temp::<usize>(lane_menu_key));
+            let lane_points = if curve_source {
+                &mut track.points
+            } else {
+                &mut track.modulation_points
+            };
+            if let Some(index) = segment
+                && index > 0
+                && index < lane_points.len()
+            {
+                let from_step = lane_points[index - 1].step;
+                let to_step = lane_points[index].step;
+                ui.label(if curve_source {
+                    format!("Transition {from_step} → {to_step}")
+                } else {
+                    format!("Multiplier transition {from_step} → {to_step}")
+                });
+                for curve in [
+                    project::AutomationCurve::Linear,
+                    project::AutomationCurve::Smooth,
+                    project::AutomationCurve::Bezier,
+                    project::AutomationCurve::Curved,
+                    project::AutomationCurve::Pulse,
+                    project::AutomationCurve::Constant,
+                    project::AutomationCurve::Steps,
+                ] {
+                    if ui
+                        .selectable_value(&mut lane_points[index].curve, curve, format!("{curve:?}"))
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                }
+                ui.separator();
+            }
+            if let Some(action) = automation_menu.show(ui) {
+                picked_action = Some(action);
+                ui.close();
+            }
+        });
+        if let Some(action) = picked_action {
+            self.apply_context_action(action);
+            return false;
+        }
         if response.clicked() {
             self.windows.automation = true;
             if let Some(pointer) = context.input(|input| input.pointer.interact_pos()) {

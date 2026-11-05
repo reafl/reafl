@@ -17,6 +17,11 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ### Fixed
 
+- Automation lanes can select a curve transition again: right-clicking the lane
+  offers the curve for the segment under the pointer (the row response used to
+  swallow the clip and point menus, so nothing could be picked), and the
+  per-point menu names the incoming transition and explains that the first point
+  has none.
 - Mixer chain presets now include external plug-in state: the inspector captures
   plug-in state before writing the preset, and loading one re-instantiates the
   hosted plug-ins so their parameters are restored (also from the "+ Track"

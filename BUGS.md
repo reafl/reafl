@@ -106,6 +106,10 @@ This file is a bugtracker.
   *FIXED*
 - Moving automation clips and drawing points on them causes conflicts.
 - In curve mode, no transition can be selected.
+  *Fixed: right-clicking the lane now offers a transition chooser for the segment
+  under the pointer ("Transition a → b", plus the clip actions that used to live
+  on a separate, unreachable response), and the per-point menu names the
+  incoming transition and says so plainly on the first point, which has none.*
 - Sliders are not automatable.
 - Numeric selection boxes are not automatable.
 - Enums are not automatable.
