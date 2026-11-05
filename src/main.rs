@@ -339,6 +339,8 @@ fn automation_owner_lane(project: &Project, track: &AutomationTrack) -> usize {
             .map_or(0, |instrument| instrument.default_mixer_lane),
         ParameterTarget::InsertEffect { channel_id, .. } => channel_id,
         ParameterTarget::MixerChannel { channel_id, .. } => channel_id,
+        // Lane-to-lane automation stays on the lane it belongs to.
+        ParameterTarget::AutomationLane { .. } => project.lanes.len(),
         // Hosted plug-in parameters live on their insert slot, so group them
         // under the channel that owns that slot.
         ParameterTarget::PluginParameter { host_id, .. } => {
@@ -7465,12 +7467,26 @@ impl PulseForgeApp {
                                 .add(egui::Slider::new(sustain, 0.0..=1.0).text("Sustain"))
                                 .changed();
                             changed |= edit_time_value(ui, track_id, "Release", release);
-                            changed |= ui
-                                .add(egui::Slider::new(base, 0.0..=1.0).text("Base"))
-                                .changed();
-                            changed |= ui
-                                .add(egui::Slider::new(depth, 0.0..=1.0).text("Depth"))
-                                .changed();
+                            changed |= lane_parameter_slider(
+                                ui,
+                                "Base",
+                                base,
+                                0.0..=1.0,
+                                ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Base,
+                                },
+                            );
+                            changed |= lane_parameter_slider(
+                                ui,
+                                "Depth",
+                                depth,
+                                0.0..=1.0,
+                                ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Depth,
+                                },
+                            );
                         });
                     }
                     project::AutomationSource::Lfo {
@@ -7480,38 +7496,72 @@ impl PulseForgeApp {
                         base,
                         depth,
                     } => {
-                        egui::ComboBox::from_id_salt(("automation_lfo_shape", track_id))
-                            .selected_text(format!("{shape:?}"))
-                            .show_ui(ui, |ui| {
-                                // Sample & hold is its own source now, so the LFO
-                                // shape list no longer offers it.
-                                for candidate in [
-                                    project::LfoShape::Sine,
-                                    project::LfoShape::Triangle,
-                                    project::LfoShape::Saw,
-                                    project::LfoShape::Square,
-                                ] {
-                                    if ui
-                                        .selectable_value(
-                                            shape,
-                                            candidate,
-                                            format!("{candidate:?}"),
-                                        )
-                                        .changed()
-                                    {
-                                        changed = true;
+                        let shape_response =
+                            egui::ComboBox::from_id_salt(("automation_lfo_shape", track_id))
+                                .selected_text(format!("{shape:?}"))
+                                .show_ui(ui, |ui| {
+                                    // Sample & hold is its own source now, so the LFO
+                                    // shape list no longer offers it.
+                                    for candidate in [
+                                        project::LfoShape::Sine,
+                                        project::LfoShape::Triangle,
+                                        project::LfoShape::Saw,
+                                        project::LfoShape::Square,
+                                    ] {
+                                        if ui
+                                            .selectable_value(
+                                                shape,
+                                                candidate,
+                                                format!("{candidate:?}"),
+                                            )
+                                            .changed()
+                                        {
+                                            changed = true;
+                                        }
                                     }
-                                }
-                            });
+                                })
+                                .response;
+                        // The shape is an enum, automated as a plain integer.
+                        automation_context_menu(
+                            &shape_response,
+                            "Shape",
+                            ParameterTarget::AutomationLane {
+                                track_id,
+                                parameter: project::AutomationLaneParameter::Shape,
+                            },
+                        );
                         ui.horizontal(|ui| {
-                            changed |= edit_time_value(ui, track_id, "Rate", rate);
+                            changed |= edit_time_value_automated(
+                                ui,
+                                track_id,
+                                "Rate",
+                                rate,
+                                Some(ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::RateAmount,
+                                }),
+                            );
                             changed |= ui.checkbox(retrigger, "Retrigger").changed();
-                            changed |= ui
-                                .add(egui::Slider::new(base, 0.0..=1.0).text("Base"))
-                                .changed();
-                            changed |= ui
-                                .add(egui::Slider::new(depth, 0.0..=1.0).text("Depth"))
-                                .changed();
+                            changed |= lane_parameter_slider(
+                                ui,
+                                "Base",
+                                base,
+                                0.0..=1.0,
+                                ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Base,
+                                },
+                            );
+                            changed |= lane_parameter_slider(
+                                ui,
+                                "Depth",
+                                depth,
+                                0.0..=1.0,
+                                ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Depth,
+                                },
+                            );
                         });
                     }
                     project::AutomationSource::SampleAndHold {
@@ -7521,13 +7571,36 @@ impl PulseForgeApp {
                         depth,
                     } => {
                         ui.horizontal(|ui| {
-                            changed |= edit_time_value(ui, track_id, "Rate", rate);
-                            changed |= ui
-                                .add(egui::Slider::new(base, 0.0..=1.0).text("Base"))
-                                .changed();
-                            changed |= ui
-                                .add(egui::Slider::new(depth, 0.0..=1.0).text("Depth"))
-                                .changed();
+                            changed |= edit_time_value_automated(
+                                ui,
+                                track_id,
+                                "Rate",
+                                rate,
+                                Some(ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::RateAmount,
+                                }),
+                            );
+                            changed |= lane_parameter_slider(
+                                ui,
+                                "Base",
+                                base,
+                                0.0..=1.0,
+                                ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Base,
+                                },
+                            );
+                            changed |= lane_parameter_slider(
+                                ui,
+                                "Depth",
+                                depth,
+                                0.0..=1.0,
+                                ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Depth,
+                                },
+                            );
                             ui.label("Seed");
                             changed |= ui
                                 .add(egui::DragValue::new(seed).range(0..=u32::MAX))
@@ -7546,16 +7619,39 @@ impl PulseForgeApp {
                             changed |= ui
                                 .add(egui::DragValue::new(seed).range(0..=u32::MAX))
                                 .changed();
-                            changed |= edit_time_value(ui, track_id, "Rate", rate);
+                            changed |= edit_time_value_automated(
+                                ui,
+                                track_id,
+                                "Rate",
+                                rate,
+                                Some(ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::RateAmount,
+                                }),
+                            );
                             changed |= ui
                                 .add(egui::Slider::new(octaves, 1..=16).text("Octaves"))
                                 .changed();
-                            changed |= ui
-                                .add(egui::Slider::new(base, 0.0..=1.0).text("Base"))
-                                .changed();
-                            changed |= ui
-                                .add(egui::Slider::new(depth, 0.0..=1.0).text("Depth"))
-                                .changed();
+                            changed |= lane_parameter_slider(
+                                ui,
+                                "Base",
+                                base,
+                                0.0..=1.0,
+                                ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Base,
+                                },
+                            );
+                            changed |= lane_parameter_slider(
+                                ui,
+                                "Depth",
+                                depth,
+                                0.0..=1.0,
+                                ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Depth,
+                                },
+                            );
                         });
                     }
                 }
@@ -9199,6 +9295,7 @@ impl eframe::App for PulseForgeApp {
                 // Global targets are added straight to the automation list.
                 ParameterTarget::PluginParameter { .. }
                 | ParameterTarget::MixerChannel { .. }
+                | ParameterTarget::AutomationLane { .. }
                 | ParameterTarget::Tempo => {
                     self.create_automation_for_target(target);
                 }
@@ -10666,6 +10763,10 @@ fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripResult
                             channel_id: strip.channel_id,
                             parameter: project::MixerParameter::Pan,
                         };
+                        let width_target = ParameterTarget::MixerChannel {
+                            channel_id: strip.channel_id,
+                            parameter: project::MixerParameter::Width,
+                        };
                         ui.horizontal(|ui| {
                             ui.add_space(pad);
                             if fader(
@@ -10690,6 +10791,7 @@ fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripResult
                                     result.changed |= Knob::new("", 0.0, 2.0, "")
                                         .with_default(1.0)
                                         .compact()
+                                        .automates(width_target)
                                         .show(ui, width);
                                 }
                             });
@@ -10861,17 +10963,34 @@ fn edit_time_value(
     label: &str,
     value: &mut project::TimeValue,
 ) -> bool {
+    edit_time_value_automated(ui, track_id, label, value, None)
+}
+
+/// Time value editor whose amount can also be automated.
+fn edit_time_value_automated(
+    ui: &mut egui::Ui,
+    track_id: usize,
+    label: &str,
+    value: &mut project::TimeValue,
+    target: Option<ParameterTarget>,
+) -> bool {
     let mut changed = false;
     // Value and unit share one row so the control does not wrap onto two lines.
     ui.horizontal(|ui| {
         ui.label(label);
-        changed |= ui
-            .add(
-                egui::DragValue::new(&mut value.amount)
-                    .range(0.0..=60_000.0)
-                    .speed(1.0),
-            )
-            .changed();
+        let amount = ui.add(
+            egui::DragValue::new(&mut value.amount)
+                .range(0.0..=60_000.0)
+                .speed(1.0),
+        );
+        if let Some(target) = target {
+            automation_context_menu(
+                &amount,
+                &format!("{label} · {:.2}", value.amount),
+                target,
+            );
+        }
+        changed |= amount.changed();
         egui::ComboBox::from_id_salt(("time_unit", track_id, label))
             .selected_text(match value.unit {
                 project::TimeUnit::Steps => "steps",
@@ -11163,6 +11282,20 @@ fn fader(
         );
     }
     changed
+}
+
+/// Slider for one of an automation lane's own parameters, with a right-click
+/// menu that can turn it into an automation target.
+fn lane_parameter_slider(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut f32,
+    range: std::ops::RangeInclusive<f32>,
+    target: ParameterTarget,
+) -> bool {
+    let response = ui.add(egui::Slider::new(value, range).text(label));
+    automation_context_menu(&response, &format!("{label} · {value:.2}"), target);
+    response.changed()
 }
 
 fn render_meter_sized(ui: &mut egui::Ui, level: f32, width: f32, height: f32) {
@@ -11849,6 +11982,12 @@ fn instrument_parameter_options(kind: SynthKind) -> Vec<InstrumentParameter> {
         | SynthKind::SignalGenerator
         | SynthKind::External => {}
     }
+    // Enums are automatable as integers, so they are offered like any other
+    // parameter. The waveform only exists for the signal generator.
+    if matches!(kind, SynthKind::SignalGenerator) {
+        parameters.push(InstrumentParameter::Waveform);
+    }
+    parameters.push(InstrumentParameter::ArpMode);
     parameters
 }
 
@@ -11946,6 +12085,13 @@ fn parameter_target_label(project: &Project, target: ParameterTarget) -> String 
             parameter.label()
         ),
         ParameterTarget::Tempo => "Tempo".to_owned(),
+        ParameterTarget::AutomationLane {
+            track_id,
+            parameter,
+        } => format!(
+            "Auto {track_id:02} · {}",
+            parameter.label()
+        ),
         ParameterTarget::InsertEffect {
             channel_id,
             slot_id,

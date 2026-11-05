@@ -19,9 +19,9 @@ use crate::{
     hosted::{HostedSlot, effect_host_id, instrument_host_id},
     plugins::{BuiltinEffect, EffectParameters},
     project::{
-        AutomationSource, ClipSource, DefaultSample, EffectParameter, Instrument,
-        InstrumentParameter, LfoShape, MixerParameter, ParameterTarget, PianoNote, Project,
-        SignalWaveform, SynthKind, TimeUnit, TimeValue, finite_clamp, normalize_sends,
+        AutomationLaneParameter, AutomationSource, ClipSource, DefaultSample, EffectParameter,
+        Instrument, InstrumentParameter, LfoShape, MixerParameter, ParameterTarget, PianoNote,
+        Project, SignalWaveform, SynthKind, TimeUnit, TimeValue, finite_clamp, normalize_sends,
     },
     smooth::SmoothedValue,
 };
@@ -506,6 +506,7 @@ struct AudioEngine {
     /// Linear ramps that keep parameter jumps from producing zipper noise.
     lane_gain: Vec<SmoothedValue>,
     lane_pan: Vec<SmoothedValue>,
+    lane_width: Vec<SmoothedValue>,
     master_gain: SmoothedValue,
     master_pan: SmoothedValue,
     effect_mix: Vec<Vec<SmoothedValue>>,
@@ -597,6 +598,7 @@ impl AudioEngine {
             control_countdown: 0,
             lane_gain: Vec::new(),
             lane_pan: Vec::new(),
+            lane_width: Vec::new(),
             master_gain: SmoothedValue::new(1.0, 1),
             master_pan: SmoothedValue::new(0.0, 1),
             effect_mix: Vec::new(),
@@ -631,6 +633,7 @@ impl AudioEngine {
             .lane_gain
             .iter_mut()
             .chain(self.lane_pan.iter_mut())
+            .chain(self.lane_width.iter_mut())
             .chain(self.effect_mix.iter_mut().flatten())
         {
             let target = value.target();
@@ -679,6 +682,7 @@ impl AudioEngine {
         let lane_count = self.project.lanes.len();
         let mut gains = Vec::with_capacity(lane_count);
         let mut pans = Vec::with_capacity(lane_count);
+        let mut widths = Vec::with_capacity(lane_count);
         let mut mixes: Vec<Vec<SmoothedValue>> = Vec::with_capacity(lane_count + 1);
         for (channel, lane) in self.project.lanes.iter().enumerate() {
             let mut gain = self
@@ -691,12 +695,20 @@ impl AudioEngine {
                 .get(channel)
                 .copied()
                 .unwrap_or_else(|| SmoothedValue::new(lane.pan, ramp));
+            let mut width = self
+                .lane_width
+                .get(channel)
+                .copied()
+                .unwrap_or_else(|| SmoothedValue::new(lane.width, ramp));
             gain = gain.with_ramp(ramp);
             pan = pan.with_ramp(ramp);
+            width = width.with_ramp(ramp);
             gain.set_target(lane.gain);
             pan.set_target(lane.pan);
+            width.set_target(lane.width);
             gains.push(gain);
             pans.push(pan);
+            widths.push(width);
             let mut slots = Vec::with_capacity(lane.inserts.len());
             for (slot_id, slot) in lane.inserts.iter().enumerate() {
                 let mut value = self
@@ -727,6 +739,7 @@ impl AudioEngine {
         mixes.push(master_slots);
         self.lane_gain = gains;
         self.lane_pan = pans;
+        self.lane_width = widths;
         self.effect_mix = mixes;
         self.master_gain = self.master_gain.with_ramp(ramp);
         self.master_gain.set_target(self.project.master.gain);
@@ -1009,11 +1022,87 @@ impl AudioEngine {
                                 pan.set_target(value);
                             }
                         }
+                        MixerParameter::Width => {
+                            if let Some(width) = self.lane_width.get_mut(channel_id) {
+                                width.set_target(value);
+                            }
+                        }
                     }
                 }
                 ParameterTarget::Tempo => {
                     let value = self.automated_value(target, self.project.bpm, position);
                     self.project.bpm = finite_clamp(value, 20.0, 300.0, 120.0);
+                }
+                ParameterTarget::AutomationLane {
+                    track_id,
+                    parameter,
+                } => {
+                    let Some(base) = self.project.parameter_value(target) else {
+                        continue;
+                    };
+                    let value = self.automated_value(target, base, position);
+                    // Round first: `Shape` is an enum addressed as an integer.
+                    let value = if matches!(parameter, AutomationLaneParameter::Shape) {
+                        value.round()
+                    } else {
+                        value
+                    };
+                    let Some(track) = self.project.automation_tracks.get_mut(track_id) else {
+                        continue;
+                    };
+                    match (&mut track.source, parameter) {
+                        (
+                            AutomationSource::MidiEnvelope { base, .. }
+                            | AutomationSource::Lfo { base, .. }
+                            | AutomationSource::Perlin { base, .. }
+                            | AutomationSource::SampleAndHold { base, .. },
+                            AutomationLaneParameter::Base,
+                        ) => *base = finite_clamp(value, 0.0, 1.0, *base),
+                        (
+                            AutomationSource::MidiEnvelope { depth, .. }
+                            | AutomationSource::Lfo { depth, .. }
+                            | AutomationSource::Perlin { depth, .. }
+                            | AutomationSource::SampleAndHold { depth, .. },
+                            AutomationLaneParameter::Depth,
+                        ) => *depth = finite_clamp(value, 0.0, 1.0, *depth),
+                        (
+                            AutomationSource::Lfo { rate, .. }
+                            | AutomationSource::Perlin { rate, .. }
+                            | AutomationSource::SampleAndHold { rate, .. },
+                            AutomationLaneParameter::RateAmount,
+                        ) => rate.amount = finite_clamp(value, 0.1, 64.0, rate.amount),
+                        (
+                            AutomationSource::Lfo { shape, .. },
+                            AutomationLaneParameter::Shape,
+                        ) => {
+                            *shape = LfoShape::from_index(value.max(0.0) as u32);
+                        }
+                        _ => {}
+                    }
+                }
+                // Enumerated instrument parameters are applied as whole indices.
+                ParameterTarget::Instrument {
+                    instrument_id,
+                    parameter,
+                } if parameter.is_discrete() => {
+                    let Some(base) = self.project.parameter_value(target) else {
+                        continue;
+                    };
+                    let value = self.automated_value(target, base, position).round();
+                    let Some(instrument) = self.project.instruments.get_mut(instrument_id) else {
+                        continue;
+                    };
+                    match parameter {
+                        InstrumentParameter::Waveform => {
+                            instrument.signal_waveform =
+                                crate::project::SignalWaveform::from_index(value.max(0.0) as u32);
+                        }
+                        InstrumentParameter::ArpMode => {
+                            instrument.arpeggio.mode =
+                                crate::project::ArpMode::from_index(value.max(0.0) as u32);
+                        }
+                        _ => {}
+                    }
                 }
                 ParameterTarget::Instrument { .. } | ParameterTarget::InsertEffect { .. } => {}
             }
@@ -1610,7 +1699,7 @@ impl AudioEngine {
             self.lane_inputs[lane_id][1] *= gain * right_gain;
             // Stereo width is a mid/side scale, applied before the EQ so the
             // shelves react to the widened signal.
-            let width = self.project.lanes[lane_id].width;
+            let width = self.lane_width[lane_id].advance();
             if (width - 1.0).abs() > 1e-4 {
                 let frame = self.lane_inputs[lane_id];
                 let mid = (frame[0] + frame[1]) * 0.5;

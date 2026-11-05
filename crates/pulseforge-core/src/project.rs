@@ -93,6 +93,30 @@ pub enum LfoShape {
     SampleAndHold,
 }
 
+impl LfoShape {
+    /// Every shape, in the order the integer-automation index uses.
+    pub const ALL: [Self; 5] = [
+        Self::Sine,
+        Self::Triangle,
+        Self::Saw,
+        Self::Square,
+        Self::SampleAndHold,
+    ];
+
+    /// Shape for an integer index, clamped to the available range.
+    pub fn from_index(index: u32) -> Self {
+        Self::ALL[(index as usize).min(Self::ALL.len() - 1)]
+    }
+
+    /// Position of this shape in [`Self::ALL`].
+    pub fn index(self) -> u32 {
+        Self::ALL
+            .iter()
+            .position(|shape| *shape == self)
+            .unwrap_or(0) as u32
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AutomationCurve {
@@ -281,6 +305,18 @@ impl ArpMode {
         }
     }
 
+    /// Mode for an integer index, clamped to the available range.
+    pub fn from_index(index: u32) -> Self {
+        Self::ALL[(index as usize).min(Self::ALL.len() - 1)]
+    }
+
+    pub fn index(self) -> u32 {
+        Self::ALL
+            .iter()
+            .position(|mode| *mode == self)
+            .unwrap_or(0) as u32
+    }
+
     /// Reorders `pitches` (already sorted low to high) for this mode.
     pub fn order(self, pitches: &[u8]) -> Vec<u8> {
         let mut values = pitches.to_vec();
@@ -430,6 +466,22 @@ pub enum SignalWaveform {
     Square,
 }
 
+impl SignalWaveform {
+    /// Every waveform, in the order the integer-automation index uses.
+    pub const ALL: [Self; 4] = [Self::Sine, Self::Triangle, Self::Saw, Self::Square];
+
+    pub fn from_index(index: u32) -> Self {
+        Self::ALL[(index as usize).min(Self::ALL.len() - 1)]
+    }
+
+    pub fn index(self) -> u32 {
+        Self::ALL
+            .iter()
+            .position(|waveform| *waveform == self)
+            .unwrap_or(0) as u32
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InstrumentParameter {
@@ -443,6 +495,27 @@ pub enum InstrumentParameter {
     Decay,
     FmRatio,
     FmIndex,
+    /// Index into [`SignalWaveform`]: an enum automated as a plain integer.
+    Waveform,
+    /// Index into [`ArpMode`]: an enum automated as a plain integer.
+    ArpMode,
+}
+
+impl InstrumentParameter {
+    /// Number of choices for parameters addressed as integers. `None` means the
+    /// parameter is continuous.
+    pub fn discrete_count(self) -> Option<u32> {
+        match self {
+            Self::Waveform => Some(SignalWaveform::ALL.len() as u32),
+            Self::ArpMode => Some(ArpMode::ALL.len() as u32),
+            _ => None,
+        }
+    }
+
+    /// True when the value is rounded to a whole number before it is applied.
+    pub fn is_discrete(self) -> bool {
+        self.discrete_count().is_some()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -467,6 +540,8 @@ pub enum EffectParameter {
 pub enum MixerParameter {
     Gain,
     Pan,
+    /// Mid/side stereo width, `0` (mono) to `2` (double side).
+    Width,
 }
 
 impl MixerParameter {
@@ -474,6 +549,31 @@ impl MixerParameter {
         match self {
             Self::Gain => "Volume",
             Self::Pan => "Pan",
+            Self::Width => "Width",
+        }
+    }
+}
+
+/// Parameters of an automation lane's own source, so modulation can modulate
+/// modulation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutomationLaneParameter {
+    Base,
+    Depth,
+    /// The rate amount, in whatever unit the lane's `rate` uses.
+    RateAmount,
+    /// Index into [`LfoShape`] for LFO lanes.
+    Shape,
+}
+
+impl AutomationLaneParameter {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Base => "Base",
+            Self::Depth => "Depth",
+            Self::RateAmount => "Rate",
+            Self::Shape => "Shape",
         }
     }
 }
@@ -496,6 +596,11 @@ pub enum ParameterTarget {
     MixerChannel {
         channel_id: usize,
         parameter: MixerParameter,
+    },
+    /// A parameter of another automation lane's source.
+    AutomationLane {
+        track_id: usize,
+        parameter: AutomationLaneParameter,
     },
     /// Project tempo in BPM.
     Tempo,
@@ -523,6 +628,9 @@ impl ParameterTarget {
                 InstrumentParameter::Tone => (0.0, 1.0),
                 InstrumentParameter::Decay => (0.05, 4.0),
                 InstrumentParameter::FmRatio => (0.25, 16.0),
+                // Enums are addressed as integers, so their range is the index.
+                InstrumentParameter::Waveform => (0.0, (SignalWaveform::ALL.len() - 1) as f32),
+                InstrumentParameter::ArpMode => (0.0, (ArpMode::ALL.len() - 1) as f32),
             },
             Self::InsertEffect { parameter, .. } => match parameter {
                 EffectParameter::Mix
@@ -542,6 +650,12 @@ impl ParameterTarget {
             Self::MixerChannel { parameter, .. } => match parameter {
                 MixerParameter::Gain => (0.0, 1.0),
                 MixerParameter::Pan => (-1.0, 1.0),
+                MixerParameter::Width => (0.0, 2.0),
+            },
+            Self::AutomationLane { parameter, .. } => match parameter {
+                AutomationLaneParameter::Base | AutomationLaneParameter::Depth => (0.0, 1.0),
+                AutomationLaneParameter::RateAmount => (0.1, 64.0),
+                AutomationLaneParameter::Shape => (0.0, (LfoShape::ALL.len() - 1) as f32),
             },
             Self::Tempo => (20.0, 300.0),
         }
@@ -571,6 +685,8 @@ impl InstrumentParameter {
             Self::Decay => "Decay",
             Self::FmRatio => "FM ratio",
             Self::FmIndex => "FM index",
+            Self::Waveform => "Waveform",
+            Self::ArpMode => "Arp mode",
         }
     }
 }
@@ -1200,9 +1316,10 @@ impl Project {
         for route in &mut self.midi_routes {
             *route = (*route).min(self.instruments.len() - 1);
         }
+        // Lane-to-lane automation may only point at lanes that exist.
+        let track_count = self.automation_tracks.len();
         self.automation_tracks.retain_mut(|track| {
-            track.length_steps = track.length_steps.max(1);
-            let target_is_valid = match track.target {
+            track.length_steps = track.length_steps.max(1);            let target_is_valid = match track.target {
                 ParameterTarget::Instrument { instrument_id, .. } => {
                     instrument_id < self.instruments.len()
                 }
@@ -1225,6 +1342,7 @@ impl Project {
                 ParameterTarget::PluginParameter { .. } => true,
                 ParameterTarget::MixerChannel { channel_id, .. } => channel_id <= lane_count,
                 ParameterTarget::Tempo => true,
+                ParameterTarget::AutomationLane { track_id, .. } => track_id < track_count,
             };
             if !target_is_valid {
                 return false;
@@ -1348,15 +1466,16 @@ impl Project {
                 channel_id,
                 parameter,
             } => {
-                let (gain, pan) = if channel_id == self.lanes.len() {
-                    (self.master.gain, self.master.pan)
+                let (gain, pan, width) = if channel_id == self.lanes.len() {
+                    (self.master.gain, self.master.pan, 1.0)
                 } else {
                     let lane = self.lanes.get(channel_id)?;
-                    (lane.gain, lane.pan)
+                    (lane.gain, lane.pan, lane.width)
                 };
                 Some(match parameter {
                     MixerParameter::Gain => gain,
                     MixerParameter::Pan => pan,
+                    MixerParameter::Width => width,
                 })
             }
             ParameterTarget::Tempo => Some(self.bpm),
@@ -1391,7 +1510,49 @@ impl Project {
                     .seconds(self.bpm),
                     InstrumentParameter::FmRatio => instrument.fm_ratio,
                     InstrumentParameter::FmIndex => instrument.fm_index,
+                    InstrumentParameter::Waveform => instrument.signal_waveform.index() as f32,
+                    InstrumentParameter::ArpMode => instrument.arpeggio.mode.index() as f32,
                 })
+            }
+            ParameterTarget::AutomationLane {
+                track_id,
+                parameter,
+            } => {
+                let track = self.automation_tracks.get(track_id)?;
+                match (&track.source, parameter) {
+                    (
+                        AutomationSource::MidiEnvelope { base, .. }
+                        | AutomationSource::Lfo { base, .. }
+                        | AutomationSource::Perlin { base, .. }
+                        | AutomationSource::SampleAndHold { base, .. },
+                        AutomationLaneParameter::Base,
+                    ) => Some(*base),
+                    (
+                        AutomationSource::MidiEnvelope { depth, .. }
+                        | AutomationSource::Lfo { depth, .. }
+                        | AutomationSource::Perlin { depth, .. }
+                        | AutomationSource::SampleAndHold { depth, .. },
+                        AutomationLaneParameter::Depth,
+                    ) => Some(*depth),
+                    (
+                        AutomationSource::MidiEnvelope { .. }
+                        | AutomationSource::Lfo { .. }
+                        | AutomationSource::Perlin { .. }
+                        | AutomationSource::SampleAndHold { .. },
+                        AutomationLaneParameter::RateAmount,
+                    ) => Some(match &track.source {
+                        AutomationSource::MidiEnvelope { .. } => return None,
+                        AutomationSource::Lfo { rate, .. }
+                        | AutomationSource::Perlin { rate, .. }
+                        | AutomationSource::SampleAndHold { rate, .. } => rate.amount,
+                        AutomationSource::Curve | AutomationSource::RelativeCurve => return None,
+                    }),
+                    (
+                        AutomationSource::Lfo { shape, .. },
+                        AutomationLaneParameter::Shape,
+                    ) => Some(shape.index() as f32),
+                    _ => None,
+                }
             }
             ParameterTarget::InsertEffect {
                 channel_id,
@@ -2134,6 +2295,75 @@ mod tests {
         assert!((project.automated_value(target, 0.5, 15.0) - 0.75).abs() < 1e-4);
         // A negative point survives normalization instead of clamping to zero.
         assert!(project.automation_tracks[0].points[0].value < 0.0);
+    }
+
+    #[test]
+    fn enums_are_addressed_as_integers() {
+        let mut project = Project::default();
+        project.instruments.clear();
+        project.instruments.push(Instrument {
+            signal_waveform: SignalWaveform::Saw,
+            arpeggio: Arpeggio {
+                mode: ArpMode::UpDown,
+                ..Arpeggio::default()
+            },
+            ..Instrument::default()
+        });
+        let waveform = ParameterTarget::Instrument {
+            instrument_id: 0,
+            parameter: InstrumentParameter::Waveform,
+        };
+        let arp = ParameterTarget::Instrument {
+            instrument_id: 0,
+            parameter: InstrumentParameter::ArpMode,
+        };
+        assert_eq!(project.parameter_value(waveform), Some(2.0));
+        assert_eq!(project.parameter_value(arp), Some(2.0));
+        // Halfway along the range rounds to a whole index once applied.
+        assert_eq!(waveform.denormalize_value(1.0), 3.0);
+        assert_eq!(arp.denormalize_value(0.0), 0.0);
+        assert!(InstrumentParameter::Waveform.is_discrete());
+        assert!(!InstrumentParameter::Gain.is_discrete());
+    }
+
+    #[test]
+    fn automation_lane_parameters_are_addressable() {
+        let mut project = Project::default();
+        project.automation_tracks.push(AutomationTrack {
+            source: AutomationSource::Lfo {
+                shape: LfoShape::Square,
+                rate: TimeValue {
+                    amount: 2.0,
+                    unit: TimeUnit::Steps,
+                },
+                retrigger: true,
+                base: 0.25,
+                depth: 0.5,
+            },
+            ..AutomationTrack::default()
+        });
+        let lane = |parameter| ParameterTarget::AutomationLane {
+            track_id: 0,
+            parameter,
+        };
+        assert_eq!(
+            project.parameter_value(lane(AutomationLaneParameter::Base)),
+            Some(0.25)
+        );
+        assert_eq!(
+            project.parameter_value(lane(AutomationLaneParameter::Depth)),
+            Some(0.5)
+        );
+        assert_eq!(
+            project.parameter_value(lane(AutomationLaneParameter::RateAmount)),
+            Some(2.0)
+        );
+        assert_eq!(
+            project.parameter_value(lane(AutomationLaneParameter::Shape)),
+            Some(LfoShape::Square.index() as f32)
+        );
+        project.normalize();
+        assert_eq!(project.automation_tracks.len(), 1);
     }
 
     #[test]

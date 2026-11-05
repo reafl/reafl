@@ -120,7 +120,18 @@ This file is a bugtracker.
   *Fixed: shared `automation_context_menu` helper; the BPM box now offers a
   `Tempo` lane (and the knob's ctrl+click numeric entry already did).*
 - Enums are not automatable.
+  *Fixed: `InstrumentParameter::Waveform` and `::ArpMode` are addressed as
+  integer indices (`SignalWaveform::ALL` / `ArpMode::ALL` order), rounded when
+  applied; the LFO shape is `AutomationLaneParameter::Shape`. Names are not
+  shown yet, as requested.*
 - Automation parameters are not automatable.
+  *Fixed: `ParameterTarget::AutomationLane { track_id, parameter }` covers a
+  lane's base, depth, rate amount and (for LFOs) shape, so modulation can
+  modulate modulation. Right-click the Base/Depth/Rate/Shape control to add the
+  lane.*
+- The mixer stereo width is not automatable.
+  *Fixed: `MixerParameter::Width` (0 mono to 2 double side) with a smoothed
+  `lane_width` in the engine, and the strip's width knob is now a target.*
 
 ## Step sequencer
 

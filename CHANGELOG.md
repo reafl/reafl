@@ -23,6 +23,14 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
   instead of replacing it, so several relative lanes can stack over an absolute
   one. Negative point values now survive `Project::normalize` and the
   `automated_value` paths handle the offset both in the engine and in the UI.
+- Automation coverage for the remaining values:
+  `MixerParameter::Width` gives the mixer stereo width knob a lane (the engine
+  gained a smoothed `lane_width`), `InstrumentParameter::Waveform` and
+  `::ArpMode` automate enums as plain integer indices, and
+  `ParameterTarget::AutomationLane` automates a lane's own base, depth, rate
+  amount and LFO shape. Shared `automation_context_menu` / and a
+  `lane_parameter_slider` helper put the "Add automation lane..." entry on the
+  width, waveform, arp-mode and lane-source controls.
 
 ### Fixed
 
