@@ -105,6 +105,8 @@ This file is a bugtracker.
 - LFO retriggers breaks the visualisation.
   *FIXED*
 - Moving automation clips and drawing points on them causes conflicts.
+  *Fixed: a clip is only grabbed by its 8 px title band and never when the press
+  lands on a point, so drawing points no longer drags the clip underneath them.*
 - In curve mode, no transition can be selected.
   *Fixed: right-clicking the lane now offers a transition chooser for the segment
   under the pointer ("Transition a → b", plus the clip actions that used to live

@@ -54,6 +54,10 @@ const SNAP_STEPS: &[u64] = &[1, 2, 4, 8, 16, 32, 64, 128];
 /// Horizontal zoom limits for the arrangement and the editors.
 const MIN_ZOOM: f32 = 0.2;
 const MAX_ZOOM: f32 = 3.0;
+/// Height of the title band that moves an automation clip. Pressing anywhere
+/// else inside the clip belongs to the curve points, so drawing and moving no
+/// longer fight over the same gesture.
+const AUTOMATION_CLIP_GRAB_HEIGHT: f32 = 8.0;
 
 const AUTOMATED_TARGETS_KEY: &str = "pulseforge.automated_targets";
 const TOOLTIP_MODE_KEY: &str = "pulseforge.tooltip_mode";
@@ -3122,8 +3126,42 @@ impl PulseForgeApp {
         let end_x = grid.grid_left
             + (track_start.saturating_add(track_length) as f64 - grid.start_step as f64) as f32
                 * grid.step_width;
+        // Points sit on the same pixels as the clip body, so a press that lands
+        // on one must not also drag the clip.
+        let point_centres: Vec<egui::Pos2> = self
+            .project
+            .automation_tracks
+            .get(track_id)
+            .map(|track| {
+                let points = if matches!(track.source, project::AutomationSource::Curve) {
+                    &track.points
+                } else {
+                    &track.modulation_points
+                };
+                points
+                    .iter()
+                    .map(|point| {
+                        egui::pos2(
+                            grid.grid_left
+                                + (point.step as f64 - grid.start_step as f64) as f32
+                                    * grid.step_width,
+                            row.bottom()
+                                - 6.0
+                                - point.value.clamp(0.0, 1.0) * (row.height() - 12.0),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let on_point = |position: egui::Pos2| {
+            point_centres.iter().any(|centre| {
+                (centre.x - position.x).abs() <= 7.0 && (centre.y - position.y).abs() <= 7.0
+            })
+        };
         if primary_pressed
             && let Some(position) = pointer.filter(|position| row.contains(*position))
+            && position.y <= row.top() + AUTOMATION_CLIP_GRAB_HEIGHT
+            && !on_point(position)
             && position.x >= start_x - 4.0
             && position.x <= end_x + 4.0
             && position.x >= grid.grid_left
@@ -3188,6 +3226,18 @@ impl PulseForgeApp {
             egui::pos2(clip_end.max(clip_start + 2.0), row.bottom() - 4.0),
         );
         painter.rect_filled(clip_rect, 4.0, egui::Color32::from_rgb(49, 41, 62));
+        // Title band: the only place a press moves the clip.
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                clip_rect.min,
+                egui::pos2(
+                    clip_rect.right(),
+                    (clip_rect.top() + AUTOMATION_CLIP_GRAB_HEIGHT).min(clip_rect.bottom()),
+                ),
+            ),
+            4.0,
+            egui::Color32::from_rgb(74, 59, 92),
+        );
         painter.rect_stroke(
             clip_rect,
             4.0,

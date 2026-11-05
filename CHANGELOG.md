@@ -17,6 +17,9 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ### Fixed
 
+- Moving an automation clip and drawing its points no longer conflict: the clip
+  is grabbed only from its title band (the top 8 px), and a press that lands on a
+  point never starts a clip move.
 - Automation lanes can select a curve transition again: right-clicking the lane
   offers the curve for the segment under the pointer (the row response used to
   swallow the clip and point menus, so nothing could be picked), and the
