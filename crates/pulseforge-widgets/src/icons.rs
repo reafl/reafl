@@ -1,6 +1,7 @@
-//! Vector glyphs and the icon buttons built from them.
+//! Vector glyphs and the icon buttons built from them. 
+use eframe::egui;
 
-use super::*;
+use crate::tooltip::tooltip;
 
 /// Vector toolbar icons.
 ///
@@ -8,7 +9,7 @@ use super::*;
 /// fonts do not cover symbols such as U+23FB or U+1F512, which rendered as
 /// empty boxes. Shapes also stay crisp at any DPI.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Icon {
+pub enum Icon {
     Rack,
     Roll,
     Mixer,
@@ -32,7 +33,7 @@ pub(crate) enum Icon {
 }
 
 /// Draws `icon` inside `rect` using strokes only.
-pub(crate) fn paint_icon(painter: &egui::Painter, rect: egui::Rect, icon: Icon, color: egui::Color32) {
+pub fn paint_icon(painter: &egui::Painter, rect: egui::Rect, icon: Icon, color: egui::Color32) {
     let stroke = egui::Stroke::new(1.4_f32, color);
     let mid = rect.center();
     let size = rect.width().min(rect.height());
@@ -195,7 +196,7 @@ pub(crate) fn paint_icon(painter: &egui::Painter, rect: egui::Rect, icon: Icon, 
 }
 
 /// Square icon button. Icons are painted, so no font glyph coverage is needed.
-pub(crate) fn icon_button(ui: &mut egui::Ui, icon: Icon, hint: &str) -> egui::Response {
+pub fn icon_button(ui: &mut egui::Ui, icon: Icon, hint: &str) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(28.0, 24.0), egui::Sense::click());
     let visuals = ui.style().interact(&response);
     ui.painter().rect_filled(rect, 3.0, visuals.weak_bg_fill);
@@ -213,7 +214,7 @@ pub(crate) fn icon_button(ui: &mut egui::Ui, icon: Icon, hint: &str) -> egui::Re
 ///
 /// Used by the transport switches so a lit button means "on" without having to
 /// read the status line.
-pub(crate) fn icon_button_toggle(
+pub fn icon_button_toggle(
     ui: &mut egui::Ui,
     icon: Icon,
     hint: &str,
@@ -247,7 +248,7 @@ pub(crate) fn icon_button_toggle(
 }
 
 /// Word used by status messages for a power switch.
-pub(crate) fn power_word(enabled: bool) -> &'static str {
+pub fn power_word(enabled: bool) -> &'static str {
     if enabled { "enabled" } else { "disabled" }
 }
 

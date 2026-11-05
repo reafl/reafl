@@ -7,7 +7,9 @@ description = "Reusable egui widgets and platform shims for PulseForge"
 
 [dependencies]
 eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+serde_json = "1.0"
 pulseforge-core = { path = "../pulseforge-core" }
+pulseforge-settings = { path = "../pulseforge-settings" }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

@@ -14,4 +14,8 @@
 
 pub mod anim;
 pub mod context_menu;
+pub mod icons;
 pub mod platform;
+pub mod presets;
+pub mod theme;
+pub mod tooltip;

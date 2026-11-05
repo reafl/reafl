@@ -1,6 +1,5 @@
 //! The fader's dB scale and its silence snap.
 
-use super::*;
 
 /// Converts a linear gain to decibels, returning [`FADER_MIN_DB`] for silence.
 ///

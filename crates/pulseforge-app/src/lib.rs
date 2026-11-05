@@ -32,7 +32,7 @@ use pulseforge_profiling::{
 };
 use pulseforge_settings::{cli, settings};
 use pulseforge_tasks as tasks;
-use pulseforge_widgets::{anim, context_menu, platform};
+use pulseforge_widgets::{anim, context_menu, icons, platform, presets, theme, tooltip};
 
 use anim::Animated;
 use cli::Cli;
@@ -41,12 +41,8 @@ use settings::{Chord, Settings, ShortcutAction};
 
 mod fader_math;
 mod geometry;
-mod icons;
 mod labels;
-mod presets;
 mod snap;
-mod theme;
-mod tooltip;
 
 use fader_math::*;
 use geometry::*;
@@ -84,9 +80,7 @@ const MAX_ZOOM: f32 = 3.0;
 const AUTOMATION_CLIP_GRAB_HEIGHT: f32 = 8.0;
 
 const AUTOMATED_TARGETS_KEY: &str = "pulseforge.automated_targets";
-const TOOLTIP_MODE_KEY: &str = "pulseforge.tooltip_mode";
-const TOOLTIP_DELAY_KEY: &str = "pulseforge.tooltip_delay";
-const HOVER_TEXT_KEY: &str = "pulseforge.hover_text";
+/// Keys of the automated target and live value snapshots the widgets read.
 const AUTOMATED_VALUES_KEY: &str = "pulseforge.automated_values";
 
 fn svg_cursor_points(kind: &str) -> Option<Vec<[f32; 2]>> {

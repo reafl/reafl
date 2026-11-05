@@ -1,8 +1,9 @@
-//! Colour tokens, theme application and colour maths.
+//! Colour tokens, theme application and colour maths. 
+use eframe::egui;
 
-use super::*;
+use pulseforge_settings::settings;
 
-pub(crate) fn apply_theme(context: &egui::Context, theme: &settings::Theme) {
+pub fn apply_theme(context: &egui::Context, theme: &settings::Theme) {
     let panel = theme.color(theme.panel);
     let background = theme.color(theme.background);
     let accent = theme.color(theme.accent);
@@ -40,16 +41,16 @@ pub(crate) fn apply_theme(context: &egui::Context, theme: &settings::Theme) {
 }
 
 /// Context-data key holding the active theme.
-pub(crate) const THEME_KEY: &str = "active_theme";
+pub const THEME_KEY: &str = "active_theme";
 
 /// Active theme for free drawing helpers.
-pub(crate) fn active_theme(context: &egui::Context) -> settings::Theme {
+pub fn active_theme(context: &egui::Context) -> settings::Theme {
     context
         .data(|data| data.get_temp::<settings::Theme>(egui::Id::new(THEME_KEY)))
         .unwrap_or_default()
 }
 
-pub(crate) fn lane_color(index: usize) -> egui::Color32 {
+pub fn lane_color(index: usize) -> egui::Color32 {
     const COLORS: [egui::Color32; 8] = [
         egui::Color32::from_rgb(211, 115, 91),
         egui::Color32::from_rgb(209, 163, 77),
@@ -63,7 +64,7 @@ pub(crate) fn lane_color(index: usize) -> egui::Color32 {
     COLORS[index % COLORS.len()]
 }
 
-pub(crate) fn color_lerp(start: egui::Color32, end: egui::Color32, amount: f32) -> egui::Color32 {
+pub fn color_lerp(start: egui::Color32, end: egui::Color32, amount: f32) -> egui::Color32 {
     let amount = amount.clamp(0.0, 1.0);
     let channel = |left: u8, right: u8| {
         (f32::from(left) + (f32::from(right) - f32::from(left)) * amount)
@@ -77,7 +78,7 @@ pub(crate) fn color_lerp(start: egui::Color32, end: egui::Color32, amount: f32) 
     )
 }
 
-pub(crate) fn point_segment_distance(point: egui::Pos2, start: egui::Pos2, end: egui::Pos2) -> f32 {
+pub fn point_segment_distance(point: egui::Pos2, start: egui::Pos2, end: egui::Pos2) -> f32 {
     let segment = end - start;
     let length_squared = segment.length_sq();
     if length_squared <= f32::EPSILON {

@@ -2417,6 +2417,8 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "pulseforge-core",
+ "pulseforge-settings",
+ "serde_json",
  "windows-sys 0.59.0",
 ]
 
