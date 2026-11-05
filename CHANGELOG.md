@@ -14,6 +14,10 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
   picker entry, lane preview and parameter row (rate, base, depth, seed).
   Existing projects that used `LfoShape::SampleAndHold` still load the same
   values, but the LFO shape list no longer offers it.
+- The mixer fader, the mixer pan knob and the toolbar BPM box are automatable:
+  they create `MixerChannel { Gain | Pan }` and `Tempo` lanes through a shared
+  `automation_context_menu` helper, and an automated fader draws the knob's
+  purple ring plus a dot at the engine's live value.
 
 ### Fixed
 

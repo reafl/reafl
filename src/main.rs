@@ -2918,15 +2918,20 @@ impl PulseForgeApp {
             ui.set_height(ROW_HEIGHT);
             ui.label("BPM");
             let mut bpm = self.project.bpm;
-            if ui
-                .add_sized(
-                    [58.0, ROW_HEIGHT],
-                    egui::DragValue::new(&mut bpm)
-                        .range(20.0..=300.0)
-                        .speed(0.5),
-                )
-                .changed()
-            {
+            let bpm_response = ui.add_sized(
+                [58.0, ROW_HEIGHT],
+                egui::DragValue::new(&mut bpm)
+                    .range(20.0..=300.0)
+                    .speed(0.5),
+            );
+            // Tempo is an automation target too, so the numeric box offers a
+            // lane the same way a knob does.
+            automation_context_menu(
+                &bpm_response,
+                &format!("Tempo · {bpm:.1} BPM"),
+                ParameterTarget::Tempo,
+            );
+            if bpm_response.changed() {
                 self.project.bpm = bpm;
                 self.send_audio(AudioCommand::SetTempo(bpm));
             }
@@ -10116,23 +10121,12 @@ impl Knob {
             egui::Stroke::new(1.0_f32, egui::Color32::from_gray(115)),
         );
 
-        let automated = self.automation_target.is_some_and(|target| {
-            ui.data(|data| {
-                data.get_temp::<Vec<ParameterTarget>>(egui::Id::new(AUTOMATED_TARGETS_KEY))
-                    .is_some_and(|targets| targets.contains(&target))
-            })
-        });
-        let live_value = self.automation_target.and_then(|target| {
-            ui.data(|data| {
-                data.get_temp::<Vec<(ParameterTarget, f32)>>(egui::Id::new(AUTOMATED_VALUES_KEY))
-                    .and_then(|values| {
-                        values
-                            .iter()
-                            .find(|(candidate, _)| *candidate == target)
-                            .map(|(_, value)| *value)
-                    })
-            })
-        });
+        let automated = self
+            .automation_target
+            .is_some_and(|target| target_is_automated(ui, target));
+        let live_value = self
+            .automation_target
+            .and_then(|target| target_live_value(ui, target));
         if automated {
             painter.circle_stroke(
                 center,
@@ -10610,9 +10604,23 @@ fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripResult
                         };
                         let pair_width = fader_width + 6.0 + 13.0;
                         let pad = ((strip_width - pair_width) * 0.5).max(0.0);
+                        let gain_target = ParameterTarget::MixerChannel {
+                            channel_id: strip.channel_id,
+                            parameter: project::MixerParameter::Gain,
+                        };
+                        let pan_target = ParameterTarget::MixerChannel {
+                            channel_id: strip.channel_id,
+                            parameter: project::MixerParameter::Pan,
+                        };
                         ui.horizontal(|ui| {
                             ui.add_space(pad);
-                            if fader(ui, strip.gain, fader_width, fader_height) {
+                            if fader(
+                                ui,
+                                strip.gain,
+                                fader_width,
+                                fader_height,
+                                Some(gain_target),
+                            ) {
                                 result.changed = true;
                             }
                             render_meter_sized(ui, strip.meter, 13.0, fader_height);
@@ -10622,6 +10630,7 @@ fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripResult
                             ui.horizontal(|ui| {
                                 result.changed |= Knob::new("", -1.0, 1.0, "")
                                     .compact()
+                                    .automates(pan_target)
                                     .show(ui, strip.pan);
                                 if let Some(width) = strip.width.as_deref_mut() {
                                     result.changed |= Knob::new("", 0.0, 2.0, "")
@@ -10997,7 +11006,49 @@ fn render_effect_parameters(
 /// Vertical dB fader drawn to exactly `height`, so its travel matches the meter
 /// beside it. [`fader_position`]/[`fader_gain`] provide the dB scale and the
 /// silence snap at the bottom of the travel.
-fn fader(ui: &mut egui::Ui, gain: &mut f32, width: f32, height: f32) -> bool {
+/// True when a lane already drives `target`, so any control can show the same
+/// "automated" ring a knob draws.
+fn target_is_automated(ui: &egui::Ui, target: ParameterTarget) -> bool {
+    ui.data(|data| {
+        data.get_temp::<Vec<ParameterTarget>>(egui::Id::new(AUTOMATED_TARGETS_KEY))
+            .is_some_and(|targets| targets.contains(&target))
+    })
+}
+
+/// The live engine value for `target` while a lane drives it.
+fn target_live_value(ui: &egui::Ui, target: ParameterTarget) -> Option<f32> {
+    ui.data(|data| {
+        data.get_temp::<Vec<(ParameterTarget, f32)>>(egui::Id::new(AUTOMATED_VALUES_KEY))
+            .and_then(|values| {
+                values
+                    .iter()
+                    .find(|(candidate, _)| *candidate == target)
+                    .map(|(_, value)| *value)
+            })
+    })
+}
+
+/// Adds the shared "Add automation lane" entry to a control's right-click menu,
+/// so sliders and drag values create lanes exactly the way a knob does.
+fn automation_context_menu(response: &egui::Response, label: &str, target: ParameterTarget) {
+    response.context_menu(|ui| {
+        ui.label(label);
+        if ui.button("Add automation lane...").clicked() {
+            ui.ctx().data_mut(|data| {
+                data.insert_temp(egui::Id::new("knob_add_automation"), target)
+            });
+            ui.close();
+        }
+    });
+}
+
+fn fader(
+    ui: &mut egui::Ui,
+    gain: &mut f32,
+    width: f32,
+    height: f32,
+    target: Option<ParameterTarget>,
+) -> bool {
     let (rect, response) =
         ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click_and_drag());
     let painter = ui.painter_at(rect);
@@ -11014,6 +11065,24 @@ fn fader(ui: &mut egui::Ui, gain: &mut f32, width: f32, height: f32) -> bool {
         let position = ((rail.bottom() - pointer.y) / rail.height()).clamp(0.0, 1.0);
         *gain = fader_gain(position);
         changed = true;
+    }
+    if let Some(target) = target
+        && target_is_automated(ui, target)
+    {
+        painter.rect_stroke(
+            rail.expand(2.0),
+            4.0,
+            egui::Stroke::new(1.6_f32, egui::Color32::from_rgb(202, 158, 238)),
+            egui::StrokeKind::Outside,
+        );
+        if let Some(live) = target_live_value(ui, target) {
+            let live_y = rail.bottom() - fader_position(live) * rail.height();
+            painter.circle_filled(
+                egui::pos2(rect.center().x, live_y),
+                2.6,
+                egui::Color32::from_rgb(238, 205, 116),
+            );
+        }
     }
     let position = fader_position(*gain);
     let level_y = rail.bottom() - position * rail.height();
@@ -11032,6 +11101,13 @@ fn fader(ui: &mut egui::Ui, gain: &mut f32, width: f32, height: f32) -> bool {
         egui::Color32::from_gray(205),
     );
     tooltip(ui, &response, "Volume · dB scale, bottom = silence");
+    if let Some(target) = target {
+        automation_context_menu(
+            &response,
+            &format!("Volume · {}", fader_label(*gain)),
+            target,
+        );
+    }
     changed
 }
 

@@ -113,7 +113,12 @@ This file is a bugtracker.
   on a separate, unreachable response), and the per-point menu names the
   incoming transition and says so plainly on the first point, which has none.*
 - Sliders are not automatable.
+  *Fixed: the mixer fader carries `MixerChannel { Gain }` and draws the same
+  automated ring and live-value dot a knob does; right-clicking it offers
+  "Add automation lane...".*
 - Numeric selection boxes are not automatable.
+  *Fixed: shared `automation_context_menu` helper; the BPM box now offers a
+  `Tempo` lane (and the knob's ctrl+click numeric entry already did).*
 - Enums are not automatable.
 - Automation parameters are not automatable.
 
