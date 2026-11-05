@@ -57,6 +57,7 @@ A file to keep track of TODOs and unimplemented features.
 ## Automation clips
 
 - Move sample and hold to its own category.
+  *Done: `AutomationSource::SampleAndHold { seed, rate, base, depth }` is a source of its own in the picker, engine and preview; the old `LfoShape::SampleAndHold` still loads for existing projects but is no longer offered.*
 - Create an LFO which is keytracked to a MIDI track. Allow for changing the octave of the keytrack by +-10.
 - Automation should allow for relative automation.
 - The automation should be allowed to be negative.

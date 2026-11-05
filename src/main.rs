@@ -621,6 +621,16 @@ fn automation_source_preview(
             let phase = phase_position / automation_time_steps(*rate, bpm).max(0.001);
             *base + automation_shape_value(*shape, phase) * *depth
         }
+        project::AutomationSource::SampleAndHold {
+            seed,
+            rate,
+            base,
+            depth,
+        } => {
+            let local = (position - start_step as f64).max(0.0);
+            let phase = local / automation_time_steps(*rate, bpm).max(0.001);
+            *base + audio::sample_and_hold(phase as f32, *seed) * *depth
+        }
         project::AutomationSource::Perlin {
             seed,
             rate,
@@ -7110,6 +7120,7 @@ impl PulseForgeApp {
                     project::AutomationSource::Curve => "Curve",
                     project::AutomationSource::MidiEnvelope { .. } => "MIDI envelope",
                     project::AutomationSource::Lfo { .. } => "LFO",
+                    project::AutomationSource::SampleAndHold { .. } => "Sample & hold",
                     project::AutomationSource::Perlin { .. } => "Perlin",
                 };
                 egui::ComboBox::from_id_salt(("automation_source", track_id))
@@ -7169,6 +7180,27 @@ impl PulseForgeApp {
                                     unit: project::TimeUnit::Milliseconds,
                                 },
                                 retrigger: true,
+                                base: 0.5,
+                                depth: 0.5,
+                            };
+                            changed = true;
+                        }
+                        if ui
+                            .selectable_label(
+                                matches!(
+                                    track.source,
+                                    project::AutomationSource::SampleAndHold { .. }
+                                ),
+                                "Sample & hold",
+                            )
+                            .clicked()
+                        {
+                            track.source = project::AutomationSource::SampleAndHold {
+                                seed: 1,
+                                rate: project::TimeValue {
+                                    amount: 4.0,
+                                    unit: project::TimeUnit::Steps,
+                                },
                                 base: 0.5,
                                 depth: 0.5,
                             };
@@ -7290,12 +7322,13 @@ impl PulseForgeApp {
                         egui::ComboBox::from_id_salt(("automation_lfo_shape", track_id))
                             .selected_text(format!("{shape:?}"))
                             .show_ui(ui, |ui| {
+                                // Sample & hold is its own source now, so the LFO
+                                // shape list no longer offers it.
                                 for candidate in [
                                     project::LfoShape::Sine,
                                     project::LfoShape::Triangle,
                                     project::LfoShape::Saw,
                                     project::LfoShape::Square,
-                                    project::LfoShape::SampleAndHold,
                                 ] {
                                     if ui
                                         .selectable_value(
@@ -7317,6 +7350,26 @@ impl PulseForgeApp {
                                 .changed();
                             changed |= ui
                                 .add(egui::Slider::new(depth, 0.0..=1.0).text("Depth"))
+                                .changed();
+                        });
+                    }
+                    project::AutomationSource::SampleAndHold {
+                        seed,
+                        rate,
+                        base,
+                        depth,
+                    } => {
+                        ui.horizontal(|ui| {
+                            changed |= edit_time_value(ui, track_id, "Rate", rate);
+                            changed |= ui
+                                .add(egui::Slider::new(base, 0.0..=1.0).text("Base"))
+                                .changed();
+                            changed |= ui
+                                .add(egui::Slider::new(depth, 0.0..=1.0).text("Depth"))
+                                .changed();
+                            ui.label("Seed");
+                            changed |= ui
+                                .add(egui::DragValue::new(seed).range(0..=u32::MAX))
                                 .changed();
                         });
                     }

@@ -1097,6 +1097,22 @@ impl AudioEngine {
                     };
                     base + lfo_wave(*shape, phase) * depth * multiplier - base_normalized
                 }
+                AutomationSource::SampleAndHold {
+                    seed,
+                    rate,
+                    base,
+                    depth,
+                } => {
+                    // One held value per rate cycle, seeded so two lanes read
+                    // different noise.
+                    let phase = self.lfo_phase(track_id, *rate, false, position);
+                    let multiplier = if track.modulation_points.is_empty() {
+                        1.0
+                    } else {
+                        Project::evaluate_curve(&track.modulation_points, position)
+                    };
+                    base + sample_and_hold(phase, *seed) * depth * multiplier - base_normalized
+                }
                 AutomationSource::Perlin {
                     seed,
                     rate,
@@ -2513,6 +2529,17 @@ fn instrument_controls(instrument: &Instrument, bpm: f32) -> InstrumentControls 
     }
 }
 
+/// One random value in `-1..=1` per whole step of `phase`, held in between.
+/// `seed` lets independent lanes produce independent noise.
+pub fn sample_and_hold(phase: f32, seed: u32) -> f32 {
+    let cycle = phase.floor() as u32;
+    let mut value = cycle.wrapping_mul(0x9e37_79b9).wrapping_add(seed);
+    value ^= value >> 16;
+    value = value.wrapping_mul(0x85eb_ca6b);
+    value ^= value >> 13;
+    (value as f32 / u32::MAX as f32) * 2.0 - 1.0
+}
+
 fn lfo_wave(shape: LfoShape, phase: f32) -> f32 {
     match shape {
         LfoShape::Sine => (TAU * phase.fract()).sin(),
@@ -2525,14 +2552,7 @@ fn lfo_wave(shape: LfoShape, phase: f32) -> f32 {
                 -1.0
             }
         }
-        LfoShape::SampleAndHold => {
-            let cycle = phase.floor() as u32;
-            let mut value = cycle.wrapping_mul(0x9e37_79b9).wrapping_add(0x7f4a_7c15);
-            value ^= value >> 16;
-            value = value.wrapping_mul(0x85eb_ca6b);
-            value ^= value >> 13;
-            (value as f32 / u32::MAX as f32) * 2.0 - 1.0
-        }
+        LfoShape::SampleAndHold => sample_and_hold(phase, 0x7f4a_7c15),
     }
 }
 

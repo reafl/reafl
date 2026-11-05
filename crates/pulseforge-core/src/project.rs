@@ -133,6 +133,14 @@ pub enum AutomationSource {
         base: f32,
         depth: f32,
     },
+    /// One random value per step of `rate`, held until the next step. Kept out
+    /// of [`LfoShape`] so it reads as its own modulation category.
+    SampleAndHold {
+        seed: u32,
+        rate: TimeValue,
+        base: f32,
+        depth: f32,
+    },
 }
 
 impl Default for TimeSignature {

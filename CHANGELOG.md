@@ -7,6 +7,14 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ## Unreleased
 
+### Added
+
+- Sample and hold is its own automation source
+  (`AutomationSource::SampleAndHold { seed, rate, base, depth }`) with its own
+  picker entry, lane preview and parameter row (rate, base, depth, seed).
+  Existing projects that used `LfoShape::SampleAndHold` still load the same
+  values, but the LFO shape list no longer offers it.
+
 ### Fixed
 
 - Mixer chain presets now include external plug-in state: the inspector captures
