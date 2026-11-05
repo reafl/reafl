@@ -86,6 +86,14 @@ All notable changes to PulseForge. Commits written by AI are marked `AI:`.
 - Each mixer strip has a stereo-width knob backed by a mid/side scale in the
   engine (`ArrangementLane::width`, 0 = mono, 2 = double).
 - A "+ Track" button closes the mixer strip row.
+### Changed
+
+- One `PowerSwitch` widget (`power_switch` / `power_switch_at`) draws enable
+  buttons: plain click powers, shift locks, ctrl solos. The arrangement track
+  header and the mixer strip insert rows use it, so they cannot drift in colour
+  or behaviour again.
+- `ContextAction::ToggleInsertEnabled` carries a `PowerIntent`, so the decision
+  is made at click time instead of re-reading the keyboard when the action runs.
 - Automation envelopes are sampled on a fixed quarter-step grid, so zooming no
   longer makes MIDI envelopes jitter.
 - Automation clips, curves and points are clipped to the timeline grid instead

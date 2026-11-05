@@ -21,8 +21,8 @@ use pulseforge_core::{
     project::{
         ArrangementClip, AutomationCurve, AutomationPoint, AutomationTrack, ClipSource,
         DefaultSample, EffectParameter, InsertFxSlot, Instrument, InstrumentParameter,
-        MIDI_CHANNEL_COUNT, ParameterTarget, PianoNote, Project, SignalWaveform, StepHit,
-        SynthKind, ThreeBandEq, TimeSignature, disconnect_channel,
+        MIDI_CHANNEL_COUNT, ParameterTarget, PianoNote, Project, SignalWaveform, SynthKind,
+        ThreeBandEq, TimeSignature, disconnect_channel,
     },
 };
 use pulseforge_profiling::{
@@ -1704,42 +1704,6 @@ impl PulseForgeApp {
         let seconds = sample.frames.len() as f64 / f64::from(sample.sample_rate.max(1));
         let steps_per_second = f64::from(self.project.bpm) / 60.0 * 4.0;
         (seconds * steps_per_second).round().max(1.0) as u64
-    }
-
-    /// One switch per channel: click toggles power, Shift+click locks and
-    /// Ctrl+click solos.
-    fn toggle_lane_switch(&mut self, lane: usize) {
-        let (shift, ctrl) = (self.mod_shift, self.mod_ctrl);
-        let Some(track) = self.project.lanes.get_mut(lane) else {
-            return;
-        };
-        if shift {
-            track.locked = !track.locked;
-            self.status = if track.locked {
-                format!("{} locked.", track.name)
-            } else {
-                format!("{} unlocked.", track.name)
-            };
-        } else if ctrl {
-            track.solo = !track.solo;
-            self.status = if track.solo {
-                format!("{} soloed.", track.name)
-            } else {
-                format!("{} unsoloed.", track.name)
-            };
-        } else {
-            // Lock freezes the switch against solo and other global operations,
-            // but a direct click always flips it so a locked channel can still
-            // be muted or brought back.
-            track.enabled = !track.enabled;
-            self.status = if track.locked {
-                format!("{} {} (locked).", track.name, power_word(track.enabled))
-            } else {
-                format!("{} {}.", track.name, power_word(track.enabled))
-            };
-        }
-        self.push_history();
-        self.sync_project();
     }
 
     /// Same semantics for an instrument's power switch.
@@ -3680,56 +3644,48 @@ impl PulseForgeApp {
                     self.apply_context_action(ContextAction::ToggleTrackAutomation(lane_id));
                 }
             }
-            // One power switch per track. Shift+click locks, Ctrl+click solos;
-            // lock and solo are drawn as badges on the same button.
+            // One power switch per track, drawn by the shared widget so it matches
+            // the mixer and the channel rack exactly.
             let button_rect = egui::Rect::from_min_size(
                 egui::pos2(left - 22.0, y + row_height * 0.5 - 8.0),
                 egui::vec2(18.0, 16.0),
             );
             if button_rect.right() <= left {
-                let response = ui.interact(
+                let intent = power_switch_at(
+                    ui,
                     button_rect,
                     egui::Id::new(("lane_power", lane_id)),
-                    egui::Sense::click(),
-                );
-                painter.rect_filled(
-                    button_rect,
-                    3.0,
-                    if lane_enabled {
-                        self.ui_accent().gamma_multiply(0.45)
-                    } else {
-                        egui::Color32::from_gray(38)
+                    &PowerSwitch {
+                        name: &self.project.lanes[lane_id].name,
+                        enabled: lane_enabled,
+                        locked: lane_locked,
+                        solo: lane_solo,
+                        any_solo: false,
+                        color: self.ui_accent(),
+                        size: egui::vec2(18.0, 16.0),
                     },
                 );
-                paint_icon(
-                    &painter,
-                    button_rect.shrink(2.5),
-                    Icon::Power,
-                    if lane_enabled {
-                        egui::Color32::WHITE
-                    } else {
-                        egui::Color32::from_gray(110)
-                    },
-                );
-                if lane_locked {
-                    painter.line_segment(
-                        [
-                            egui::pos2(button_rect.left() + 2.0, button_rect.bottom() - 2.0),
-                            egui::pos2(button_rect.right() - 2.0, button_rect.bottom() - 2.0),
-                        ],
-                        egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(230, 178, 92)),
-                    );
+                if intent.toggle {
+                    self.project.lanes[lane_id].enabled = !lane_enabled;
                 }
-                if lane_solo {
-                    painter.circle_filled(
-                        egui::pos2(button_rect.right() - 3.0, button_rect.top() + 3.0),
-                        2.5,
-                        egui::Color32::from_rgb(120, 200, 255),
-                    );
+                if intent.lock {
+                    self.project.lanes[lane_id].locked = !lane_locked;
                 }
-                tooltip(ui, &response, "Power - shift locks, ctrl solos");
-                if response.clicked() {
-                    self.toggle_lane_switch(lane_id);
+                if intent.solo {
+                    self.project.lanes[lane_id].solo = !lane_solo;
+                }
+                if intent.any() {
+                    self.push_history();
+                    self.sync_project();
+                    self.status = format!(
+                        "{} {}.",
+                        self.project.lanes[lane_id].name,
+                        if self.project.lanes[lane_id].enabled {
+                            "enabled"
+                        } else {
+                            "disabled"
+                        }
+                    );
                 }
             }
             painter.line_segment(
@@ -8107,15 +8063,17 @@ impl PulseForgeApp {
                     }
                 }
             }
-            ContextAction::ToggleInsertEnabled { channel, slot } => {
-                let solo = self.mod_ctrl;
-                let lock = self.mod_shift;
+            ContextAction::ToggleInsertEnabled {
+                channel,
+                slot,
+                intent,
+            } => {
                 if let Some(effect) = self.effect_slot_mut(channel, slot) {
-                    if lock {
+                    if intent.lock {
                         effect.locked = !effect.locked;
-                    } else if solo {
+                    } else if intent.solo {
                         effect.solo = !effect.solo;
-                    } else {
+                    } else if intent.toggle {
                         effect.enabled = !effect.enabled;
                     }
                 }
@@ -10041,6 +9999,107 @@ impl Knob {
     }
 }
 
+/// What a power switch was asked to do, decided from the modifier keys at click
+/// time.
+use context_menu::PowerIntent;
+
+/// Everything a power switch draws. One struct, one drawing path, so every enable
+/// button in the app looks and behaves the same.
+struct PowerSwitch<'a> {
+    /// Name used by the tooltip.
+    name: &'a str,
+    enabled: bool,
+    locked: bool,
+    solo: bool,
+    /// True when another switch of the same group is soloed (dims the badge).
+    any_solo: bool,
+    color: egui::Color32,
+    size: egui::Vec2,
+}
+
+/// Paint and hit-test a power switch inside `rect`.
+fn power_switch_at(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    id: egui::Id,
+    switch: &PowerSwitch<'_>,
+) -> PowerIntent {
+    let response = ui.interact(rect, id, egui::Sense::click());
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(
+        rect,
+        3.0,
+        if switch.enabled {
+            switch.color.gamma_multiply(0.45)
+        } else {
+            egui::Color32::from_gray(38)
+        },
+    );
+    paint_icon(
+        &painter,
+        rect.shrink(switch.size.x * 0.15),
+        Icon::Power,
+        if switch.enabled {
+            egui::Color32::WHITE
+        } else {
+            egui::Color32::from_gray(110)
+        },
+    );
+    if switch.locked {
+        painter.line_segment(
+            [
+                egui::pos2(rect.left() + 2.0, rect.bottom() - 2.0),
+                egui::pos2(rect.right() - 2.0, rect.bottom() - 2.0),
+            ],
+            egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(230, 178, 92)),
+        );
+    }
+    if switch.solo || switch.any_solo {
+        painter.circle_filled(
+            egui::pos2(rect.right() - 3.0, rect.top() + 3.0),
+            2.5,
+            if switch.solo {
+                egui::Color32::from_rgb(120, 200, 255)
+            } else {
+                egui::Color32::from_gray(70)
+            },
+        );
+    }
+    tooltip(
+        ui,
+        &response,
+        &format!("{} · click powers, shift locks, ctrl solos", switch.name),
+    );
+    if !response.clicked() {
+        return PowerIntent::default();
+    }
+    ui.input(|input| {
+        if input.modifiers.shift {
+            PowerIntent {
+                lock: true,
+                ..PowerIntent::default()
+            }
+        } else if input.modifiers.command || input.modifiers.ctrl {
+            PowerIntent {
+                solo: true,
+                ..PowerIntent::default()
+            }
+        } else {
+            PowerIntent {
+                toggle: true,
+                ..PowerIntent::default()
+            }
+        }
+    })
+}
+
+/// Power switch laid out by the caller's `ui`, returning the requested intent.
+fn power_switch(ui: &mut egui::Ui, switch: PowerSwitch<'_>) -> PowerIntent {
+    let (rect, _) = ui.allocate_exact_size(switch.size, egui::Sense::hover());
+    let id = ui.id().with(("power_switch", switch.name, rect.left() as i32, rect.top() as i32));
+    power_switch_at(ui, rect, id, &switch)
+}
+
 struct MixerStrip<'a> {
     channel_id: usize,
     name: Option<&'a mut String>,
@@ -10358,60 +10417,25 @@ fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripResult
                             for (index, label, enabled, solo, locked) in rows {
                                 let open = strip.open_inserts.contains(&(strip.channel_id, index));
                                 ui.horizontal(|ui| {
-                                    let (rect, response) = ui.allocate_exact_size(
-                                        egui::vec2(16.0, 16.0),
-                                        egui::Sense::click(),
-                                    );
-                                    let painter = ui.painter_at(rect);
-                                    painter.rect_filled(
-                                        rect,
-                                        3.0,
-                                        if enabled {
-                                            channel_color.gamma_multiply(0.45)
-                                        } else {
-                                            egui::Color32::from_gray(36)
+                                    let intent = power_switch(
+                                        ui,
+                                        PowerSwitch {
+                                            name: &label,
+                                            enabled,
+                                            locked,
+                                            solo,
+                                            any_solo,
+                                            color: channel_color,
+                                            size: egui::vec2(16.0, 16.0),
                                         },
                                     );
-                                    paint_icon(
-                                        &painter,
-                                        rect.shrink(2.0),
-                                        Icon::Power,
-                                        if enabled {
-                                            egui::Color32::WHITE
-                                        } else {
-                                            egui::Color32::from_gray(110)
-                                        },
-                                    );
-                                    if locked {
-                                        painter.line_segment(
-                                            [
-                                                egui::pos2(rect.left() + 2.0, rect.bottom() - 2.0),
-                                                egui::pos2(rect.right() - 2.0, rect.bottom() - 2.0),
-                                            ],
-                                            egui::Stroke::new(
-                                                2.0_f32,
-                                                egui::Color32::from_rgb(230, 178, 92),
-                                            ),
-                                        );
-                                    }
-                                    if solo || (any_solo && !solo) {
-                                        painter.circle_filled(
-                                            egui::pos2(rect.right() - 3.0, rect.top() + 3.0),
-                                            2.5,
-                                            if solo {
-                                                egui::Color32::from_rgb(120, 200, 255)
-                                            } else {
-                                                egui::Color32::from_gray(70)
-                                            },
-                                        );
-                                    }
-                                    if response.clicked() {
+                                    if intent.any() {
                                         result.actions.push(ContextAction::ToggleInsertEnabled {
                                             channel: strip.channel_id,
                                             slot: index,
+                                            intent,
                                         });
                                     }
-                                    tooltip(ui, &response, "Power - shift locks, ctrl solos");
 
                                     let text =
                                         egui::RichText::new(label).small().color(if enabled {
@@ -11549,6 +11573,7 @@ fn note_name(pitch: u8) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pulseforge_core::project::StepHit;
 
     #[test]
     fn fader_curve_round_trips_and_snaps_to_silence() {

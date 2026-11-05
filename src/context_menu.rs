@@ -1,5 +1,21 @@
 use eframe::egui::Ui;
 
+/// What a power switch was asked to do, decided from the modifier keys at click
+/// time. Living here lets context actions carry the decision instead of
+/// re-reading the keyboard later.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PowerIntent {
+    pub toggle: bool,
+    pub lock: bool,
+    pub solo: bool,
+}
+
+impl PowerIntent {
+    pub fn any(self) -> bool {
+        self.toggle || self.lock || self.solo
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ContextAction {
     ToggleLanePin(usize),
@@ -49,6 +65,7 @@ pub enum ContextAction {
     ToggleInsertEnabled {
         channel: usize,
         slot: usize,
+        intent: PowerIntent,
     },
     /// Opens the plug-in picker for one insert slot.
     OpenInsertPicker {
