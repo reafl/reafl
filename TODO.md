@@ -2,6 +2,10 @@
 
 A file to keep track of TODOs and unimplemented features.
 
+# Plugins
+
+- Reformat code to be modular. Plugins should be easy to add.
+
 # Engine
 
 - Create a way to quickly evaluate user-inputted mathematic formulas. They should support +-/*%^ exp sqrt sin cos tan.
@@ -43,9 +47,10 @@ A file to keep track of TODOs and unimplemented features.
 - Join the selected track controls and inserts tabs.
   *Done: one inspector page with EQ, stereo width and the insert chain.*
 - Allow saving mixer chains as presets.
+  *Done: "Save chain" / "Load chain" in the mixer inspector, stored as JSON in `presets/mixer/`, plus the right-click preset menu on "+ Track".*
 - Add an insert effect which exposes a variable number of knobs and selectors. If it is present, show its controls above the inserts. Its UI selectors should be able to be mapped to a variable number of parameters on the mixer track using the mathematical formulas mentioned.
 - Add an add track button right of all mixer tracks. It should add an empty track on left click and open a preset menu on right click.
-  *Partly done: a "+ Track" button now sits at the end of the strip row. The right-click preset menu waits for channel-chain presets.*
+  *Done: the "+ Track" button at the end of the strip row adds an empty channel on left click and lists the saved mixer chain presets on right click.*
 - Add a peak controller, LFO and perlin noise insert plugin which allows automating parameters.
 
 

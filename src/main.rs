@@ -787,6 +787,10 @@ struct PulseForgeApp {
     new_audio_length_steps: u64,
     /// Text of the automation window's formula field.
     formula_text: String,
+    /// Name typed into the mixer inspector's preset field.
+    chain_preset_name: String,
+    /// Presets found on disk, refreshed when the inspector saves or loads.
+    chain_presets: Vec<String>,
     render_path: String,
     project_path: String,
     status: String,
@@ -945,6 +949,8 @@ impl PulseForgeApp {
             new_audio_length_steps: 64,
             render_path: "pulseforge.wav".to_owned(),
             formula_text: "0.5 + 0.4 * sin(2 * pi * x)".to_owned(),
+            chain_preset_name: "My chain".to_owned(),
+            chain_presets: list_chain_presets(),
             project_path: "session.json".to_owned(),
             status: "Ready · drag a pattern or audio clip onto the timeline".to_owned(),
             midi_ports,
@@ -7640,17 +7646,54 @@ impl PulseForgeApp {
                                     self.sync_project();
                                 }
                                 // Add-track affordance at the end of the row, so
-                                // channels can be added where they appear.
-                                if ui
+                                // channels can be added where they appear. Right
+                                // click adds one pre-loaded with a saved chain.
+                                let add_track = ui
                                     .add_sized(
                                         [86.0, 34.0],
                                         egui::Button::new("+ Track")
                                             .sense(egui::Sense::click()),
                                     )
-                                    .on_hover_text("Add a mixer channel")
-                                    .clicked()
-                                {
+                                    .on_hover_text(
+                                        "Left click: add a channel. Right click: add one from a preset.",
+                                    );
+                                let mut add_from_preset: Option<String> = None;
+                                add_track.context_menu(|ui| {
+                                    ui.label("Add channel from preset");
+                                    if self.chain_presets.is_empty() {
+                                        ui.label("No presets saved yet.");
+                                    }
+                                    for name in self.chain_presets.clone() {
+                                        if ui.button(&name).clicked() {
+                                            add_from_preset = Some(name);
+                                            ui.close();
+                                        }
+                                    }
+                                });
+                                if add_track.clicked() {
                                     self.add_mixer_channel();
+                                }
+                                if let Some(name) = add_from_preset {
+                                    self.add_mixer_channel();
+                                    let channel = self.selected_mixer_channel;
+                                    match load_chain_preset(&name) {
+                                        Ok(preset) => {
+                                            if let Some(lane) =
+                                                self.project.lanes.get_mut(channel)
+                                            {
+                                                for (slot, loaded) in
+                                                    lane.inserts.iter_mut().zip(preset)
+                                                {
+                                                    *slot = loaded;
+                                                }
+                                            }
+                                            self.sync_project();
+                                            self.status = format!(
+                                                "Added a channel with preset '{name}'."
+                                            );
+                                        }
+                                        Err(error) => self.status = error,
+                                    }
                                 }
                             });
                         });
@@ -7701,6 +7744,45 @@ impl PulseForgeApp {
         });
         ui.separator();
         ui.label(egui::RichText::new("INSERTS").strong());
+        // Chain presets save and restore the whole insert list as one JSON file,
+        // so a channel strip can be reused on another lane or in another project.
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut self.chain_preset_name)
+                    .desired_width(120.0)
+                    .hint_text("Preset name"),
+            );
+            if ui.button("Save chain").clicked() {
+                match save_chain_preset(&self.chain_preset_name, inserts) {
+                    Ok(name) => {
+                        self.status = format!("Saved chain preset '{name}'.");
+                        self.chain_presets = list_chain_presets();
+                    }
+                    Err(error) => self.status = error,
+                }
+            }
+            ui.menu_button("Load chain", |ui| {
+                if self.chain_presets.is_empty() {
+                    ui.label("No presets saved yet.");
+                }
+                let names = self.chain_presets.clone();
+                for name in names {
+                    if ui.button(&name).clicked() {
+                        match load_chain_preset(&name) {
+                            Ok(preset) => {
+                                for (slot, loaded) in inserts.iter_mut().zip(preset) {
+                                    *slot = loaded;
+                                }
+                                changed = true;
+                                self.status = format!("Loaded chain preset '{name}'.");
+                            }
+                            Err(error) => self.status = error,
+                        }
+                        ui.close();
+                    }
+                }
+            });
+        });
         {
             ui.horizontal(|ui| {
                 if ui.button("Add insert effect").clicked() {
@@ -11243,6 +11325,71 @@ fn power_word(enabled: bool) -> &'static str {
     if enabled { "enabled" } else { "disabled" }
 }
 
+/// Folder that holds saved mixer-chain presets, one JSON file per preset.
+const PRESET_DIR: &str = "presets/mixer";
+
+/// Turns a user-typed preset name into a file stem that is safe on every
+/// platform: letters, digits, spaces, dashes and underscores survive, everything
+/// else becomes an underscore.
+fn preset_file_stem(name: &str) -> String {
+    let mut stem: String = name
+        .trim()
+        .chars()
+        .map(|character| {
+            if character.is_alphanumeric() || matches!(character, ' ' | '-' | '_') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    stem = stem.trim().to_owned();
+    if stem.is_empty() {
+        stem = "Preset".to_owned();
+    }
+    stem
+}
+
+/// Writes `inserts` to `presets/mixer/<name>.json` and returns the preset name.
+fn save_chain_preset(name: &str, inserts: &[InsertFxSlot]) -> Result<String, String> {
+    let stem = preset_file_stem(name);
+    std::fs::create_dir_all(PRESET_DIR)
+        .map_err(|error| format!("Could not create {PRESET_DIR}: {error}"))?;
+    let json = serde_json::to_string_pretty(inserts)
+        .map_err(|error| format!("Could not encode preset: {error}"))?;
+    let path = format!("{PRESET_DIR}/{stem}.json");
+    std::fs::write(&path, json).map_err(|error| format!("Could not write {path}: {error}"))?;
+    Ok(stem)
+}
+
+/// Every saved preset name, sorted alphabetically.
+fn list_chain_presets() -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(PRESET_DIR) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            (path.extension().and_then(|extension| extension.to_str()) == Some("json"))
+                .then(|| path.file_stem()?.to_str().map(ToOwned::to_owned))
+                .flatten()
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+/// Reads one preset back. Missing slots are simply not applied, so an older
+/// preset still fits a channel with more inserts.
+fn load_chain_preset(name: &str) -> Result<Vec<InsertFxSlot>, String> {
+    let path = format!("{PRESET_DIR}/{}.json", preset_file_stem(name));
+    let text = std::fs::read_to_string(&path)
+        .map_err(|error| format!("Could not read {path}: {error}"))?;
+    serde_json::from_str::<Vec<InsertFxSlot>>(&text)
+        .map_err(|error| format!("Invalid preset {path}: {error}"))
+}
+
 /// Applies the configured tooltip policy. Hover text is suppressed in the
 /// default status-bar mode, where details are pushed to the status line.
 fn tooltip(ui: &egui::Ui, response: &egui::Response, text: &str) {
@@ -11574,6 +11721,13 @@ fn note_name(pitch: u8) -> String {
 mod tests {
     use super::*;
     use pulseforge_core::project::StepHit;
+
+    #[test]
+    fn preset_names_become_safe_file_stems() {
+        assert_eq!(preset_file_stem("Lead Chain"), "Lead Chain");
+        assert_eq!(preset_file_stem("a/b:c*?"), "a_b_c__");
+        assert_eq!(preset_file_stem("   "), "Preset");
+    }
 
     #[test]
     fn fader_curve_round_trips_and_snaps_to_silence() {

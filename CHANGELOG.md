@@ -2,6 +2,9 @@
 
 All notable changes to PulseForge. Commits written by AI are marked `AI:`.
 
+Every batch of changes is committed to git as its own commit whose message
+starts with `AI: `, so history maps one commit to one reviewed batch.
+
 ## Unreleased
 
 ### Fixed
@@ -62,6 +65,11 @@ All notable changes to PulseForge. Commits written by AI are marked `AI:`.
 - The clip picker highlights the pattern the arrangement pen will place.
 
 ### Added
+
+- Mixer chain presets: the inspector's insert list can be saved to
+  `presets/mixer/<name>.json` and loaded onto any channel (or the master). The
+  mixer's "+ Track" button opens the preset list on right click and adds a
+  channel pre-loaded with that chain.
 
 - `pulseforge_core::expr`: a dependency-free formula evaluator (`+ - * / % ^`,
   `exp ln sqrt abs floor round sin cos tan`, `pi`, `e`, variable `x`) with
