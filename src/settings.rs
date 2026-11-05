@@ -583,7 +583,7 @@ impl Settings {
         self.default_track_height = self.default_track_height.clamp(34.0, 260.0);
         self.default_velocity = self.default_velocity.clamp(1, 127);
         self.tooltip_delay = self.tooltip_delay.clamp(0.0, 5.0);
-        self.zoom = self.zoom.clamp(0.2, 8.0);
+        self.zoom = self.zoom.clamp(0.2, 3.0);
         self.ui_scale = self.ui_scale.clamp(0.6, 2.5);
         self.wheel_step_ticks = self.wheel_step_ticks.clamp(1, 64);
         self.autosave_minutes = self.autosave_minutes.min(120);

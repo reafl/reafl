@@ -37,6 +37,9 @@ const BAR_WIDTH: f32 = 96.0;
 const LANE_HEIGHT: f32 = 54.0;
 const LANE_LABEL_WIDTH: f32 = 142.0;
 const VISIBLE_PATTERN_STEPS: u64 = 32;
+/// Width of one step-sequencer column. Fixed so every channel row lines up; the
+/// rack scrolls horizontally when the window is narrower than the grid.
+const STEP_COLUMN_WIDTH: f32 = 24.0;
 const VISIBLE_PIANO_STEPS: u64 = 32;
 const PIANO_MIN_STEP_WIDTH: f32 = 14.0;
 const PIANO_MAX_STEP_WIDTH: f32 = 32.0;
@@ -50,7 +53,7 @@ const TOOL_CURSOR_SVG: &str = include_str!("../assets/tool_cursors.svg");
 const SNAP_STEPS: &[u64] = &[1, 2, 4, 8, 16, 32, 64, 128];
 /// Horizontal zoom limits for the arrangement and the editors.
 const MIN_ZOOM: f32 = 0.2;
-const MAX_ZOOM: f32 = 8.0;
+const MAX_ZOOM: f32 = 3.0;
 
 const AUTOMATED_TARGETS_KEY: &str = "pulseforge.automated_targets";
 const TOOLTIP_MODE_KEY: &str = "pulseforge.tooltip_mode";
@@ -383,7 +386,11 @@ fn draw_clip_contents(
             let Some((low, high)) = pitch_range else {
                 // Step-only patterns get one tick per active step.
                 for hit in &pattern.step_hits {
-                    let step = clip.start_step + (hit.step % pattern_length);
+                    // A sliced clip can start part-way into its pattern.
+                    let offset = (hit.step + pattern_length
+                        - clip.offset_steps % pattern_length)
+                        % pattern_length;
+                    let step = clip.start_step + offset;
                     if step < visible_start || step >= visible_end {
                         continue;
                     }
@@ -409,13 +416,27 @@ fn draw_clip_contents(
                     } else {
                         u64::from(note.repeat_ticks) / 16
                     };
-                    let offset = (note.start_step + repeat * spacing) % pattern_length;
-                    let absolute = clip.start_step + offset;
-                    if absolute >= visible_end {
+                    let source_step = note.start_step + repeat * spacing;
+                    // Notes outside the pattern keep their own position: wrapping
+                    // them made a shortened pattern look like it rearranged the
+                    // notes.
+                    if source_step >= pattern_length {
                         continue;
                     }
-                    let visible = absolute.max(visible_start);
-                    let x = grid_left + visible.saturating_sub(pan_start) as f32 * step_width;
+                    let offset = (source_step + pattern_length
+                        - clip.offset_steps % pattern_length)
+                        % pattern_length;
+                    let absolute = clip.start_step + offset;
+                    // Notes outside the clip or the visible window are skipped;
+                    // clamping them to the window edge stacked every off-screen
+                    // note on top of each other while panning.
+                    if offset >= clip.length_steps
+                        || absolute >= visible_end
+                        || absolute.saturating_add(note.duration_steps.max(1)) <= visible_start
+                    {
+                        continue;
+                    }
+                    let x = grid_left + absolute.saturating_sub(pan_start) as f32 * step_width;
                     let width = (note.duration_steps.max(1) as f32 * step_width)
                         .min((inner.right() - x).max(2.0))
                         .max(2.0);
@@ -1252,15 +1273,23 @@ impl PulseForgeApp {
         self.selection_anchor = self.selection;
     }
 
-    /// Step count shown in the piano roll: always covers the pattern length so
-    /// the ruler keeps counting as a pattern grows.
+    /// Step count shown in the piano roll: covers the pattern length and every
+    /// note, so shortening a pattern never hides notes that sit beyond it.
     fn piano_visible_steps(&self) -> u64 {
-        let pattern_length = self
-            .project
-            .patterns
-            .get(self.selected_pattern)
-            .map_or(VISIBLE_PIANO_STEPS, |pattern| pattern.length_steps);
-        pattern_length.clamp(VISIBLE_PIANO_STEPS, 4096)
+        let pattern = self.project.patterns.get(self.selected_pattern);
+        let pattern_length =
+            pattern.map_or(VISIBLE_PIANO_STEPS, |pattern| pattern.length_steps);
+        let note_end = pattern.map_or(0, |pattern| {
+            pattern
+                .notes
+                .iter()
+                .map(|note| note.start_step.saturating_add(note.duration_steps))
+                .max()
+                .unwrap_or(0)
+        });
+        pattern_length
+            .max(note_end.saturating_add(1))
+            .clamp(VISIBLE_PIANO_STEPS, 4096)
     }
 
     /// Window title for a plug-in window: uses the hosted plug-in name when the
@@ -1832,6 +1861,7 @@ impl PulseForgeApp {
             start_step,
         };
         self.selected_instrument = instrument;
+        self.status = format!("Selected note {} at step {}.", note_name(pitch), start_step);
         self.select_item(item, shift, ctrl);
     }
 
@@ -3875,15 +3905,13 @@ impl PulseForgeApp {
                         active_theme(context).color(active_theme(context).note)
                     }
                 };
-                let lift = if self.selection
-                    == Some(Selection::Clip {
-                        lane: lane_id,
-                        clip: clip_index,
-                    }) {
-                    self.clip_lift.value()
-                } else {
-                    0.0
-                };
+                // Clips in the multi-selection are drawn lifted as well, so a
+                // range selected with ctrl reads as one block.
+                let selected = self.is_selected(Selection::Clip {
+                    lane: lane_id,
+                    clip: clip_index,
+                });
+                let lift = if selected { self.clip_lift.value() } else { 0.0 };
                 let clip_rect = clip_rect.translate(egui::vec2(0.0, -lift * 2.0));
                 painter.rect_filled(clip_rect, 5.0, color.gamma_multiply(0.72 + lift * 0.12));
                 draw_clip_contents(
@@ -3901,22 +3929,8 @@ impl PulseForgeApp {
                     clip_rect,
                     5.0,
                     egui::Stroke::new(
-                        if self.selection
-                            == Some(Selection::Clip {
-                                lane: lane_id,
-                                clip: clip_index,
-                            })
-                        {
-                            2.4
-                        } else {
-                            1.0_f32
-                        },
-                        if self.selection
-                            == Some(Selection::Clip {
-                                lane: lane_id,
-                                clip: clip_index,
-                            })
-                        {
+                        if selected { 2.4 } else { 1.0_f32 },
+                        if selected {
                             egui::Color32::WHITE
                         } else {
                             color
@@ -4031,16 +4045,28 @@ impl PulseForgeApp {
             );
         }
 
-        let (middle_down, primary_pressed, primary_down, primary_released, alt_snap) = context
-            .input(|input| {
-                (
-                    input.pointer.button_down(egui::PointerButton::Middle),
-                    input.pointer.button_pressed(egui::PointerButton::Primary),
-                    input.pointer.button_down(egui::PointerButton::Primary),
-                    input.pointer.button_released(egui::PointerButton::Primary),
-                    input.modifiers.alt,
-                )
-            });
+        let (
+            middle_down,
+            primary_pressed,
+            primary_down,
+            primary_released,
+            secondary_pressed,
+            alt_snap,
+        ) = context.input(|input| {
+            (
+                input.pointer.button_down(egui::PointerButton::Middle),
+                input.pointer.button_pressed(egui::PointerButton::Primary),
+                input.pointer.button_down(egui::PointerButton::Primary),
+                input.pointer.button_released(egui::PointerButton::Primary),
+                input.pointer.button_pressed(egui::PointerButton::Secondary),
+                input.modifiers.alt,
+            )
+        });
+        // Right-click enters delete mode; dropping the selection first keeps the
+        // following action local to what is under the pointer.
+        if secondary_pressed && response.hovered() {
+            self.clear_selection();
+        }
         // Holding Alt disables snapping here just like in the piano roll.
         let arrangement_snap = if alt_snap {
             1
@@ -4088,9 +4114,16 @@ impl PulseForgeApp {
                     self.project.snap_ticks = steps[next];
                     self.sync_project();
                 }
-            } else {
+            } else if context.input(|input| input.modifiers.ctrl || input.modifiers.command) {
+                // Ctrl+wheel zooms; a plain wheel scrolls the track rows, which is
+                // what users expect when nothing is selected.
                 self.settings.zoom =
                     (self.settings.zoom * (1.0 + scroll * 0.0015)).clamp(MIN_ZOOM, MAX_ZOOM);
+            } else {
+                let delta_lanes = if scroll > 0.0 { -1 } else { 1 };
+                self.arrangement_pan_lanes = self
+                    .arrangement_pan_lanes
+                    .saturating_add_signed(delta_lanes);
             }
         }
         // `contains_pointer` also reports true for a floating window drawn on
@@ -4257,15 +4290,30 @@ impl PulseForgeApp {
                     Some((lane, clip_index, clip)) => {
                         self.selected_lane = lane;
                         self.arrangement_source = Some(clip.source.clone());
-                        let (shift, ctrl) = self.selection_modifiers();
-                        self.select_item(
-                            Selection::Clip {
-                                lane,
-                                clip: clip_index,
-                            },
-                            shift,
-                            ctrl,
-                        );
+                        // Selecting a pattern clip also selects its pattern, so
+                        // the piano roll and clip picker follow the click.
+                        if let ClipSource::Pattern { pattern_id } = &clip.source {
+                            self.selected_pattern = *pattern_id;
+                        }
+                        if self.mod_shift {
+                            // Shift+click duplicates instead of extending the
+                            // selection; the copy is selected so it can be dragged
+                            // straight away.
+                            self.duplicate_clip(lane, clip_index);
+                            self.status = "Duplicated clip.".to_owned();
+                        } else {
+                            self.status =
+                                format!("Selected clip {} on lane {}.", clip_index + 1, lane + 1);
+                            let (shift, ctrl) = self.selection_modifiers();
+                            self.select_item(
+                                Selection::Clip {
+                                    lane,
+                                    clip: clip_index,
+                                },
+                                shift,
+                                ctrl,
+                            );
+                        }
                     }
                     None => {
                         if !self.mod_shift && !self.mod_ctrl {
@@ -4329,6 +4377,33 @@ impl PulseForgeApp {
                 let snapped = snap_arrangement_step(step, arrangement_snap);
                 self.place_source_clip(lane, snapped, source);
                 self.sync_project();
+            }
+        }
+
+        // Right-drag deletes clips, mirroring the piano roll's delete mode. A
+        // plain right-click still opens the context menu because a menu needs a
+        // click, not a drag.
+        if response.dragged_by(egui::PointerButton::Secondary)
+            && let Some(position) = pointer_in_timeline
+        {
+            let display_row = first_lane.saturating_add(row_index_at(position.y - grid_top));
+            let lane = match rows.get(display_row).map(|span| span.row) {
+                Some(ArrangementRow::Lane(lane)) => Some(lane),
+                _ => None,
+            };
+            let step = start_step
+                .saturating_add(((position.x - left) / step_width).floor().max(0.0) as u64);
+            if let Some(lane) = lane.filter(|lane| *lane < self.project.lanes.len())
+                && let Some(index) = self.project.lanes[lane].clips.iter().position(|clip| {
+                    clip.start_step <= step
+                        && step < clip.start_step.saturating_add(clip.length_steps)
+                })
+            {
+                self.push_history();
+                self.project.lanes[lane].clips.remove(index);
+                self.selection = None;
+                self.sync_project();
+                self.status = "Deleted clip (right-drag).".to_owned();
             }
         }
 
@@ -4779,7 +4854,10 @@ impl PulseForgeApp {
                 }
                 let pattern_id = self.selected_pattern;
                 let pattern_length = self.project.patterns[pattern_id].length_steps;
-                let grid_width = 24.0 * VISIBLE_PATTERN_STEPS as f32;
+                // A fixed column keeps every row aligned; the rack window's scroll
+                // area handles overflow instead of squeezing the steps.
+                let step_width = STEP_COLUMN_WIDTH;
+                let grid_width = step_width * VISIBLE_PATTERN_STEPS as f32;
                 let (grid_rect, grid_response) = ui.allocate_exact_size(
                     egui::vec2(grid_width, 26.0),
                     egui::Sense::click_and_drag(),
@@ -4798,10 +4876,10 @@ impl PulseForgeApp {
                     };
                     let step_rect = egui::Rect::from_min_size(
                         egui::pos2(
-                            grid_rect.left() + (step - start) as f32 * 24.0,
+                            grid_rect.left() + (step - start) as f32 * step_width,
                             grid_rect.top(),
                         ),
-                        egui::vec2(24.0, 26.0),
+                        egui::vec2(step_width, 26.0),
                     );
                     painter.rect_filled(step_rect.shrink(1.0), 3.0, color);
                     let marker_color = if active {
@@ -4831,9 +4909,14 @@ impl PulseForgeApp {
                             || self.rack_gesture.is_some()
                             || self.pattern_drag.is_some())
                 }) {
-                    let step =
-                        rack_step_at(position.x, grid_rect.left(), start, VISIBLE_PATTERN_STEPS);
-                    if step < pattern_length && (primary_pressed || secondary_pressed) {
+                    let step = rack_step_at(
+                        position.x,
+                        grid_rect.left(),
+                        start,
+                        step_width,
+                        VISIBLE_PATTERN_STEPS,
+                    );
+                    if primary_pressed || secondary_pressed {
                         let enabled = primary_pressed;
                         self.selected_instrument = instrument_id;
                         self.selection = Some(Selection::Instrument(instrument_id));
@@ -4844,8 +4927,7 @@ impl PulseForgeApp {
                             enabled,
                             last_step: step,
                         });
-                    } else if step < pattern_length
-                        && (primary_down || secondary_down)
+                    } else if (primary_down || secondary_down)
                         && grid_response.hovered()
                         && let Some(mut gesture) = self.rack_gesture
                         && gesture.pattern_id == pattern_id
@@ -4890,10 +4972,22 @@ impl PulseForgeApp {
                     .pattern_pan_steps
                     .saturating_add_signed((-input.pointer.delta().x / 22.0).round() as i64);
             }
+            // The wheel scrolls across steps as well, which is what the rack was
+            // missing: only middle-drag used to pan.
+            let scroll = input.raw_scroll_delta.y;
+            if scroll.abs() > 0.01 && rect.contains(input.pointer.interact_pos().unwrap_or_default())
+            {
+                let direction = if scroll > 0.0 { -2 } else { 2 };
+                self.pattern_pan_steps = self.pattern_pan_steps.saturating_add_signed(direction);
+            }
         });
         ui.label("Left-drag paints steps on; right-drag paints off. Patterns are sparse and have no fixed step limit.");
     }
 
+    /// Toggles one step of the step sequencer.
+    ///
+    /// Steps are real C5 notes, which is what the rack draws and what the piano
+    /// roll shows; writing `step_hits` instead left the buttons looking dead.
     fn set_pattern_hit_for(
         &mut self,
         pattern_id: usize,
@@ -4901,24 +4995,38 @@ impl PulseForgeApp {
         step: u64,
         enabled: bool,
     ) -> bool {
+        let velocity = self.settings.default_velocity.clamp(1, 127);
         let pattern = &mut self.project.patterns[pattern_id];
-        let was_enabled = pattern
-            .step_hits
-            .iter()
-            .any(|hit| hit.instrument_id == instrument_id && hit.step == step);
-        if was_enabled == enabled {
-            return false;
+        if enabled && step >= pattern.length_steps {
+            // Activating a step outside the range grows the pattern, so the range
+            // always covers what the user painted.
+            pattern.length_steps = step + 1;
         }
-        pattern
-            .step_hits
-            .retain(|hit| !(hit.instrument_id == instrument_id && hit.step == step));
-        if enabled {
-            pattern.step_hits.push(StepHit {
-                instrument_id,
-                step,
-            });
+        let existing = pattern.notes.iter().position(|note| {
+            note.instrument_id == instrument_id
+                && note.pitch == project::STEP_SEQUENCER_PITCH
+                && note.start_step == step
+        });
+        match (enabled, existing) {
+            (true, None) => {
+                let mut note = PianoNote {
+                    instrument_id,
+                    pitch: project::STEP_SEQUENCER_PITCH,
+                    duration_steps: 1,
+                    velocity,
+                    ..PianoNote::default()
+                };
+                note.set_start_tick(step.saturating_mul(16));
+                note.set_duration_ticks(16);
+                pattern.notes.push(note);
+                true
+            }
+            (false, Some(index)) => {
+                pattern.notes.remove(index);
+                true
+            }
+            _ => false,
         }
-        true
     }
 
     fn render_piano_roll(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
@@ -4982,13 +5090,13 @@ impl PulseForgeApp {
                         .speed(1.0),
                 );
                 ui.separator();
-                ui.label("Repeats");
+                ui.label("New notes");
                 ui.add(
                     egui::DragValue::new(&mut self.note_repeat_count)
                         .range(0..=32)
                         .speed(0.1),
                 )
-                .on_hover_text("Extra triggers per note");
+                .on_hover_text("Extra triggers for newly drawn notes");
                 ui.label("Every");
                 ui.add(
                     egui::DragValue::new(&mut self.note_repeat_ticks)
@@ -5172,6 +5280,18 @@ impl PulseForgeApp {
                     egui::Color32::from_gray(192)
                 },
             );
+            // The scale root is marked on the keys, so the highlighted rows have
+            // a visible reference note.
+            if pitch % 12 == self.settings.scale_root % 12 {
+                ui.painter().rect_filled(
+                    egui::Rect::from_min_size(
+                        key_rect.left_top(),
+                        egui::vec2(3.0, key_rect.height()),
+                    ),
+                    0.0,
+                    self.ui_accent(),
+                );
+            }
             if pitch % 12 == 0 {
                 ui.painter().text(
                     key_rect.center(),
@@ -5399,9 +5519,13 @@ impl PulseForgeApp {
             .notes
             .iter()
             .filter(|note| {
+                // A note is selected when the band overlaps its body, not only
+                // when it starts inside, which is what users expect from a box.
+                let start = note.start_tick();
+                let end = start.saturating_add(note.duration_ticks().max(1));
                 note.instrument_id == instrument
-                    && note.start_tick() >= low_tick
-                    && note.start_tick() <= high_tick
+                    && end > low_tick
+                    && start <= high_tick
                     && note.pitch >= low_pitch
                     && note.pitch <= high_pitch
             })
@@ -5480,7 +5604,9 @@ impl PulseForgeApp {
             })
             .map(|(index, note)| {
                 let value = if repeats_mode {
-                    (u16::from(note.repeat_count) * 4).min(127) as u8
+                    // Whole repeats map onto the lane's height, so the bars snap
+                    // to integer counts instead of a 0..127 velocity scale.
+                    ((u32::from(note.repeat_count) * 127) / 32).min(127) as u8
                 } else {
                     note.velocity.clamp(1, 127)
                 };
@@ -5532,7 +5658,8 @@ impl PulseForgeApp {
             {
                 let note = &mut self.project.patterns[self.selected_pattern].notes[index];
                 if repeats_mode {
-                    note.repeat_count = (velocity / 4).min(32);
+                    note.repeat_count =
+                        ((f32::from(velocity) / 127.0 * 32.0).round() as u8).min(32);
                 } else {
                     note.velocity = velocity;
                 }
@@ -5557,6 +5684,7 @@ impl PulseForgeApp {
             snap,
             alt,
             secondary_down,
+            secondary_pressed,
             middle_down,
             primary_pressed,
             primary_down,
@@ -5567,6 +5695,7 @@ impl PulseForgeApp {
                 self.project.snap_ticks.max(1),
                 input.modifiers.alt,
                 input.pointer.button_down(egui::PointerButton::Secondary),
+                input.pointer.button_pressed(egui::PointerButton::Secondary),
                 input.pointer.button_down(egui::PointerButton::Middle),
                 input.pointer.button_pressed(egui::PointerButton::Primary),
                 input.pointer.button_down(egui::PointerButton::Primary),
@@ -5579,6 +5708,11 @@ impl PulseForgeApp {
             }
             return;
         };
+        // Right-click starts delete mode; dropping the selection first keeps the
+        // following actions local to what is under the pointer.
+        if secondary_pressed {
+            self.clear_selection();
+        }
         let inside_grid = grid_rect.contains(pointer)
             && (response.contains_pointer() || self.piano_gesture.is_some());
         if !inside_grid && !(primary_down && self.piano_gesture.is_some()) {
@@ -5617,7 +5751,7 @@ impl PulseForgeApp {
         }
         if secondary_down {
             self.push_history();
-            self.remove_note_at(tick, pitch);
+            self.remove_note_at(tick, raw_pitch);
             return;
         }
         // Ctrl+drag rubber-band selection: the Select tool has no gesture of its
@@ -5633,7 +5767,10 @@ impl PulseForgeApp {
         }
 
         if primary_pressed {
-            self.start_piano_gesture(tick, pitch, pointer, grid_rect, step_width);
+            // `pitch` is snapped to the scale for notes we create; hit tests must
+            // use the row the pointer is actually on, or notes outside the scale
+            // can never be selected, moved or deleted.
+            self.start_piano_gesture(tick, pitch, raw_pitch, pointer, grid_rect, step_width);
         }
         if primary_down {
             self.update_piano_gesture(tick, pitch, pointer);
@@ -5755,6 +5892,7 @@ impl PulseForgeApp {
         &mut self,
         tick: u64,
         pitch: u8,
+        hit_pitch: u8,
         pointer: egui::Pos2,
         grid_rect: egui::Rect,
         step_width: f32,
@@ -5766,7 +5904,7 @@ impl PulseForgeApp {
             PianoTool::Pen => {
                 if let Some((index, note)) = pattern.notes.iter().enumerate().find(|(_, note)| {
                     note.instrument_id == self.selected_instrument
-                        && note.pitch == pitch
+                        && note.pitch == hit_pitch
                         && tick >= note.start_tick()
                         && tick < note.start_tick().saturating_add(note.duration_ticks())
                 }) {
@@ -5877,7 +6015,7 @@ impl PulseForgeApp {
                     let notes = &self.project.patterns[self.selected_pattern].notes;
                     notes.iter().position(|note| {
                         note.instrument_id == self.selected_instrument
-                            && note.pitch == pitch
+                            && note.pitch == hit_pitch
                             && tick >= note.start_tick()
                             && tick < note.start_tick().saturating_add(note.duration_ticks())
                     })
@@ -5899,11 +6037,12 @@ impl PulseForgeApp {
                         if !additive.0 && !additive.1 {
                             self.clear_selection();
                         }
-                        // Ctrl+drag over empty space starts a rubber band.
-                        if additive.1 {
-                            self.piano_box_origin = Some((tick, pitch));
-                        }
                     }
+                }
+                // Ctrl+drag always starts a rubber band, even when the press
+                // lands on a note.
+                if additive.1 {
+                    self.piano_box_origin = Some((tick, pitch));
                 }
             }
             PianoTool::Join => {
@@ -7466,11 +7605,13 @@ impl PulseForgeApp {
                     if result.selected {
                         self.select_channel(master_id);
                     }
-                    if result.changed {
-                        self.sync_project();
-                    }
+                    // Same ordering rule as the lane strips: apply the action,
+                    // then push the project so the engine sees the change.
                     for action in result.actions {
                         self.apply_context_action(action);
+                    }
+                    if result.changed {
+                        self.sync_project();
                     }
                 },
             );
@@ -7533,11 +7674,14 @@ impl PulseForgeApp {
                                     any_changed |= result.changed;
                                     actions.extend(result.actions);
                                 }
-                                if any_changed {
-                                    self.sync_project();
-                                }
+                                // Actions first: they mutate the model (insert
+                                // enable, solo, favourites), and the sync below is
+                                // what actually reaches the audio engine.
                                 for action in actions {
                                     self.apply_context_action(action);
+                                }
+                                if any_changed {
+                                    self.sync_project();
                                 }
                                 // Add-track affordance at the end of the row, so
                                 // channels can be added where they appear.
@@ -7885,6 +8029,56 @@ impl PulseForgeApp {
                         .selected_instrument
                         .min(self.project.instruments.len() - 1);
                     self.selection = None;
+                    // Every remaining reference to an instrument is by index, so
+                    // they all shift with the removal. A dangling id used to make
+                    // the engine and the automation UI index past the end.
+                    let shift = |route: &mut usize| {
+                        if *route == instrument {
+                            *route = instrument.saturating_sub(1);
+                        } else if *route > instrument {
+                            *route -= 1;
+                        }
+                    };
+                    for route in &mut self.project.midi_routes {
+                        shift(route);
+                    }
+                    if let Ok(mut routes) = self.midi_routes.lock() {
+                        for route in routes.iter_mut() {
+                            shift(route);
+                        }
+                    }
+                    self.project.automation_tracks.retain_mut(|track| {
+                        if let ParameterTarget::Instrument { instrument_id, .. } =
+                            &mut track.target
+                        {
+                            if *instrument_id == instrument {
+                                return false;
+                            }
+                            if *instrument_id > instrument {
+                                *instrument_id -= 1;
+                            }
+                        }
+                        if let project::AutomationSource::MidiEnvelope { instrument_id, .. } =
+                            &mut track.source
+                        {
+                            if *instrument_id == instrument {
+                                return false;
+                            }
+                            if *instrument_id > instrument {
+                                *instrument_id -= 1;
+                            }
+                        }
+                        true
+                    });
+                    let last = self.project.instruments.len().saturating_sub(1);
+                    for route in &mut self.project.midi_routes {
+                        *route = (*route).min(last);
+                    }
+                    if let Ok(mut routes) = self.midi_routes.lock() {
+                        for route in routes.iter_mut() {
+                            *route = (*route).min(last);
+                        }
+                    }
                 } else {
                     self.status = "A project needs at least one instrument.".to_owned();
                 }
@@ -10102,18 +10296,7 @@ fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripResult
                         let pad = ((strip_width - pair_width) * 0.5).max(0.0);
                         ui.horizontal(|ui| {
                             ui.add_space(pad);
-                            // The fader is a dB scale: it travels down to
-                            // `FADER_MIN_DB`, and the bottom of the travel is
-                            // exact silence ("snap to 0").
-                            let mut position = fader_position(*strip.gain);
-                            let response = ui.add_sized(
-                                [fader_width, fader_height],
-                                egui::Slider::new(&mut position, 0.0..=1.0)
-                                    .vertical()
-                                    .show_value(false),
-                            );
-                            if response.changed() {
-                                *strip.gain = fader_gain(position);
+                            if fader(ui, strip.gain, fader_width, fader_height) {
                                 result.changed = true;
                             }
                             render_meter_sized(ui, strip.meter, 13.0, fader_height);
@@ -10168,7 +10351,9 @@ fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripResult
                             egui::ScrollArea::vertical()
                                 .id_salt(("mixer_inserts", strip.channel_id))
                                 .max_height(150.0)
-                                .auto_shrink([false, true])
+                                // A fixed height keeps every strip the same size
+                                // whether or not it carries inserts.
+                                .auto_shrink([false, false])
                                 .show(ui, |ui| {
                             for (index, label, enabled, solo, locked) in rows {
                                 let open = strip.open_inserts.contains(&(strip.channel_id, index));
@@ -10333,27 +10518,30 @@ fn edit_time_value(
     value: &mut project::TimeValue,
 ) -> bool {
     let mut changed = false;
-    ui.label(label);
-    changed |= ui
-        .add(
-            egui::DragValue::new(&mut value.amount)
-                .range(0.0..=60_000.0)
-                .speed(1.0),
-        )
-        .changed();
-    egui::ComboBox::from_id_salt(("time_unit", track_id, label))
-        .selected_text(match value.unit {
-            project::TimeUnit::Steps => "steps",
-            project::TimeUnit::Milliseconds => "ms",
-        })
-        .show_ui(ui, |ui| {
-            changed |= ui
-                .selectable_value(&mut value.unit, project::TimeUnit::Steps, "steps")
-                .changed();
-            changed |= ui
-                .selectable_value(&mut value.unit, project::TimeUnit::Milliseconds, "ms")
-                .changed();
-        });
+    // Value and unit share one row so the control does not wrap onto two lines.
+    ui.horizontal(|ui| {
+        ui.label(label);
+        changed |= ui
+            .add(
+                egui::DragValue::new(&mut value.amount)
+                    .range(0.0..=60_000.0)
+                    .speed(1.0),
+            )
+            .changed();
+        egui::ComboBox::from_id_salt(("time_unit", track_id, label))
+            .selected_text(match value.unit {
+                project::TimeUnit::Steps => "steps",
+                project::TimeUnit::Milliseconds => "ms",
+            })
+            .show_ui(ui, |ui| {
+                changed |= ui
+                    .selectable_value(&mut value.unit, project::TimeUnit::Steps, "steps")
+                    .changed();
+                changed |= ui
+                    .selectable_value(&mut value.unit, project::TimeUnit::Milliseconds, "ms")
+                    .changed();
+            });
+    });
     changed
 }
 
@@ -10525,6 +10713,47 @@ fn render_effect_parameters(
     changed
 }
 
+/// Vertical dB fader drawn to exactly `height`, so its travel matches the meter
+/// beside it. [`fader_position`]/[`fader_gain`] provide the dB scale and the
+/// silence snap at the bottom of the travel.
+fn fader(ui: &mut egui::Ui, gain: &mut f32, width: f32, height: f32) -> bool {
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click_and_drag());
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, 3.0, egui::Color32::from_gray(22));
+    let rail = egui::Rect::from_center_size(
+        rect.center(),
+        egui::vec2(6.0, (rect.height() - 10.0).max(10.0)),
+    );
+    painter.rect_filled(rail, 3.0, egui::Color32::from_gray(52));
+    let mut changed = false;
+    if (response.clicked() || response.dragged())
+        && let Some(pointer) = response.interact_pointer_pos()
+    {
+        let position = ((rail.bottom() - pointer.y) / rail.height()).clamp(0.0, 1.0);
+        *gain = fader_gain(position);
+        changed = true;
+    }
+    let position = fader_position(*gain);
+    let level_y = rail.bottom() - position * rail.height();
+    let accent = egui::Color32::from_rgb(112, 208, 190);
+    painter.rect_filled(
+        egui::Rect::from_min_max(egui::pos2(rail.left(), level_y), rail.right_bottom()),
+        3.0,
+        accent.gamma_multiply(0.7),
+    );
+    painter.rect_filled(
+        egui::Rect::from_center_size(
+            egui::pos2(rect.center().x, level_y),
+            egui::vec2((width - 4.0).max(8.0), 9.0),
+        ),
+        2.0,
+        egui::Color32::from_gray(205),
+    );
+    tooltip(ui, &response, "Volume · dB scale, bottom = silence");
+    changed
+}
+
 fn render_meter_sized(ui: &mut egui::Ui, level: f32, width: f32, height: f32) {
     let theme = active_theme(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
@@ -10671,9 +10900,15 @@ fn point_segment_distance(point: egui::Pos2, start: egui::Pos2, end: egui::Pos2)
     point.distance(start + segment * amount)
 }
 
-fn rack_step_at(pointer_x: f32, grid_left: f32, start_step: u64, visible_steps: u64) -> u64 {
+fn rack_step_at(
+    pointer_x: f32,
+    grid_left: f32,
+    start_step: u64,
+    step_width: f32,
+    visible_steps: u64,
+) -> u64 {
     let last_column = visible_steps.saturating_sub(1);
-    let column = ((pointer_x - grid_left) / 24.0)
+    let column = ((pointer_x - grid_left) / step_width.max(1.0))
         .floor()
         .clamp(0.0, last_column as f32) as u64;
     start_step.saturating_add(column)
@@ -11520,9 +11755,9 @@ mod tests {
 
     #[test]
     fn rack_grid_maps_pointer_and_paints_every_crossed_step() {
-        assert_eq!(rack_step_at(48.0, 0.0, 32, 32), 34);
-        assert_eq!(rack_step_at(-10.0, 0.0, 32, 32), 32);
-        assert_eq!(rack_step_at(900.0, 0.0, 32, 32), 63);
+        assert_eq!(rack_step_at(48.0, 0.0, 32, 24.0, 32), 34);
+        assert_eq!(rack_step_at(-10.0, 0.0, 32, 24.0, 32), 32);
+        assert_eq!(rack_step_at(900.0, 0.0, 32, 24.0, 32), 63);
         assert_eq!(rack_step_span(37, 42), (37, 42));
         assert_eq!(rack_step_span(42, 37), (37, 42));
     }

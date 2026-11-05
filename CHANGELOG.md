@@ -6,6 +6,42 @@ All notable changes to PulseForge. Commits written by AI are marked `AI:`.
 
 ### Fixed
 
+- Step sequencer columns use a fixed width again (`STEP_COLUMN_WIDTH = 24`) so
+  every channel row aligns; the rack scrolls instead of squeezing the steps.
+- The arrangement wheel scrolls the track rows; Ctrl+wheel zooms. Right-dragging
+  deletes clips, and shift+clicking a clip duplicates it.
+- Step sequencer buttons update: steps are written as real C5 notes (the rack drew
+  note state while the buttons wrote `step_hits`, so toggles were invisible).
+- Step columns scale with the rack window instead of a fixed 24 px width.
+- Removing an instrument no longer leaves dangling indices: MIDI routes, mixer
+  automation targets and `MidiEnvelope` sources shift with the removal (tracks
+  that pointed at the removed instrument are dropped).
+- Step sequencer: painting a step beyond the pattern length extends the pattern,
+  the wheel scrolls across steps, and shortening a pattern no longer wraps or
+  hides notes that sit beyond the new length.
+- Mixer strip actions (insert enable, ctrl+solo, lock, FX bypass) are applied
+  before the project sync, so the engine actually hears them; previously the
+  model changed but the audio chain kept the old state.
+- Sliced clips draw their contents from the cut point instead of restarting
+  the pattern at step 0 (`clip.offset_steps` is honoured).
+- Selecting an arrangement clip also selects its pattern, names it in the status
+  line, and multi-selected clips use the same outline/lift.
+- Right-click (delete mode) clears the selection in the piano roll and the
+  arrangement.
+- Repeats lane bars snap to whole repeats (0–32) instead of a velocity scale.
+- The mixer strip uses a custom dB fader drawn to exactly the meter's height,
+  with a filled dB column instead of a slider rail.
+- Mixer strips keep a constant height: the insert list has a fixed height.
+- Zoom-in is capped at 3×.
+- Piano-roll hit-testing now uses the row under the pointer instead of the
+  scale-snapped pitch, so notes can be selected, moved and deleted with scale
+  snap enabled; the selection is also reported in the status line.
+- The Ctrl+drag selection band starts on any Ctrl+drag and selects every note
+  whose body it overlaps.
+- Clip previews no longer stack every off-screen note at the left edge while
+  panning, and only draw notes that fall inside the clip.
+- The piano keys mark the scale root with an accent stripe.
+- The time-value editor keeps its rate and unit selector on one row.
 - Selection with Ctrl: ranges now resolve to entries of the same kind (clips and
   channels used to be looked up in the note list), a first Ctrl+click selects
   the item, and Ctrl+click no longer starts a clip drag.

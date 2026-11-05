@@ -18,10 +18,16 @@ A file to keep track of TODOs and unimplemented features.
 - Fix misaligned items.
 - Allow zooming in further. Ctrl+Click should reset zoom.
   *Done: range is now 0.2×–8×, and Ctrl+click on the arrangement ruler resets to 100 %.*
+  Note: Zoom in should be capped at even lower values.
+  *Done: the upper limit is now 3× (`MAX_ZOOM`/normalize).*
 - Add shortcuts for file operations and every operation mentioned here.
+- Right clicking (entering delete mode) should unselect everything in piano roll and arrangement window.
+  *Done: a secondary press clears the selection in both editors.*
 
 ## Mixer
 
+- The visual for the mixer value starts at 0.
+  *Done: the fader draws a filled dB column with its handle, instead of a slider whose track starts at zero.*
 - Mixer levels should go down to 100dB, after which they snap to 0.
   *Done: the strip fader is a dB scale down to −100 dB and its bottom position is exact silence.*
 - There should be up to 10 inserts available.
@@ -32,6 +38,7 @@ A file to keep track of TODOs and unimplemented features.
   *Done: `ArrangementLane::width` drives a mid/side scale in the engine and a compact knob next to pan.*
 - Add an effect disable knob to the mixer channel strip, which temporarily avoids FX. It should not change their enable states.
   *Done: the strip's "FX bypass" switch rebuilds the channel's chain empty without touching any insert state.*
+  Not fixed.
 - Add the option to have multiple level meters. They should show waveform going from top to bottom, LUFs, Peak values, stereo correlation, etc. Options should be available in the graphics options.
 - Join the selected track controls and inserts tabs.
   *Done: one inspector page with EQ, stereo width and the insert chain.*
