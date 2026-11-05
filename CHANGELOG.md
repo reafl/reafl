@@ -37,6 +37,15 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ### Fixed
 
+- Automated controls now follow the engine value: live values are published while
+  the transport is stopped as well, and the knob dial, fader handle and the
+  automatable sliders sit at the automated value instead of the stored one
+  (dragging still writes through to the base).
+- Automation lanes can be created from more places: the arpeggiator's mode combo,
+  gate, octaves and rate, the signal generator's waveform and MIDI note, the
+  insert editor's Mix slider, and a lane's own base/depth/rate/shape/sustain/
+  octaves all offer "Add automation lane...", and creating one opens the
+  automation window.
 - Moving an automation clip and drawing its points no longer conflict: the clip
   is grabbed only from its title band (the top 8 px), and a press that lands on a
   point never starts a clip move.

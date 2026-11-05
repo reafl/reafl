@@ -1491,6 +1491,8 @@ impl PulseForgeApp {
             ..AutomationTrack::default()
         });
         self.status = format!("Automation lane created for track {}.", track_id + 1);
+        // Show the new lane straight away, so the action has a visible result.
+        self.windows.automation = true;
         self.sync_project();
     }
 
@@ -6468,7 +6470,11 @@ impl PulseForgeApp {
                 .num_columns(2)
                 .show(right, |ui| {
                     ui.label("Mode");
-                    egui::ComboBox::from_id_salt(("arp_mode", instrument_id))
+                    let arp_mode = ParameterTarget::Instrument {
+                        instrument_id,
+                        parameter: InstrumentParameter::ArpMode,
+                    };
+                    let mode_response = egui::ComboBox::from_id_salt(("arp_mode", instrument_id))
                         .selected_text(instrument.arpeggio.mode.label())
                         .show_ui(ui, |ui| {
                             for mode in project::ArpMode::ALL {
@@ -6478,16 +6484,58 @@ impl PulseForgeApp {
                                     mode.label(),
                                 );
                             }
-                        });
+                        })
+                        .response;
+                    automation_context_menu(
+                        &mode_response,
+                        &format!("Arp mode · {}", instrument.arpeggio.mode.label()),
+                        arp_mode,
+                    );
                     ui.end_row();
                     ui.label("Gate");
-                    ui.add(egui::Slider::new(&mut instrument.arpeggio.gate, 0.05..=1.0));
+                    let mut gate = instrument.arpeggio.gate;
+                    if lane_parameter_slider(
+                        ui,
+                        "",
+                        &mut gate,
+                        0.05..=1.0,
+                        ParameterTarget::Instrument {
+                            instrument_id,
+                            parameter: InstrumentParameter::ArpGate,
+                        },
+                    ) {
+                        instrument.arpeggio.gate = gate;
+                    }
                     ui.end_row();
                     ui.label("Octaves");
-                    ui.add(egui::Slider::new(&mut instrument.arpeggio.octaves, 1..=4));
+                    let mut octaves = f32::from(instrument.arpeggio.octaves);
+                    if lane_parameter_slider(
+                        ui,
+                        "",
+                        &mut octaves,
+                        1.0..=8.0,
+                        ParameterTarget::Instrument {
+                            instrument_id,
+                            parameter: InstrumentParameter::ArpOctaves,
+                        },
+                    ) {
+                        instrument.arpeggio.octaves = octaves.round().clamp(1.0, 8.0) as u8;
+                    }
                     ui.end_row();
                 });
-            edit_time_value(right, instrument_id, "Rate", &mut instrument.arpeggio.rate);
+            let mut arp_rate = instrument.arpeggio.rate;
+            if edit_time_value_automated(
+                right,
+                instrument_id,
+                "Rate",
+                &mut arp_rate,
+                Some(ParameterTarget::Instrument {
+                    instrument_id,
+                    parameter: InstrumentParameter::ArpRate,
+                }),
+            ) {
+                instrument.arpeggio.rate = arp_rate;
+            }
         });
     }
 
@@ -6617,30 +6665,48 @@ impl PulseForgeApp {
                     // Handled by the wrapper above; kept for exhaustiveness.
                     SynthKind::External => {}
                     SynthKind::SignalGenerator => {
-                        changed |= ui
-                            .add(
-                                egui::Slider::new(&mut instrument.synth_note, 0..=127)
-                                    .text("MIDI note"),
-                            )
-                            .changed();
-                        egui::ComboBox::from_id_salt(("signal_waveform_editor", instrument_id))
-                            .selected_text(waveform_label(instrument.signal_waveform))
-                            .show_ui(ui, |ui| {
-                                for (waveform, label) in [
-                                    (SignalWaveform::Sine, "Sine"),
-                                    (SignalWaveform::Triangle, "Triangle"),
-                                    (SignalWaveform::Saw, "Saw"),
-                                    (SignalWaveform::Square, "Square"),
-                                ] {
-                                    changed |= ui
-                                        .selectable_value(
-                                            &mut instrument.signal_waveform,
-                                            waveform,
-                                            label,
-                                        )
-                                        .changed();
-                                }
-                            });
+                        let mut note = f32::from(instrument.synth_note);
+                        if lane_parameter_slider(
+                            ui,
+                            "MIDI note",
+                            &mut note,
+                            0.0..=127.0,
+                            ParameterTarget::Instrument {
+                                instrument_id,
+                                parameter: InstrumentParameter::SynthNote,
+                            },
+                        ) {
+                            instrument.synth_note = note.round().clamp(0.0, 127.0) as u8;
+                        }
+                        let waveform_response =
+                            egui::ComboBox::from_id_salt(("signal_waveform_editor", instrument_id))
+                                .selected_text(waveform_label(instrument.signal_waveform))
+                                .show_ui(ui, |ui| {
+                                    for (waveform, label) in [
+                                        (SignalWaveform::Sine, "Sine"),
+                                        (SignalWaveform::Triangle, "Triangle"),
+                                        (SignalWaveform::Saw, "Saw"),
+                                        (SignalWaveform::Square, "Square"),
+                                    ] {
+                                        changed |= ui
+                                            .selectable_value(
+                                                &mut instrument.signal_waveform,
+                                                waveform,
+                                                label,
+                                            )
+                                            .changed();
+                                    }
+                                })
+                                .response;
+                        // The waveform is an enum, automated as a plain integer.
+                        automation_context_menu(
+                            &waveform_response,
+                            waveform_label(instrument.signal_waveform),
+                            ParameterTarget::Instrument {
+                                instrument_id,
+                                parameter: InstrumentParameter::Waveform,
+                            },
+                        );
                     }
                     SynthKind::Ms20 => {
                         ui.horizontal(|ui| {
@@ -6794,7 +6860,21 @@ impl PulseForgeApp {
             if let Some(effect) = self.effect_slot_mut(channel, slot_id) {
                 ui.checkbox(&mut effect.enabled, "Enabled");
                 ui.checkbox(&mut effect.locked, "Locked");
-                ui.add(egui::Slider::new(&mut effect.mix, 0.0..=1.0).text("Mix"));
+                let mix_target = ParameterTarget::InsertEffect {
+                    channel_id: channel,
+                    slot_id,
+                    parameter: EffectParameter::Mix,
+                };
+                let mut mix = target_live_value(ui, mix_target).unwrap_or(effect.mix);
+                let mix_response = ui.add(egui::Slider::new(&mut mix, 0.0..=1.0).text("Mix"));
+                automation_context_menu(
+                    &mix_response,
+                    &format!("Mix · {mix:.2}"),
+                    mix_target,
+                );
+                if mix_response.changed() {
+                    effect.mix = mix;
+                }
                 ui.label(
                     "Routing and latency settings are not implemented for insert effects yet.",
                 );
@@ -7463,9 +7543,16 @@ impl PulseForgeApp {
                         ui.horizontal(|ui| {
                             changed |= edit_time_value(ui, track_id, "Attack", attack);
                             changed |= edit_time_value(ui, track_id, "Decay", decay);
-                            changed |= ui
-                                .add(egui::Slider::new(sustain, 0.0..=1.0).text("Sustain"))
-                                .changed();
+                            changed |= lane_parameter_slider(
+                                ui,
+                                "Sustain",
+                                sustain,
+                                0.0..=1.0,
+                                ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Sustain,
+                                },
+                            );
                             changed |= edit_time_value(ui, track_id, "Release", release);
                             changed |= lane_parameter_slider(
                                 ui,
@@ -7629,9 +7716,19 @@ impl PulseForgeApp {
                                     parameter: project::AutomationLaneParameter::RateAmount,
                                 }),
                             );
-                            changed |= ui
-                                .add(egui::Slider::new(octaves, 1..=16).text("Octaves"))
-                                .changed();
+                            let mut octave_count = *octaves as f32;
+                            if lane_parameter_slider(
+                                ui,
+                                "Octaves",
+                                &mut octave_count,
+                                1.0..=16.0,
+                                ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Octaves,
+                                },
+                            ) {
+                                *octaves = octave_count.round().clamp(1.0, 16.0) as u32;
+                            }
                             changed |= lane_parameter_slider(
                                 ui,
                                 "Base",
@@ -9077,9 +9174,8 @@ impl PulseForgeApp {
         let Some(audio) = &self.audio else {
             return Vec::new();
         };
-        if !self.playing {
-            return Vec::new();
-        }
+        // Also evaluated while stopped, so an automated control sits where the
+        // playhead says it should instead of showing the stored value.
         let position = audio
             .playhead_steps
             .load(std::sync::atomic::Ordering::Relaxed) as f64;
@@ -10230,6 +10326,14 @@ impl Knob {
         let (rect, response) =
             ui.allocate_exact_size(egui::vec2(self.size, height), egui::Sense::click_and_drag());
         let mut changed = false;
+        // A control driven by an automation lane follows the engine value and
+        // stops accepting edits, so what is drawn matches what is heard.
+        let automated = self
+            .automation_target
+            .is_some_and(|target| target_is_automated(ui, target));
+        let live_value = self
+            .automation_target
+            .and_then(|target| target_live_value(ui, target));
         // A knob drag is relative: hide the pointer while it runs and put it
         // back where it started so the value does not jump on release.
         let drag_id = response.id.with("knob_drag_origin");
@@ -10272,12 +10376,6 @@ impl Knob {
             egui::Stroke::new(1.0_f32, egui::Color32::from_gray(115)),
         );
 
-        let automated = self
-            .automation_target
-            .is_some_and(|target| target_is_automated(ui, target));
-        let live_value = self
-            .automation_target
-            .and_then(|target| target_live_value(ui, target));
         if automated {
             painter.circle_stroke(
                 center,
@@ -10286,7 +10384,8 @@ impl Knob {
             );
         }
 
-        let normalized = ((*value - self.min) / (self.max - self.min)).clamp(0.0, 1.0);
+        let normalized = ((live_value.unwrap_or(*value) - self.min) / (self.max - self.min))
+            .clamp(0.0, 1.0);
         let angle = (-135.0 + normalized * 270.0).to_radians();
         let indicator = center + egui::vec2(angle.sin(), -angle.cos()) * (radius - 3.0);
         painter.line_segment(
@@ -11176,9 +11275,6 @@ fn render_effect_parameters(
     changed
 }
 
-/// Vertical dB fader drawn to exactly `height`, so its travel matches the meter
-/// beside it. [`fader_position`]/[`fader_gain`] provide the dB scale and the
-/// silence snap at the bottom of the travel.
 /// True when a lane already drives `target`, so any control can show the same
 /// "automated" ring a knob draws.
 fn target_is_automated(ui: &egui::Ui, target: ParameterTarget) -> bool {
@@ -11215,6 +11311,9 @@ fn automation_context_menu(response: &egui::Response, label: &str, target: Param
     });
 }
 
+/// Vertical dB fader drawn to exactly `height`, so its travel matches the meter
+/// beside it. [`fader_position`]/[`fader_gain`] provide the dB scale and the
+/// silence snap at the bottom of the travel.
 fn fader(
     ui: &mut egui::Ui,
     gain: &mut f32,
@@ -11232,6 +11331,7 @@ fn fader(
     );
     painter.rect_filled(rail, 3.0, egui::Color32::from_gray(52));
     let mut changed = false;
+    let live = target.and_then(|target| target_live_value(ui, target));
     if (response.clicked() || response.dragged())
         && let Some(pointer) = response.interact_pointer_pos()
     {
@@ -11248,16 +11348,8 @@ fn fader(
             egui::Stroke::new(1.6_f32, egui::Color32::from_rgb(202, 158, 238)),
             egui::StrokeKind::Outside,
         );
-        if let Some(live) = target_live_value(ui, target) {
-            let live_y = rail.bottom() - fader_position(live) * rail.height();
-            painter.circle_filled(
-                egui::pos2(rect.center().x, live_y),
-                2.6,
-                egui::Color32::from_rgb(238, 205, 116),
-            );
-        }
     }
-    let position = fader_position(*gain);
+    let position = fader_position(live.unwrap_or(*gain));
     let level_y = rail.bottom() - position * rail.height();
     let accent = egui::Color32::from_rgb(112, 208, 190);
     painter.rect_filled(
@@ -11293,9 +11385,17 @@ fn lane_parameter_slider(
     range: std::ops::RangeInclusive<f32>,
     target: ParameterTarget,
 ) -> bool {
-    let response = ui.add(egui::Slider::new(value, range).text(label));
-    automation_context_menu(&response, &format!("{label} · {value:.2}"), target);
-    response.changed()
+    // While a lane drives the parameter the slider sits at the engine value, so
+    // the control shows what is actually heard. Dragging still writes through.
+    let mut shown = target_live_value(ui, target).unwrap_or(*value);
+    let response = ui.add(egui::Slider::new(&mut shown, range).text(label));
+    automation_context_menu(&response, &format!("{label} · {shown:.2}"), target);
+    if response.changed() {
+        *value = shown;
+        true
+    } else {
+        false
+    }
 }
 
 fn render_meter_sized(ui: &mut egui::Ui, level: f32, width: f32, height: f32) {

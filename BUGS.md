@@ -132,6 +132,18 @@ This file is a bugtracker.
 - The mixer stereo width is not automatable.
   *Fixed: `MixerParameter::Width` (0 mono to 2 double side) with a smoothed
   `lane_width` in the engine, and the strip's width knob is now a target.*
+- Automated controls do not update visually.
+  *Fixed: the live engine value is published while the transport is stopped too,
+  and the knob dial, the fader handle and every automatable slider now sit at
+  that value instead of the stored one; dragging still writes through to the
+  base value.*
+- Sliders, number boxes and enums have no context menu to create an automation
+  clip.
+  *Fixed: the arpeggiator (mode combo, gate, octaves, rate), the signal
+  generator's waveform combo and MIDI note, the insert editor's Mix slider, and
+  the lane source's base/depth/rate/shape/sustain/octaves all attach
+  `automation_context_menu`, and creating a lane now opens the automation window
+  so the result is visible.*
 
 ## Step sequencer
 

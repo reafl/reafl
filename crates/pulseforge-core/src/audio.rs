@@ -1077,6 +1077,14 @@ impl AudioEngine {
                         ) => {
                             *shape = LfoShape::from_index(value.max(0.0) as u32);
                         }
+                        (
+                            AutomationSource::MidiEnvelope { sustain, .. },
+                            AutomationLaneParameter::Sustain,
+                        ) => *sustain = finite_clamp(value, 0.0, 1.0, *sustain),
+                        (
+                            AutomationSource::Perlin { octaves, .. },
+                            AutomationLaneParameter::Octaves,
+                        ) => *octaves = finite_clamp(value, 1.0, 16.0, 4.0) as u32,
                         _ => {}
                     }
                 }
@@ -1092,6 +1100,7 @@ impl AudioEngine {
                         | InstrumentParameter::ArpGate
                         | InstrumentParameter::ArpOctaves
                         | InstrumentParameter::ArpRate
+                        | InstrumentParameter::SynthNote
                 ) => {
                     let Some(base) = self.project.parameter_value(target) else {
                         continue;
@@ -1124,6 +1133,9 @@ impl AudioEngine {
                         }
                         InstrumentParameter::ArpRate => {
                             instrument.arpeggio.rate.amount = finite_clamp(value, 0.1, 64.0, 1.0)
+                        }
+                        InstrumentParameter::SynthNote => {
+                            instrument.synth_note = finite_clamp(value, 0.0, 127.0, 60.0) as u8
                         }
                         _ => {}
                     }

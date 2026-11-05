@@ -505,6 +505,8 @@ pub enum InstrumentParameter {
     ArpOctaves,
     /// Arpeggiator rate amount, in whatever unit the arp rate uses.
     ArpRate,
+    /// MIDI note the signal generator holds, rounded to a whole note.
+    SynthNote,
 }
 
 impl InstrumentParameter {
@@ -515,6 +517,7 @@ impl InstrumentParameter {
             Self::Waveform => Some(SignalWaveform::ALL.len() as u32),
             Self::ArpMode => Some(ArpMode::ALL.len() as u32),
             Self::ArpOctaves => Some(7),
+            Self::SynthNote => Some(128),
             _ => None,
         }
     }
@@ -572,6 +575,10 @@ pub enum AutomationLaneParameter {
     RateAmount,
     /// Index into [`LfoShape`] for LFO lanes.
     Shape,
+    /// Sustain level of a MIDI-envelope lane.
+    Sustain,
+    /// Perlin octave count.
+    Octaves,
 }
 
 impl AutomationLaneParameter {
@@ -581,6 +588,8 @@ impl AutomationLaneParameter {
             Self::Depth => "Depth",
             Self::RateAmount => "Rate",
             Self::Shape => "Shape",
+            Self::Sustain => "Sustain",
+            Self::Octaves => "Octaves",
         }
     }
 }
@@ -641,6 +650,7 @@ impl ParameterTarget {
                 InstrumentParameter::ArpGate => (0.01, 1.0),
                 InstrumentParameter::ArpOctaves => (1.0, 8.0),
                 InstrumentParameter::ArpRate => (0.1, 64.0),
+                InstrumentParameter::SynthNote => (0.0, 127.0),
             },
             Self::InsertEffect { parameter, .. } => match parameter {
                 EffectParameter::Mix
@@ -666,6 +676,8 @@ impl ParameterTarget {
                 AutomationLaneParameter::Base | AutomationLaneParameter::Depth => (0.0, 1.0),
                 AutomationLaneParameter::RateAmount => (0.1, 64.0),
                 AutomationLaneParameter::Shape => (0.0, (LfoShape::ALL.len() - 1) as f32),
+                AutomationLaneParameter::Sustain => (0.0, 1.0),
+                AutomationLaneParameter::Octaves => (1.0, 16.0),
             },
             Self::Tempo => (20.0, 300.0),
         }
@@ -700,6 +712,7 @@ impl InstrumentParameter {
             Self::ArpGate => "Arp gate",
             Self::ArpOctaves => "Arp octaves",
             Self::ArpRate => "Arp rate",
+            Self::SynthNote => "MIDI note",
         }
     }
 }
@@ -1528,6 +1541,7 @@ impl Project {
                     InstrumentParameter::ArpGate => instrument.arpeggio.gate,
                     InstrumentParameter::ArpOctaves => f32::from(instrument.arpeggio.octaves),
                     InstrumentParameter::ArpRate => instrument.arpeggio.rate.amount,
+                    InstrumentParameter::SynthNote => f32::from(instrument.synth_note),
                 })
             }
             ParameterTarget::AutomationLane {
@@ -1567,6 +1581,14 @@ impl Project {
                         AutomationSource::Lfo { shape, .. },
                         AutomationLaneParameter::Shape,
                     ) => Some(shape.index() as f32),
+                    (
+                        AutomationSource::MidiEnvelope { sustain, .. },
+                        AutomationLaneParameter::Sustain,
+                    ) => Some(*sustain),
+                    (
+                        AutomationSource::Perlin { octaves, .. },
+                        AutomationLaneParameter::Octaves,
+                    ) => Some(*octaves as f32),
                     _ => None,
                 }
             }
