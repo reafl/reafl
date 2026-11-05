@@ -144,6 +144,10 @@ This file is a bugtracker.
   the lane source's base/depth/rate/shape/sustain/octaves all attach
   `automation_context_menu`, and creating a lane now opens the automation window
   so the result is visible.*
+- Enum widgets serve two purposes at once, which breaks them.
+  *Fixed: a `ComboBox` already owns a popup, so it no longer carries a context
+  menu. Enums (arp mode, waveform, LFO shape) keep their dropdown and get a small
+  "A" button beside them, which creates the lane on click or right-click.*
 
 ## Step sequencer
 

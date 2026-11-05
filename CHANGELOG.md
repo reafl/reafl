@@ -37,6 +37,10 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ### Fixed
 
+- Enum controls no longer double as an automation menu: a `ComboBox` owns its own
+  popup, so the arpeggiator mode, waveform and LFO shape combos keep their
+  dropdown and get a compact "A" button beside them that creates the lane
+  (click or right-click). Sliders and drag values keep the context-menu entry.
 - Automated controls now follow the engine value: live values are published while
   the transport is stopped as well, and the knob dial, fader handle and the
   automatable sliders sit at the automated value instead of the stored one

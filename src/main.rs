@@ -6474,23 +6474,25 @@ impl PulseForgeApp {
                         instrument_id,
                         parameter: InstrumentParameter::ArpMode,
                     };
-                    let mode_response = egui::ComboBox::from_id_salt(("arp_mode", instrument_id))
-                        .selected_text(instrument.arpeggio.mode.label())
-                        .show_ui(ui, |ui| {
-                            for mode in project::ArpMode::ALL {
-                                ui.selectable_value(
-                                    &mut instrument.arpeggio.mode,
-                                    mode,
-                                    mode.label(),
-                                );
-                            }
-                        })
-                        .response;
-                    automation_context_menu(
-                        &mode_response,
-                        &format!("Arp mode · {}", instrument.arpeggio.mode.label()),
-                        arp_mode,
-                    );
+                    // The combo and its automation button share one grid cell.
+                    ui.horizontal(|ui| {
+                        egui::ComboBox::from_id_salt(("arp_mode", instrument_id))
+                            .selected_text(instrument.arpeggio.mode.label())
+                            .show_ui(ui, |ui| {
+                                for mode in project::ArpMode::ALL {
+                                    ui.selectable_value(
+                                        &mut instrument.arpeggio.mode,
+                                        mode,
+                                        mode.label(),
+                                    );
+                                }
+                            });
+                        automation_lane_button(
+                            ui,
+                            &format!("arp mode · {}", instrument.arpeggio.mode.label()),
+                            arp_mode,
+                        );
+                    });
                     ui.end_row();
                     ui.label("Gate");
                     let mut gate = instrument.arpeggio.gate;
@@ -6678,35 +6680,41 @@ impl PulseForgeApp {
                         ) {
                             instrument.synth_note = note.round().clamp(0.0, 127.0) as u8;
                         }
-                        let waveform_response =
-                            egui::ComboBox::from_id_salt(("signal_waveform_editor", instrument_id))
-                                .selected_text(waveform_label(instrument.signal_waveform))
-                                .show_ui(ui, |ui| {
-                                    for (waveform, label) in [
-                                        (SignalWaveform::Sine, "Sine"),
-                                        (SignalWaveform::Triangle, "Triangle"),
-                                        (SignalWaveform::Saw, "Saw"),
-                                        (SignalWaveform::Square, "Square"),
-                                    ] {
-                                        changed |= ui
-                                            .selectable_value(
-                                                &mut instrument.signal_waveform,
-                                                waveform,
-                                                label,
-                                            )
-                                            .changed();
-                                    }
-                                })
-                                .response;
-                        // The waveform is an enum, automated as a plain integer.
-                        automation_context_menu(
-                            &waveform_response,
-                            waveform_label(instrument.signal_waveform),
-                            ParameterTarget::Instrument {
+                        ui.horizontal(|ui| {
+                            egui::ComboBox::from_id_salt((
+                                "signal_waveform_editor",
                                 instrument_id,
-                                parameter: InstrumentParameter::Waveform,
-                            },
-                        );
+                            ))
+                            .selected_text(waveform_label(instrument.signal_waveform))
+                            .show_ui(ui, |ui| {
+                                for (waveform, label) in [
+                                    (SignalWaveform::Sine, "Sine"),
+                                    (SignalWaveform::Triangle, "Triangle"),
+                                    (SignalWaveform::Saw, "Saw"),
+                                    (SignalWaveform::Square, "Square"),
+                                ] {
+                                    changed |= ui
+                                        .selectable_value(
+                                            &mut instrument.signal_waveform,
+                                            waveform,
+                                            label,
+                                        )
+                                        .changed();
+                                }
+                            });
+                            // The waveform is an enum, automated as a plain integer.
+                            automation_lane_button(
+                                ui,
+                                &format!(
+                                    "waveform · {}",
+                                    waveform_label(instrument.signal_waveform)
+                                ),
+                                ParameterTarget::Instrument {
+                                    instrument_id,
+                                    parameter: InstrumentParameter::Waveform,
+                                },
+                            );
+                        });
                     }
                     SynthKind::Ms20 => {
                         ui.horizontal(|ui| {
@@ -7583,7 +7591,7 @@ impl PulseForgeApp {
                         base,
                         depth,
                     } => {
-                        let shape_response =
+                        ui.horizontal(|ui| {
                             egui::ComboBox::from_id_salt(("automation_lfo_shape", track_id))
                                 .selected_text(format!("{shape:?}"))
                                 .show_ui(ui, |ui| {
@@ -7606,17 +7614,17 @@ impl PulseForgeApp {
                                             changed = true;
                                         }
                                     }
-                                })
-                                .response;
-                        // The shape is an enum, automated as a plain integer.
-                        automation_context_menu(
-                            &shape_response,
-                            "Shape",
-                            ParameterTarget::AutomationLane {
-                                track_id,
-                                parameter: project::AutomationLaneParameter::Shape,
-                            },
-                        );
+                                });
+                            // The shape is an enum, automated as a plain integer.
+                            automation_lane_button(
+                                ui,
+                                "LFO shape",
+                                ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Shape,
+                                },
+                            );
+                        });
                         ui.horizontal(|ui| {
                             changed |= edit_time_value_automated(
                                 ui,
@@ -11297,18 +11305,40 @@ fn target_live_value(ui: &egui::Ui, target: ParameterTarget) -> Option<f32> {
     })
 }
 
+/// Asks for an automation lane on `target`; the request is picked up by the next
+/// frame's update pass, which creates the lane.
+fn request_automation_lane(context: &egui::Context, target: ParameterTarget) {
+    context.data_mut(|data| {
+        data.insert_temp(egui::Id::new("knob_add_automation"), target)
+    });
+}
+
 /// Adds the shared "Add automation lane" entry to a control's right-click menu,
 /// so sliders and drag values create lanes exactly the way a knob does.
 fn automation_context_menu(response: &egui::Response, label: &str, target: ParameterTarget) {
     response.context_menu(|ui| {
         ui.label(label);
         if ui.button("Add automation lane...").clicked() {
-            ui.ctx().data_mut(|data| {
-                data.insert_temp(egui::Id::new("knob_add_automation"), target)
-            });
+            request_automation_lane(ui.ctx(), target);
             ui.close();
         }
     });
+}
+
+/// Automation affordance for controls that cannot carry a context menu
+/// themselves: a `ComboBox` owns its own popup, so giving it a second menu as
+/// well makes the one widget answer to two popups. The enum keeps its dropdown
+/// and the lane is requested from this small button instead.
+fn automation_lane_button(ui: &mut egui::Ui, label: &str, target: ParameterTarget) -> bool {
+    let response = ui
+        .small_button("A")
+        .on_hover_text(format!("Automate {label}"));
+    if response.clicked() {
+        request_automation_lane(ui.ctx(), target);
+        return true;
+    }
+    automation_context_menu(&response, label, target);
+    false
 }
 
 /// Vertical dB fader drawn to exactly `height`, so its travel matches the meter
