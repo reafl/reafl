@@ -10,7 +10,7 @@
 /// # Returns
 ///
 /// The level in decibels, clamped at the bottom of the fader's travel.
-pub(crate) fn gain_to_db(gain: f32) -> f32 {
+pub fn gain_to_db(gain: f32) -> f32 {
     if gain <= 0.00001 {
         FADER_MIN_DB
     } else {
@@ -19,7 +19,7 @@ pub(crate) fn gain_to_db(gain: f32) -> f32 {
 }
 
 /// Lowest level a mixer fader reaches before it snaps to silence, in dB.
-pub(crate) const FADER_MIN_DB: f32 = -100.0;
+pub const FADER_MIN_DB: f32 = -100.0;
 
 /// Fader travel position for a linear gain.
 ///
@@ -30,7 +30,7 @@ pub(crate) const FADER_MIN_DB: f32 = -100.0;
 /// # Returns
 ///
 /// `0.0` at or below silence and `1.0` at unity gain.
-pub(crate) fn fader_position(gain: f32) -> f32 {
+pub fn fader_position(gain: f32) -> f32 {
     if gain <= 0.0 {
         0.0
     } else {
@@ -48,7 +48,7 @@ pub(crate) fn fader_position(gain: f32) -> f32 {
 /// # Returns
 ///
 /// The linear gain the handle position stands for.
-pub(crate) fn fader_gain(position: f32) -> f32 {
+pub fn fader_gain(position: f32) -> f32 {
     let position = position.clamp(0.0, 1.0);
     if position <= 0.0 {
         0.0
@@ -66,7 +66,7 @@ pub(crate) fn fader_gain(position: f32) -> f32 {
 /// # Returns
 ///
 /// Text for the strip label, for example `"-6.0 dB"` or `"-∞ dB"`.
-pub(crate) fn fader_label(gain: f32) -> String {
+pub fn fader_label(gain: f32) -> String {
     if gain <= 0.0 {
         "-\u{221E} dB".to_owned()
     } else {

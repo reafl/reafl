@@ -13,9 +13,20 @@
 //!   glyphs, and [`knob`], [`fader`], [`meter`] and [`power`] are the controls.
 
 pub mod anim;
+pub mod automation_bridge;
 pub mod context_menu;
+pub mod effect_parameters;
+pub mod eq_curve;
+pub mod fader;
+pub mod fader_math;
 pub mod icons;
+pub mod knob;
+pub mod lane_slider;
+pub mod meter;
+pub mod mixer_strip;
 pub mod platform;
+pub mod power;
 pub mod presets;
 pub mod theme;
+pub mod time_edit;
 pub mod tooltip;
