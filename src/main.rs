@@ -7688,6 +7688,9 @@ impl PulseForgeApp {
                                                 }
                                             }
                                             self.sync_project();
+                                            // Instantiate the chain's plug-ins so
+                                            // their saved state is applied.
+                                            self.restore_hosted_plugins();
                                             self.status = format!(
                                                 "Added a channel with preset '{name}'."
                                             );
@@ -7746,6 +7749,10 @@ impl PulseForgeApp {
         ui.label(egui::RichText::new("INSERTS").strong());
         // Chain presets save and restore the whole insert list as one JSON file,
         // so a channel strip can be reused on another lane or in another project.
+        // Save/load are deferred past the borrow of `inserts` below, because
+        // capturing hosted plug-in state and re-instantiating it both need `self`.
+        let mut save_preset_request: Option<String> = None;
+        let mut preset_loaded = false;
         ui.horizontal(|ui| {
             ui.add(
                 egui::TextEdit::singleline(&mut self.chain_preset_name)
@@ -7753,13 +7760,7 @@ impl PulseForgeApp {
                     .hint_text("Preset name"),
             );
             if ui.button("Save chain").clicked() {
-                match save_chain_preset(&self.chain_preset_name, inserts) {
-                    Ok(name) => {
-                        self.status = format!("Saved chain preset '{name}'.");
-                        self.chain_presets = list_chain_presets();
-                    }
-                    Err(error) => self.status = error,
-                }
+                save_preset_request = Some(self.chain_preset_name.clone());
             }
             ui.menu_button("Load chain", |ui| {
                 if self.chain_presets.is_empty() {
@@ -7774,6 +7775,7 @@ impl PulseForgeApp {
                                     *slot = loaded;
                                 }
                                 changed = true;
+                                preset_loaded = true;
                                 self.status = format!("Loaded chain preset '{name}'.");
                             }
                             Err(error) => self.status = error,
@@ -7867,6 +7869,27 @@ impl PulseForgeApp {
                     }
                 });
             }
+        }
+        if let Some(name) = save_preset_request {
+            // External plug-ins hold their parameters in the hosted instance, so
+            // the opaque state has to be captured before writing the chain out.
+            self.capture_plugin_states();
+            let slots: &[InsertFxSlot] = if is_master {
+                &self.project.master.inserts
+            } else {
+                &self.project.lanes[channel].inserts
+            };
+            match save_chain_preset(&name, slots) {
+                Ok(name) => {
+                    self.status = format!("Saved chain preset '{name}'.");
+                    self.chain_presets = list_chain_presets();
+                }
+                Err(error) => self.status = error,
+            }
+        }
+        if preset_loaded {
+            // Re-instantiate the hosted plug-ins so their saved state applies.
+            self.restore_hosted_plugins();
         }
         if changed {
             self.sync_project();

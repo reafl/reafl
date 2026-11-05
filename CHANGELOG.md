@@ -9,6 +9,10 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ### Fixed
 
+- Mixer chain presets now include external plug-in state: the inspector captures
+  plug-in state before writing the preset, and loading one re-instantiates the
+  hosted plug-ins so their parameters are restored (also from the "+ Track"
+  preset menu).
 - Step sequencer columns use a fixed width again (`STEP_COLUMN_WIDTH = 24`) so
   every channel row aligns; the rack scrolls instead of squeezing the steps.
 - The arrangement wheel scrolls the track rows; Ctrl+wheel zooms. Right-dragging
