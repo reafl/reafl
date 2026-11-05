@@ -1,0 +1,13 @@
+[package]
+name = "pulseforge-widgets"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Reusable egui widgets and platform shims for PulseForge"
+
+[dependencies]
+eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+pulseforge-core = { path = "../pulseforge-core" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

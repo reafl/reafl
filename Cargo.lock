@@ -2321,6 +2321,15 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 name = "pulseforge"
 version = "0.1.0"
 dependencies = [
+ "eframe",
+ "pulseforge-app",
+ "pulseforge-profiling",
+]
+
+[[package]]
+name = "pulseforge-app"
+version = "0.1.0"
+dependencies = [
  "clack-extensions",
  "clack-host",
  "clap",
@@ -2330,11 +2339,13 @@ dependencies = [
  "pulseforge-hosting",
  "pulseforge-plugins",
  "pulseforge-profiling",
+ "pulseforge-settings",
+ "pulseforge-tasks",
+ "pulseforge-widgets",
  "raw-window-handle",
  "serde",
  "serde_json",
  "vst3-host",
- "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2378,6 +2389,35 @@ dependencies = [
  "egui_glow",
  "glow",
  "sysinfo",
+]
+
+[[package]]
+name = "pulseforge-settings"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "eframe",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "pulseforge-tasks"
+version = "0.1.0"
+dependencies = [
+ "pulseforge-core",
+ "pulseforge-plugins",
+ "pulseforge-profiling",
+ "serde_json",
+]
+
+[[package]]
+name = "pulseforge-widgets"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "pulseforge-core",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

@@ -1,0 +1,12 @@
+[package]
+name = "pulseforge-settings"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Persistent settings and command-line options for PulseForge"
+
+[dependencies]
+eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
