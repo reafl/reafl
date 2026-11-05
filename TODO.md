@@ -60,7 +60,9 @@ A file to keep track of TODOs and unimplemented features.
   *Done: `AutomationSource::SampleAndHold { seed, rate, base, depth }` is a source of its own in the picker, engine and preview; the old `LfoShape::SampleAndHold` still loads for existing projects but is no longer offered.*
 - Create an LFO which is keytracked to a MIDI track. Allow for changing the octave of the keytrack by +-10.
 - Automation should allow for relative automation.
+  *Done: `AutomationSource::RelativeCurve` draws offsets that are added to the parameter's own value, so several relative lanes can stack over an absolute one.*
 - The automation should be allowed to be negative.
+  *Done: relative lanes span -1 to 1 around a zero line and survive normalization; absolute lanes stay inside the parameter's 0-1 range.*
 - Automation should allow optionally using formulas.
 
 ## Channel rack and Step sequencer

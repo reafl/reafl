@@ -110,6 +110,10 @@ pub enum AutomationCurve {
 pub enum AutomationSource {
     #[default]
     Curve,
+    /// A drawn curve whose points are offsets added to the parameter's own
+    /// value rather than replacing it. Values run from `-1` to `1`, so the lane
+    /// can pull a parameter down as well as push it up.
+    RelativeCurve,
     MidiEnvelope {
         instrument_id: usize,
         attack: TimeValue,
@@ -141,6 +145,19 @@ pub enum AutomationSource {
         base: f32,
         depth: f32,
     },
+}
+
+impl AutomationSource {
+    /// True when the source reads `track.points` as a drawn curve.
+    pub fn edits_points(&self) -> bool {
+        matches!(self, Self::Curve | Self::RelativeCurve)
+    }
+
+    /// True when the drawn curve is an offset added to the parameter instead of
+    /// replacing it, so its points may be negative.
+    pub fn is_relative(&self) -> bool {
+        matches!(self, Self::RelativeCurve)
+    }
 }
 
 impl Default for TimeSignature {
@@ -1213,7 +1230,10 @@ impl Project {
                 return false;
             }
             for point in &mut track.points {
-                point.value = finite_clamp(point.value, 0.0, 1.0, 0.0);
+                // Relative lanes are offsets, so they may go negative; absolute
+                // lanes stay inside the normalized parameter range.
+                let limit = if track.source.is_relative() { 1.0 } else { 0.0 };
+                point.value = finite_clamp(point.value, -limit, 1.0, 0.0);
             }
             for point in &mut track.modulation_points {
                 point.value = finite_clamp(point.value, 0.0, 1.0, 1.0);
@@ -1233,26 +1253,37 @@ impl Project {
     pub fn automated_value(&self, target: ParameterTarget, base_value: f32, step: f64) -> f32 {
         let position = step.max(0.0);
         let mut normalized = None;
+        let mut relative = 0.0;
+        let mut touched = false;
         for track in &self.automation_tracks {
             if !track.enabled
                 || track.target != target
-                || !matches!(track.source, AutomationSource::Curve)
+                || !track.source.edits_points()
                 || track.points.is_empty()
                 || position < track.start_step as f64
                 || position >= track.start_step.saturating_add(track.length_steps) as f64
             {
                 continue;
             }
+            touched = true;
             let value = Self::evaluate_curve(&track.points, position);
+            // Relative lanes offset the parameter instead of replacing it, so
+            // several can be stacked and any of them may dip below zero.
+            if track.source.is_relative() {
+                relative += value;
+                continue;
+            }
             if let Some(sum) = &mut normalized {
                 *sum += value - track.points[0].value;
             } else {
                 normalized = Some(value);
             }
         }
-        normalized.map_or(base_value, |value| {
-            target.denormalize_value(value.clamp(0.0, 1.0))
-        })
+        if !touched {
+            return base_value;
+        }
+        let base = normalized.unwrap_or_else(|| target.normalize_value(base_value));
+        target.denormalize_value((base + relative).clamp(0.0, 1.0))
     }
 
     pub fn evaluate_curve(points: &[AutomationPoint], position: f64) -> f32 {
@@ -2068,6 +2099,41 @@ mod tests {
         assert_eq!(project.automated_value(target, 0.5, 7.0), 0.5);
         assert_eq!(project.automated_value(target, 0.5, 8.0), 0.2);
         assert_eq!(project.automated_value(target, 0.5, 16.0), 0.5);
+    }
+
+    #[test]
+    fn relative_automation_offsets_the_parameter_and_may_be_negative() {
+        let mut project = Project::default();
+        let target = ParameterTarget::Instrument {
+            instrument_id: 0,
+            parameter: InstrumentParameter::Gain,
+        };
+        project.automation_tracks.push(AutomationTrack {
+            target,
+            source: AutomationSource::RelativeCurve,
+            start_step: 0,
+            length_steps: 16,
+            points: vec![
+                AutomationPoint {
+                    step: 0,
+                    value: -0.5,
+                    curve: AutomationCurve::Linear,
+                },
+                AutomationPoint {
+                    step: 15,
+                    value: 0.25,
+                    curve: AutomationCurve::Linear,
+                },
+            ],
+            ..AutomationTrack::default()
+        });
+        project.normalize();
+        // The lane is an offset: a base of 0.5 minus 0.5 is silence, and the end
+        // of the lane pushes it up to 0.75.
+        assert!((project.automated_value(target, 0.5, 0.0) - 0.0).abs() < 1e-4);
+        assert!((project.automated_value(target, 0.5, 15.0) - 0.75).abs() < 1e-4);
+        // A negative point survives normalization instead of clamping to zero.
+        assert!(project.automation_tracks[0].points[0].value < 0.0);
     }
 
     #[test]

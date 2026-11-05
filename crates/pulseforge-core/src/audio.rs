@@ -1035,6 +1035,7 @@ impl AudioEngine {
         };
         let base_normalized = target.normalize_value(base_value);
         let mut curve_total: Option<f32> = None;
+        let mut relative_total = 0.0;
         let mut additive = 0.0;
         for &track_id in lane_ids {
             let Some(track) = self.project.automation_tracks.get(track_id) else {
@@ -1045,11 +1046,17 @@ impl AudioEngine {
             {
                 continue;
             }
-            if matches!(track.source, AutomationSource::Curve) {
+            if track.source.edits_points() {
                 if track.points.is_empty() {
                     continue;
                 }
                 let value = Project::evaluate_curve(&track.points, position);
+                // Relative lanes offset the parameter; their points may be
+                // negative, so a lane can pull a value down as well as up.
+                if track.source.is_relative() {
+                    relative_total += value;
+                    continue;
+                }
                 match &mut curve_total {
                     Some(total) => *total += value - track.points[0].value,
                     None => curve_total = Some(value),
@@ -1057,7 +1064,7 @@ impl AudioEngine {
                 continue;
             }
             let delta = match &track.source {
-                AutomationSource::Curve => 0.0,
+                AutomationSource::Curve | AutomationSource::RelativeCurve => 0.0,
                 AutomationSource::MidiEnvelope {
                     instrument_id,
                     attack,
@@ -1142,7 +1149,7 @@ impl AudioEngine {
             };
             additive += delta;
         }
-        let normalized = curve_total.unwrap_or(base_normalized) + additive;
+        let normalized = curve_total.unwrap_or(base_normalized) + relative_total + additive;
         target.denormalize_value(normalized.clamp(0.0, 1.0))
     }
 

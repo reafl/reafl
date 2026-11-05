@@ -570,7 +570,7 @@ fn automation_source_preview(
     position: f64,
 ) -> f32 {
     match source {
-        project::AutomationSource::Curve => 0.0,
+        project::AutomationSource::Curve | project::AutomationSource::RelativeCurve => 0.0,
         project::AutomationSource::MidiEnvelope {
             instrument_id,
             attack,
@@ -3138,7 +3138,7 @@ impl PulseForgeApp {
             .automation_tracks
             .get(track_id)
             .map(|track| {
-                let points = if matches!(track.source, project::AutomationSource::Curve) {
+                let points = if track.source.edits_points() {
                     &track.points
                 } else {
                     &track.modulation_points
@@ -3146,13 +3146,17 @@ impl PulseForgeApp {
                 points
                     .iter()
                     .map(|point| {
+                        // Relative lanes are drawn around zero, so their points
+                        // can sit below the centre line.
+                        let floor = if track.source.is_relative() { -1.0 } else { 0.0 };
                         egui::pos2(
                             grid.grid_left
                                 + (point.step as f64 - grid.start_step as f64) as f32
                                     * grid.step_width,
                             row.bottom()
                                 - 6.0
-                                - point.value.clamp(0.0, 1.0) * (row.height() - 12.0),
+                                - ((point.value.clamp(floor, 1.0) - floor) / (1.0 - floor))
+                                    * (row.height() - 12.0),
                         )
                     })
                     .collect()
@@ -3284,7 +3288,21 @@ impl PulseForgeApp {
             ],
         };
         let multiplier_points = track.modulation_points.clone();
-        let curve_source = matches!(track.source, project::AutomationSource::Curve);
+        let curve_source = track.source.edits_points();
+        // Relative lanes travel from -1 to 1 around the centre line; absolute
+        // lanes use the usual 0 to 1 band.
+        let value_floor = if track.source.is_relative() { -1.0 } else { 0.0 };
+        let value_y = |value: f32| {
+            row.bottom()
+                - 6.0
+                - ((value.clamp(value_floor, 1.0) - value_floor) / (1.0 - value_floor))
+                    * (row.height() - 12.0)
+        };
+        let value_at = |y: f32| {
+            let fraction =
+                (1.0 - (y - row.top() - 6.0) / (row.height() - 12.0)).clamp(0.0, 1.0);
+            value_floor + fraction * (1.0 - value_floor)
+        };
         let points = if curve_source {
             &mut track.points
         } else {
@@ -3294,11 +3312,22 @@ impl PulseForgeApp {
             egui::pos2(
                 grid.grid_left
                     + (point.step as f64 - grid.start_step as f64) as f32 * grid.step_width,
-                row.bottom() - 6.0 - point.value.clamp(0.0, 1.0) * (row.height() - 12.0),
+                value_y(point.value),
             )
         };
         if curve_source {
             let mut curve = Vec::new();
+            // A relative lane reads against zero, so mark where zero sits.
+            if value_floor < 0.0 {
+                let zero_y = value_y(0.0);
+                painter.line_segment(
+                    [
+                        egui::pos2(clip_start, zero_y),
+                        egui::pos2(clip_end, zero_y),
+                    ],
+                    egui::Stroke::new(1.0_f32, egui::Color32::from_gray(78)),
+                );
+            }
             // Samples sit on a fixed quarter-step grid instead of pixel columns,
             // so zooming shifts the curve continuously instead of jittering.
             let sample_count = ((visible_span_steps / 0.25).ceil() as usize).clamp(2, 512);
@@ -3307,10 +3336,7 @@ impl PulseForgeApp {
                 let step = grid.start_step as f64
                     + f64::from(x - grid.grid_left) / f64::from(grid.step_width);
                 let value = Project::evaluate_curve(points, step);
-                curve.push(egui::pos2(
-                    x,
-                    row.bottom() - 6.0 - value.clamp(0.0, 1.0) * (row.height() - 12.0),
-                ));
+                curve.push(egui::pos2(x, value_y(value)));
             }
             painter.add(egui::Shape::line(
                 curve,
@@ -3387,8 +3413,7 @@ impl PulseForgeApp {
                 point.step = snap_arrangement_step(raw_step, snap_ticks)
                     .max(track.start_step)
                     .min(clip_end_step.saturating_sub(1));
-                point.value =
-                    (1.0 - (pointer.y - row.top() - 6.0) / (row.height() - 12.0)).clamp(0.0, 1.0);
+                point.value = value_at(pointer.y);
                 changed = true;
             }
             response.context_menu(|ui| {
@@ -3557,8 +3582,7 @@ impl PulseForgeApp {
                     && pointer.x < clip_end
                     && pointer.x >= grid.grid_left
                 {
-                    let value = (1.0 - (pointer.y - row.top() - 6.0) / (row.height() - 12.0))
-                        .clamp(0.0, 1.0);
+                    let value = value_at(pointer.y);
                     points.push(AutomationPoint {
                         step: point_step,
                         value,
@@ -7241,6 +7265,7 @@ impl PulseForgeApp {
                 });
                 let source_label = match track.source {
                     project::AutomationSource::Curve => "Curve",
+                    project::AutomationSource::RelativeCurve => "Relative curve",
                     project::AutomationSource::MidiEnvelope { .. } => "MIDI envelope",
                     project::AutomationSource::Lfo { .. } => "LFO",
                     project::AutomationSource::SampleAndHold { .. } => "Sample & hold",
@@ -7257,6 +7282,19 @@ impl PulseForgeApp {
                             .clicked()
                         {
                             track.source = project::AutomationSource::Curve;
+                            changed = true;
+                        }
+                        if ui
+                            .selectable_label(
+                                matches!(
+                                    track.source,
+                                    project::AutomationSource::RelativeCurve
+                                ),
+                                "Relative curve",
+                            )
+                            .clicked()
+                        {
+                            track.source = project::AutomationSource::RelativeCurve;
                             changed = true;
                         }
                         if ui
@@ -7392,7 +7430,7 @@ impl PulseForgeApp {
                     }
                 });
                 match &mut track.source {
-                    project::AutomationSource::Curve => {}
+                    project::AutomationSource::Curve | project::AutomationSource::RelativeCurve => {}
                     project::AutomationSource::MidiEnvelope {
                         instrument_id,
                         attack,
@@ -7521,7 +7559,9 @@ impl PulseForgeApp {
                         });
                     }
                 }
-                if !matches!(track.source, project::AutomationSource::Curve) {
+                if track.source.is_relative() {
+                    ui.label("Draw offsets from -1 to 1; they are added to the parameter.");
+                } else if !track.source.edits_points() {
                     ui.label("Draw a 0-1 modulation multiplier directly over the lane.");
                 }
                 ui.separator();
@@ -8976,6 +9016,8 @@ impl PulseForgeApp {
         let base = self.project.parameter_value(target)?;
         let base_normalized = target.normalize_value(base);
         let mut normalized: Option<f32> = None;
+        let mut relative = 0.0;
+        let mut touched = false;
         for track in &self.project.automation_tracks {
             if !track.enabled
                 || track.target != target
@@ -8984,11 +9026,16 @@ impl PulseForgeApp {
             {
                 continue;
             }
-            if matches!(track.source, project::AutomationSource::Curve) {
+            if track.source.edits_points() {
                 if track.points.is_empty() {
                     continue;
                 }
+                touched = true;
                 let value = Project::evaluate_curve(&track.points, position);
+                if track.source.is_relative() {
+                    relative += value;
+                    continue;
+                }
                 normalized = Some(match normalized {
                     Some(total) => total + value - track.points[0].value,
                     None => value,
@@ -9010,10 +9057,17 @@ impl PulseForgeApp {
                 position,
             );
             let contribution = base + (source_value - base) * multiplier;
+            touched = true;
             normalized =
                 Some(normalized.unwrap_or(base_normalized) + contribution - base_normalized);
         }
-        normalized.map(|value| target.denormalize_value(value.clamp(0.0, 1.0)))
+        if !touched {
+            return None;
+        }
+        Some(
+            target
+                .denormalize_value((normalized.unwrap_or(base_normalized) + relative).clamp(0.0, 1.0)),
+        )
     }
 }
 

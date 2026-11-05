@@ -18,6 +18,11 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
   they create `MixerChannel { Gain | Pan }` and `Tempo` lanes through a shared
   `automation_context_menu` helper, and an automated fader draws the knob's
   purple ring plus a dot at the engine's live value.
+- Relative automation: the new `AutomationSource::RelativeCurve` draws offsets
+  from -1 to 1 (around a zero line) that are added to the parameter's own value
+  instead of replacing it, so several relative lanes can stack over an absolute
+  one. Negative point values now survive `Project::normalize` and the
+  `automated_value` paths handle the offset both in the engine and in the UI.
 
 ### Fixed
 
