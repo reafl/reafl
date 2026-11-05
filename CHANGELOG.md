@@ -104,6 +104,9 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
   buttons: plain click powers, shift locks, ctrl solos. The arrangement track
   header and the mixer strip insert rows use it, so they cannot drift in colour
   or behaviour again.
+- Mixer routing send levels use the shared `Knob` widget instead of a hand-drawn
+  circle, so they drag, reset, open the same context menu and offer automation
+  like every other parameter.
 - `ContextAction::ToggleInsertEnabled` carries a `PowerIntent`, so the decision
   is made at click time instead of re-reading the keyboard when the action runs.
 - Automation envelopes are sampled on a fixed quarter-step grid, so zooming no

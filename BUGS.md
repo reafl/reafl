@@ -61,6 +61,7 @@ This file is a bugtracker.
 ## Mixer routing
 
 - The knob should be the same knob used elsewhere.
+  *Fixed: the send level now uses the shared `Knob` widget (drag, alt-click reset, right-click menu, automation entry), replacing the hand-drawn circle.*
 
 
 

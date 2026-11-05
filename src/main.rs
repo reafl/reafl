@@ -8516,38 +8516,19 @@ impl PulseForgeApp {
                 )
             };
             let knob_rect = egui::Rect::from_center_size(middle, egui::vec2(34.0, 34.0));
-            let knob = ui.interact(
-                knob_rect,
-                egui::Id::new(("route_gain", source, destination)),
-                egui::Sense::click_and_drag(),
-            );
-            // Latched so the knob keeps its position and keeps receiving the
-            // drag after the pointer leaves the cable's hover radius.
-            if knob.drag_started() {
-                self.routing_gain_route = Some((source, destination));
-            }
-            if knob.drag_stopped() {
-                self.routing_gain_route = None;
-            }
-            if knob.dragged() {
-                let delta = ui.input(|input| input.pointer.delta().y);
-                self.project.sends[source][destination] =
-                    (self.project.sends[source][destination] - delta * 0.003).clamp(0.0, 0.95);
-                changed = true;
-            }
-            let value = self.project.sends[source][destination];
-            painter.circle_filled(middle, 13.0, egui::Color32::from_gray(20));
-            painter.circle_stroke(
-                middle,
-                11.0,
-                egui::Stroke::new(1.0_f32, egui::Color32::WHITE),
-            );
-            let angle = (-135.0 + value / 0.95 * 270.0).to_radians();
-            painter.line_segment(
-                [middle, middle + egui::vec2(angle.sin(), -angle.cos()) * 8.0],
-                egui::Stroke::new(2.0_f32, egui::Color32::WHITE),
-            );
-            tooltip(ui, &knob, &format!("Send level: {value:.2}"));
+            // The send level uses the shared knob widget, so it drags, resets and
+            // offers its context menu exactly like every other parameter.
+            let mut value = self.project.sends[source][destination];
+            ui.scope_builder(egui::UiBuilder::new().max_rect(knob_rect), |ui| {
+                if Knob::new("", 0.0, 0.95, "")
+                    .with_default(0.25)
+                    .compact()
+                    .show(ui, &mut value)
+                {
+                    self.project.sends[source][destination] = value;
+                    changed = true;
+                }
+            });
         }
 
         for channel in order.iter().copied() {
