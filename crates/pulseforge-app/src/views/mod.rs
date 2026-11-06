@@ -7,10 +7,12 @@
 
 pub mod arrangement;
 pub mod automation;
+pub mod automation_lane;
 pub mod mixer;
 pub mod panels;
 pub mod piano;
 pub mod plugins;
 pub mod rack;
 pub mod settings;
+pub mod timeline;
 pub mod toolbar;
