@@ -404,7 +404,11 @@ impl PulseForgeApp {
         }
         let mut changed = false;
         let mut remove_point = None;
-        for (point_id, point) in points.iter_mut().enumerate() {
+        // A live source (a track peak) has no stored shape, so its lane has no
+        // points to drag or add.
+        let live_source = track.source.is_live();
+        let point_limit = if live_source { 0 } else { usize::MAX };
+        for (point_id, point) in points.iter_mut().enumerate().take(point_limit) {
             let point_rect =
                 egui::Rect::from_center_size(point_position(point), egui::vec2(12.0, 12.0));
             let response = ui.interact(
@@ -575,7 +579,7 @@ impl PulseForgeApp {
             self.apply_context_action(action);
             return false;
         }
-        if response.clicked() {
+        if response.clicked() && !live_source {
             self.windows.automation = true;
             if let Some(pointer) = context.input(|input| input.pointer.interact_pos()) {
                 let raw_step = (grid.start_step as f64
