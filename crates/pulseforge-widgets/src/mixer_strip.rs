@@ -6,7 +6,7 @@ use pulseforge_core::project::ParameterTarget;
 use crate::context_menu::{ContextAction, ContextMenu, MenuItem};
 use crate::fader::fader;
 use crate::icons::{Icon, paint_icon};
-use crate::knob::Knob;
+use crate::control::ValueControl;
 use crate::meter::render_meter_sized;
 use crate::power::PowerSwitch;
 use crate::theme::lane_color;
@@ -332,16 +332,18 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                         ui.vertical_centered(|ui| {
                             ui.label(egui::RichText::new(fader_label(*strip.gain)).small());
                             ui.horizontal(|ui| {
-                                result.changed |= Knob::new("", -1.0, 1.0, "")
+                                result.changed |= ValueControl::knob("", strip.pan, -1.0..=1.0)
                                     .compact()
                                     .automates(pan_target)
-                                    .show(ui, strip.pan);
+                                    .show(ui)
+                                    .changed;
                                 if let Some(width) = strip.width.as_deref_mut() {
-                                    result.changed |= Knob::new("", 0.0, 2.0, "")
+                                    result.changed |= ValueControl::knob("", width, 0.0..=2.0)
                                         .with_default(1.0)
                                         .compact()
                                         .automates(width_target)
-                                        .show(ui, width);
+                                        .show(ui)
+                                        .changed;
                                 }
                             });
                         });
@@ -487,12 +489,18 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                             ui.label(egui::RichText::new("3-BAND EQ").strong());
                             draw_eq_curve(ui, *strip.eq);
                             ui.horizontal(|ui| {
-                                result.changed |= Knob::new("LOW", -12.0, 12.0, " dB")
-                                    .show(ui, &mut strip.eq.low_db);
-                                result.changed |= Knob::new("MID", -12.0, 12.0, " dB")
-                                    .show(ui, &mut strip.eq.mid_db);
-                                result.changed |= Knob::new("HIGH", -12.0, 12.0, " dB")
-                                    .show(ui, &mut strip.eq.high_db);
+                                result.changed |= ValueControl::knob("LOW", &mut strip.eq.low_db, -12.0..=12.0)
+                                    .with_suffix(" dB")
+                                    .show(ui)
+                                    .changed;
+                                result.changed |= ValueControl::knob("MID", &mut strip.eq.mid_db, -12.0..=12.0)
+                                    .with_suffix(" dB")
+                                    .show(ui)
+                                    .changed;
+                                result.changed |= ValueControl::knob("HIGH", &mut strip.eq.high_db, -12.0..=12.0)
+                                    .with_suffix(" dB")
+                                    .show(ui)
+                                    .changed;
                             });
                         }
                         if strip.pinned.as_deref().copied().unwrap_or(false) {

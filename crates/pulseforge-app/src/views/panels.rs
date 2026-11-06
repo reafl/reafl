@@ -113,27 +113,26 @@ impl PulseForgeApp {
         }
         let hovered_route = (nearest_distance < 13.0).then_some(nearest_route).flatten();
         for (source, destination, gain, points) in &routes {
-            for (segment, pair) in points.windows(2).enumerate() {
-                let blend = segment as f32 / (points.len() - 1) as f32;
-                painter.line_segment(
-                    [pair[0], pair[1]],
-                    egui::Stroke::new(
-                        if hovered_route
-                            .as_ref()
-                            .is_some_and(|(from, to, _)| from == source && to == destination)
-                        {
-                            3.5
-                        } else {
-                            1.2 + *gain * 2.0
-                        },
-                        color_lerp(
-                            channel_color(*source, &self.project),
-                            channel_color(*destination, &self.project),
-                            blend,
-                        ),
-                    ),
-                );
+            // The cable geometry and the colour blend come from the shared curve
+            // type, so this view and any other cable drawing stay in step.
+            let mut cable = pulseforge_widgets::shape::ScreenCurve::new();
+            for point in points {
+                cable.push(*point);
             }
+            let width = if hovered_route
+                .as_ref()
+                .is_some_and(|(from, to, _)| from == source && to == destination)
+            {
+                3.5
+            } else {
+                1.2 + *gain * 2.0
+            };
+            cable.paint_gradient(
+                &painter,
+                width,
+                channel_color(*source, &self.project),
+                channel_color(*destination, &self.project),
+            );
         }
 
         for index in order.iter().copied() {

@@ -103,6 +103,8 @@ struct Spec<'a> {
     default: Option<f32>,
     /// Fixed width, when the caller needs one.
     width: Option<f32>,
+    /// Draws the compact form used in dense rows.
+    compact: bool,
     /// Automation target, when the control is automatable.
     target: Option<ParameterTarget>,
     /// Called after every accepted change.
@@ -137,6 +139,7 @@ impl<'a> ValueControl<'a> {
                 suffix: "",
                 default: None,
                 width: None,
+                compact: false,
                 target: None,
                 callback: None,
             },
@@ -199,6 +202,7 @@ impl<'a> ValueControl<'a> {
                 suffix: "",
                 default: None,
                 width: None,
+                compact: false,
                 target: None,
                 callback: None,
             },
@@ -232,6 +236,7 @@ impl<'a> ValueControl<'a> {
                 suffix: "",
                 default: None,
                 width: None,
+                compact: false,
                 target: None,
                 callback: None,
             },
@@ -295,6 +300,16 @@ impl<'a> ValueControl<'a> {
         self
     }
 
+    /// Draws the dense form used inside racks and mixer strips.
+    ///
+    /// # Returns
+    ///
+    /// The control, now using the small knob or a slim slider.
+    pub fn compact(mut self) -> Self {
+        self.spec.compact = true;
+        self
+    }
+
     /// Runs a callback whenever the value changes.
     ///
     /// # Parameters
@@ -345,6 +360,9 @@ fn show_number(
     let (response, changed) = match spec.kind {
         ControlKind::Knob => {
             let mut knob = Knob::new(spec.label, spec.min, spec.max, spec.suffix);
+            if spec.compact {
+                knob = knob.compact();
+            }
             if let Some(default) = spec.default {
                 knob = knob.with_default(default);
             }

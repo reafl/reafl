@@ -207,6 +207,35 @@ impl ScreenCurve {
             ));
         }
     }
+
+    /// Paints the curve segment by segment, blending one colour into another.
+    ///
+    /// Routing cables use this to fade from the source channel's colour to the
+    /// destination's; a single [`paint`](Self::paint) call cannot express that.
+    ///
+    /// # Parameters
+    ///
+    /// - `painter`: the painter to draw into.
+    /// - `width`: stroke width in points.
+    /// - `from`: colour at the start of the curve.
+    /// - `to`: colour at the end.
+    pub fn paint_gradient(
+        &self,
+        painter: &egui::Painter,
+        width: f32,
+        from: egui::Color32,
+        to: egui::Color32,
+    ) {
+        let segments = self.points.len().saturating_sub(1);
+        if segments == 0 {
+            return;
+        }
+        for (index, pair) in self.points.windows(2).enumerate() {
+            let blend = index as f32 / segments as f32;
+            let colour = crate::theme::color_lerp(from, to, blend);
+            painter.line_segment([pair[0], pair[1]], egui::Stroke::new(width, colour));
+        }
+    }
 }
 
 /// Samples a value curve into screen space.
