@@ -70,6 +70,7 @@ pub(crate) use cursor::*;
 pub(crate) use hosted_meta::*;
 pub(crate) use layout::*;
 pub(crate) use state::*;
+pub(crate) use views::timeline::TimelineGeometry;
 
 use automation_bridge::*;
 use control::ValueControl;

@@ -25,4 +25,7 @@ pub mod plugins;
 pub mod rack;
 pub mod settings;
 pub mod timeline;
+pub mod timeline_input;
+pub mod timeline_paint;
+pub mod timeline_rows;
 pub mod toolbar;
