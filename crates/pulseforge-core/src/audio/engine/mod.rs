@@ -6,8 +6,10 @@
 //! block.
 
 mod automation;
+mod commands;
 mod effects;
 mod render;
+mod voices;
 
 
 use std::{
