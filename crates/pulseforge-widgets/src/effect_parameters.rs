@@ -7,6 +7,18 @@ use crate::knob::Knob;
 
 use pulseforge_core::project;
 
+/// Draws the parameter knobs for one insert slot.
+///
+/// # Parameters
+///
+/// - `ui`: the parent layout.
+/// - `slot`: the insert slot whose parameters are edited.
+/// - `channel_id`: mixer channel owning the slot.
+/// - `slot_id`: insert slot index.
+///
+/// # Returns
+///
+/// `true` when any parameter changed.
 pub fn render_effect_parameters(
     ui: &mut egui::Ui,
     slot: &mut InsertFxSlot,

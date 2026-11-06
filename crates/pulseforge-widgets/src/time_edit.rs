@@ -7,6 +7,18 @@ use crate::automation_bridge::automation_context_menu;
 
 use pulseforge_core::project::ParameterTarget;
 
+/// Edits a time value: the amount plus its unit.
+///
+/// # Parameters
+///
+/// - `ui`: the parent layout.
+/// - `track_id`: lane id, used to keep the unit combo ids unique.
+/// - `label`: caption shown before the amount.
+/// - `value`: the time value to edit.
+///
+/// # Returns
+///
+/// `true` when the amount or the unit changed.
 pub fn edit_time_value(
     ui: &mut egui::Ui,
     track_id: usize,

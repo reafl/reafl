@@ -8,15 +8,21 @@ use crate::tooltip::tooltip;
 
 /// What a power switch was asked to do, decided from the modifier keys at click
 
+/// One power switch: what it is called, what it is doing, and how big to draw it.
 pub struct PowerSwitch<'a> {
     /// Name used by the tooltip.
     pub name: &'a str,
+    /// Whether the row is switched on.
     pub enabled: bool,
+    /// Whether the row is locked against edits.
     pub locked: bool,
+    /// Whether the row is soloed.
     pub solo: bool,
     /// True when another switch of the same group is soloed (dims the badge).
     pub any_solo: bool,
+    /// Accent colour of the switch.
     pub color: egui::Color32,
+    /// Size of the switch in points.
     pub size: egui::Vec2,
 }
 

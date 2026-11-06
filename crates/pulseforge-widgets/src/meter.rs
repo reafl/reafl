@@ -4,6 +4,14 @@ use eframe::egui;
 
 use crate::theme::active_theme;
 
+/// Draws a segmented level meter.
+///
+/// # Parameters
+///
+/// - `ui`: the parent layout.
+/// - `level`: peak level in `0..=1`.
+/// - `width`: meter width in points.
+/// - `height`: meter height in points.
 pub fn render_meter_sized(ui: &mut egui::Ui, level: f32, width: f32, height: f32) {
     let theme = active_theme(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());

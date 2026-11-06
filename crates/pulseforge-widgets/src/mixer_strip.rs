@@ -20,22 +20,37 @@ use crate::eq_curve::draw_eq_curve;
 use crate::fader_math::fader_label;
 use crate::power::power_switch;
 
+/// What one mixer strip is bound to.
 pub struct MixerStrip<'a> {
+    /// Index into `project.lanes`, or the master index.
     pub channel_id: usize,
+    /// Channel name, edited in place when present.
     pub name: Option<&'a mut String>,
+    /// Whether the channel row is pinned.
     pub pinned: Option<&'a mut bool>,
+    /// Linear fader gain.
     pub gain: &'a mut f32,
+    /// Pan, `-1` left to `1` right.
     pub pan: &'a mut f32,
     /// Stereo width; absent on the master strip.
     pub width: Option<&'a mut f32>,
+    /// The channel's three-band EQ gains.
     pub eq: &'a mut ThreeBandEq,
+    /// Peak level for the meter, `0..=1`.
     pub meter: f32,
+    /// Whether this strip is the selected channel.
     pub selected: bool,
+    /// Draws the compact form when true.
     pub collapsed: bool,
+    /// True for the master strip.
     pub is_master: bool,
+    /// Whether the channel is switched on.
     pub enabled: bool,
+    /// Whether the channel ignores edits.
     pub locked: bool,
+    /// Whether the channel is soloed.
     pub solo: bool,
+    /// Insert slots; absent when the strip hides them.
     pub inserts: Option<&'a mut [InsertFxSlot]>,
     /// Channel FX bypass, absent on the master strip.
     pub fx_bypass: Option<&'a mut bool>,
@@ -44,17 +59,33 @@ pub struct MixerStrip<'a> {
 }
 
 #[derive(Default)]
+/// What one mixer strip is bound to.
 pub struct MixerStripResult {
+    /// True when any control on the strip changed.
     pub changed: bool,
+    /// True when the strip asked to become the selected channel.
     pub selected: bool,
+    /// Menu actions the view still has to apply.
     pub actions: Vec<ContextAction>,
 }
 
 /// Meter heights shared by the fader and the level meter so the pair reads as
 /// one control.
+/// Height of the fader and meter pair.
 pub const MIXER_FADER_HEIGHT: f32 = 132.0;
+/// Width of the fader.
 pub const MIXER_FADER_WIDTH: f32 = 30.0;
 
+/// Draws one mixer channel strip.
+///
+/// # Parameters
+///
+/// - `ui`: the parent layout; the strip allocates its own column.
+/// - `strip`: everything the strip reads and writes.
+///
+/// # Returns
+///
+/// What changed, whether the strip was selected, and any menu actions.
 pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripResult {
     let mut result = MixerStripResult::default();
     let channel_color = if strip.is_master {

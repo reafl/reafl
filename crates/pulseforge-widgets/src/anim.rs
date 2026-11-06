@@ -15,6 +15,15 @@ pub struct Animated {
 }
 
 impl Animated {
+/// Creates an eased value that starts settled at `value`.
+///
+/// # Parameters
+///
+/// - `value`: the starting value.
+///
+/// # Returns
+///
+/// An animation already at rest.
     pub fn new(value: f32) -> Self {
         Self {
             current: value,
@@ -23,6 +32,11 @@ impl Animated {
         }
     }
 
+/// Sets the target the value eases toward.
+///
+/// # Parameters
+///
+/// - `target`: the value to reach.
     pub fn set(&mut self, target: f32) {
         self.target = target;
     }
@@ -42,6 +56,11 @@ impl Animated {
         self.current
     }
 
+/// The value as it stands this frame.
+///
+/// # Returns
+///
+/// The current, possibly still moving, value.
     pub fn value(&self) -> f32 {
         self.current
     }

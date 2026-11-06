@@ -10,25 +10,45 @@ use crate::tooltip::tooltip;
 /// empty boxes. Shapes also stay crisp at any DPI.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Icon {
+    /// Glyph for the channel rack window.
     Rack,
+    /// Glyph for the piano roll window.
     Roll,
+    /// Glyph for the mixer window.
     Mixer,
+    /// Glyph for the routing window.
     Routing,
+    /// Glyph for the automation window.
     Automation,
+    /// Glyph for the sample browser window.
     Samples,
+    /// Glyph for the MIDI routing window.
     Midi,
+    /// Glyph for the settings window.
     Settings,
+    /// Glyph for the render-to-file window.
     Render,
+    /// Glyph for the profiler panel.
     Debug,
+    /// Glyph for the undo.
     Undo,
+    /// Glyph for the redo.
     Redo,
+    /// Glyph for the play the transport.
     Play,
+    /// Glyph for the stop the transport.
     Stop,
+    /// Glyph for the loop the arrangement.
     Loop,
+    /// Glyph for the metronome toggle.
     Metronome,
+    /// Glyph for the power switch.
     Power,
+    /// Glyph for the solo.
     Solo,
+    /// Glyph for the collapsed group.
     ArrowDown,
+    /// Glyph for the expanded group.
     ArrowRight,
 }
 

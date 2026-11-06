@@ -9,6 +9,16 @@ pub const AUTOMATED_TARGETS_KEY: &str = "pulseforge.automated_targets";
 /// Key of the automated live value list published every frame.
 pub const AUTOMATED_VALUES_KEY: &str = "pulseforge.automated_values";
 
+/// True when a lane already drives `target`.
+///
+/// # Parameters
+///
+/// - `ui`: any layout, used for its context data.
+/// - `target`: the parameter to check.
+///
+/// # Returns
+///
+/// `true` when a lane in the range covers the playhead.
 pub fn target_is_automated(ui: &egui::Ui, target: ParameterTarget) -> bool {
     ui.data(|data| {
         data.get_temp::<Vec<ParameterTarget>>(egui::Id::new(AUTOMATED_TARGETS_KEY))

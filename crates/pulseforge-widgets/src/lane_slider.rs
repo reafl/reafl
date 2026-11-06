@@ -5,6 +5,22 @@ use pulseforge_core::project::ParameterTarget;
 
 use crate::automation_bridge::{automation_context_menu, target_live_value};
 
+/// Slider for one of an automation lane own parameters.
+///
+/// While a lane drives the value the slider sits at the engine value; a
+/// drag still writes through to the stored value.
+///
+/// # Parameters
+///
+/// - `ui`: the parent layout.
+/// - `label`: caption shown beside the slider.
+/// - `value`: the parameter to edit.
+/// - `range`: inclusive bounds.
+/// - `target`: the automation target this control stands for.
+///
+/// # Returns
+///
+/// `true` when the value changed this frame.
 pub fn lane_parameter_slider(
     ui: &mut egui::Ui,
     label: &str,

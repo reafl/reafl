@@ -3,6 +3,13 @@ use eframe::egui;
 
 use pulseforge_settings::settings;
 
+/// Pushes a theme into egui visuals and stores it for the free drawing
+/// helpers.
+///
+/// # Parameters
+///
+/// - `context`: the egui context to restyle.
+/// - `theme`: the colours and sizes to apply.
 pub fn apply_theme(context: &egui::Context, theme: &settings::Theme) {
     let panel = theme.color(theme.panel);
     let background = theme.color(theme.background);
@@ -50,6 +57,15 @@ pub fn active_theme(context: &egui::Context) -> settings::Theme {
         .unwrap_or_default()
 }
 
+/// A stable accent colour for a track index.
+///
+/// # Parameters
+///
+/// - `index`: the track number.
+///
+/// # Returns
+///
+/// One of the palette colours, cycling with the index.
 pub fn lane_color(index: usize) -> egui::Color32 {
     const COLORS: [egui::Color32; 8] = [
         egui::Color32::from_rgb(211, 115, 91),
@@ -64,6 +80,17 @@ pub fn lane_color(index: usize) -> egui::Color32 {
     COLORS[index % COLORS.len()]
 }
 
+/// Blends two colours.
+///
+/// # Parameters
+///
+/// - `start`: colour at `0.0`.
+/// - `end`: colour at `1.0`.
+/// - `amount`: blend factor, clamped to `0..=1`.
+///
+/// # Returns
+///
+/// The interpolated colour.
 pub fn color_lerp(start: egui::Color32, end: egui::Color32, amount: f32) -> egui::Color32 {
     let amount = amount.clamp(0.0, 1.0);
     let channel = |left: u8, right: u8| {
@@ -78,6 +105,17 @@ pub fn color_lerp(start: egui::Color32, end: egui::Color32, amount: f32) -> egui
     )
 }
 
+/// Distance from a point to a line segment, used for cable hit testing.
+///
+/// # Parameters
+///
+/// - `point`: the point to measure from.
+/// - `start`: first end of the segment.
+/// - `end`: second end of the segment.
+///
+/// # Returns
+///
+/// The shortest distance in points.
 pub fn point_segment_distance(point: egui::Pos2, start: egui::Pos2, end: egui::Pos2) -> f32 {
     let segment = end - start;
     let length_squared = segment.length_sq();

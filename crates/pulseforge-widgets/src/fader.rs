@@ -8,6 +8,19 @@ use crate::tooltip::tooltip;
 
 use pulseforge_core::project::ParameterTarget;
 
+/// Vertical dB fader whose travel matches the meter beside it.
+///
+/// # Parameters
+///
+/// - `ui`: the parent layout.
+/// - `gain`: linear gain, edited in place.
+/// - `width`: fader width in points.
+/// - `height`: fader height in points.
+/// - `target`: automation target, or `None` for a plain fader.
+///
+/// # Returns
+///
+/// `true` when the gain changed this frame.
 pub fn fader(
     ui: &mut egui::Ui,
     gain: &mut f32,

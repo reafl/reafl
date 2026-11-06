@@ -6,17 +6,37 @@ use pulseforge_core::project::ParameterTarget;
 use crate::automation_bridge::{target_is_automated, target_live_value};
 use crate::platform;
 
+/// A rotary knob bound to a value, optionally following an automation lane.
 pub struct Knob {
+    /// Short caption painted above the dial; `""` leaves it bare.
     pub label: &'static str,
+    /// Value at the bottom of the dial's travel.
     pub min: f32,
+    /// Value at the top of the dial's travel.
     pub max: f32,
+    /// Unit appended to the read-out, for example `" dB"`.
     pub suffix: &'static str,
+    /// Dial diameter in points; anything under 40 draws the compact form.
     pub size: f32,
+    /// Value restored by Alt+click and by the menu's reset entry.
     pub default: Option<f32>,
+    /// Parameter this knob drives, when it is automatable.
     pub automation_target: Option<ParameterTarget>,
 }
 
 impl Knob {
+    /// Creates a knob for a value range.
+    ///
+    /// # Parameters
+    ///
+    /// - `label`: caption above the dial.
+    /// - `min`: value at the bottom of the travel.
+    /// - `max`: value at the top of the travel.
+    /// - `suffix`: unit appended to the read-out.
+    ///
+    /// # Returns
+    ///
+    /// A full-size knob with no automation target.
     pub fn new(label: &'static str, min: f32, max: f32, suffix: &'static str) -> Self {
         Self {
             label,
@@ -29,11 +49,29 @@ impl Knob {
         }
     }
 
+    /// Sets the value Alt+click and the menu's reset entry restore.
+    ///
+    /// # Parameters
+    ///
+    /// - `default`: the value in the knob's own units.
+    ///
+    /// # Returns
+    ///
+    /// The knob with that default.
     pub fn with_default(mut self, default: f32) -> Self {
         self.default = Some(default);
         self
     }
 
+    /// Marks the knob as an automation target.
+    ///
+    /// # Parameters
+    ///
+    /// - `target`: the parameter the knob edits.
+    ///
+    /// # Returns
+    ///
+    /// The knob, now drawing the automated ring and following the live value.
     pub fn automates(mut self, target: ParameterTarget) -> Self {
         self.automation_target = Some(target);
         self
@@ -45,6 +83,16 @@ impl Knob {
         self
     }
 
+    /// Draws the knob.
+    ///
+    /// # Parameters
+    ///
+    /// - `ui`: the parent layout.
+    /// - `value`: the value to edit, written back in place.
+    ///
+    /// # Returns
+    ///
+    /// `true` when the value changed this frame.
     pub fn show(self, ui: &mut egui::Ui, value: &mut f32) -> bool {
         self.show_response(ui, value).0
     }

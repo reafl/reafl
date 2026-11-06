@@ -12,6 +12,13 @@ pub const TOOLTIP_DELAY_KEY: &str = "pulseforge.tooltip_delay";
 /// Key the hovered widget text is published under for the status bar.
 pub const HOVER_TEXT_KEY: &str = "pulseforge.hover_text";
 
+/// Applies the configured tooltip policy to a widget.
+///
+/// # Parameters
+///
+/// - `ui`: the layout the widget lives in.
+/// - `response`: the widget to describe.
+/// - `text`: what to show when the pointer rests on it.
 pub fn tooltip(ui: &egui::Ui, response: &egui::Response, text: &str) {
     let mode =
         ui.data(|data| data.get_temp::<settings::TooltipMode>(egui::Id::new(TOOLTIP_MODE_KEY)));
