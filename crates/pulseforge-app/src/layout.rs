@@ -58,6 +58,8 @@ pub(crate) fn automation_owner_lane(project: &Project, track: &AutomationTrack) 
             .map_or(0, |instrument| instrument.default_mixer_lane),
         ParameterTarget::InsertEffect { channel_id, .. } => channel_id,
         ParameterTarget::MixerChannel { channel_id, .. } => channel_id,
+        // Clip automation lives on the lane that holds the clip.
+        ParameterTarget::Clip { lane_id, .. } => lane_id,
         // Lane-to-lane automation stays on the lane it belongs to.
         ParameterTarget::AutomationLane { .. } => project.lanes.len(),
         // Hosted plug-in parameters live on their insert slot, so group them
@@ -67,6 +69,7 @@ pub(crate) fn automation_owner_lane(project: &Project, track: &AutomationTrack) 
             lane.min(project.lanes.len())
         }
         ParameterTarget::Tempo => project.lanes.len(),
+        ParameterTarget::SampleDefaults { .. } => project.lanes.len(),
     }
 }
 

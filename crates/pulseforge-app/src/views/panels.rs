@@ -230,10 +230,15 @@ impl PulseForgeApp {
             // The send level uses the shared knob widget, so it drags, resets and
             // offers its context menu exactly like every other parameter.
             let mut value = self.project.sends[source][destination];
+            let send_target = ParameterTarget::MixerChannel {
+                channel_id: source,
+                parameter: project::MixerParameter::Send { destination },
+            };
             ui.scope_builder(egui::UiBuilder::new().max_rect(knob_rect), |ui| {
                 if Knob::new("", 0.0, 0.95, "")
                     .with_default(0.25)
                     .compact()
+                    .automates(send_target)
                     .show(ui, &mut value)
                 {
                     self.project.sends[source][destination] = value;
@@ -264,10 +269,19 @@ impl PulseForgeApp {
                     channel_name(*destination, &self.project)
                 ));
                 let mut gain = self.project.sends[*source][*destination];
-                if ui
-                    .add(egui::Slider::new(&mut gain, 0.0..=0.95).show_value(true))
-                    .changed()
-                {
+                let send_target = ParameterTarget::MixerChannel {
+                    channel_id: *source,
+                    parameter: project::MixerParameter::Send {
+                        destination: *destination,
+                    },
+                };
+                let response = ui.add(
+                    egui::Slider::new(&mut gain, 0.0..=0.95)
+                        .show_value(true)
+                        .text("Level"),
+                );
+                automation_context_menu(&response, &format!("Send · {gain:.2}"), send_target);
+                if response.changed() {
                     self.project.sends[*source][*destination] = gain;
                     changed = true;
                 }

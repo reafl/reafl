@@ -134,6 +134,22 @@ pub(crate) fn parameter_target_label(project: &Project, target: ParameterTarget)
             parameter.label()
         ),
         ParameterTarget::Tempo => "Tempo".to_owned(),
+        ParameterTarget::Clip {
+            lane_id,
+            clip_id,
+            parameter,
+        } => format!(
+            "{} \u{00B7} clip {} \u{00B7} {}",
+            project
+                .lanes
+                .get(lane_id)
+                .map_or("Track", |lane| lane.name.as_str()),
+            clip_id + 1,
+            parameter.label()
+        ),
+        ParameterTarget::SampleDefaults { parameter } => {
+            format!("All samples \u{00B7} {}", parameter.label())
+        }
         ParameterTarget::AutomationLane {
             track_id,
             parameter,

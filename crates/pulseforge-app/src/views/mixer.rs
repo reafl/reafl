@@ -1,4 +1,4 @@
-//! The mixer strips and the channel inspector.
+﻿//! The mixer strips and the channel inspector.
 
 use crate::*;
 
@@ -224,7 +224,7 @@ impl PulseForgeApp {
         } else {
             self.project.lanes[channel].name.clone()
         };
-        ui.heading(format!("Track · {name}"));
+        ui.heading(format!("Track Â· {name}"));
         ui.separator();
         let is_master = channel == self.project.lanes.len();
         // Level and pan live on the strips, so the inspector shows what a strip
@@ -242,13 +242,29 @@ impl PulseForgeApp {
         let mut changed = false;
         ui.label(egui::RichText::new("3-BAND EQ").strong());
         draw_eq_curve(ui, *eq);
+        // The inspector edits the same bands as the strip, so it offers the
+        // same automation targets.
+        let eq_target = |parameter: project::MixerParameter| ParameterTarget::MixerChannel {
+            channel_id: channel,
+            parameter,
+        };
         ui.horizontal(|ui| {
-            changed |= Knob::new("LOW", -12.0, 12.0, " dB").show(ui, &mut eq.low_db);
-            changed |= Knob::new("MID", -12.0, 12.0, " dB").show(ui, &mut eq.mid_db);
-            changed |= Knob::new("HIGH", -12.0, 12.0, " dB").show(ui, &mut eq.high_db);
+            changed |= Knob::new("LOW", -12.0, 12.0, " dB")
+                .with_default(0.0)
+                .automates(eq_target(project::MixerParameter::LowDb))
+                .show(ui, &mut eq.low_db);
+            changed |= Knob::new("MID", -12.0, 12.0, " dB")
+                .with_default(0.0)
+                .automates(eq_target(project::MixerParameter::MidDb))
+                .show(ui, &mut eq.mid_db);
+            changed |= Knob::new("HIGH", -12.0, 12.0, " dB")
+                .with_default(0.0)
+                .automates(eq_target(project::MixerParameter::HighDb))
+                .show(ui, &mut eq.high_db);
             if let Some(width) = width {
                 changed |= Knob::new("WIDTH", 0.0, 2.0, "")
                     .with_default(1.0)
+                    .automates(eq_target(project::MixerParameter::Width))
                     .show(ui, width);
             }
         });
@@ -304,7 +320,7 @@ impl PulseForgeApp {
                         self.status = "All insert slots are occupied.".to_owned();
                     }
                 }
-                if ui.button("Choose plugin…").clicked() {
+                if ui.button("Choose pluginâ€¦").clicked() {
                     self.plugin_selector_target = Some(PluginTarget::Effect { channel, slot: 0 });
                 }
             });
@@ -315,10 +331,10 @@ impl PulseForgeApp {
                     } else {
                         &slot.name
                     };
-                    if ui.button(format!("{} · {name}", slot_id + 1)).clicked() {
+                    if ui.button(format!("{} Â· {name}", slot_id + 1)).clicked() {
                         self.open_effect_plugins.insert((channel, slot_id));
                     }
-                    if ui.small_button("Select…").clicked() {
+                    if ui.small_button("Selectâ€¦").clicked() {
                         self.plugin_selector_target = Some(PluginTarget::Effect {
                             channel,
                             slot: slot_id,

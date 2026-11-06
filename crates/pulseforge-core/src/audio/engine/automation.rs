@@ -88,6 +88,11 @@ impl AudioEngine {
                     let base = self.project.parameter_value(target).unwrap_or(
                         if matches!(parameter, MixerParameter::Pan) {
                             0.0
+                        } else if matches!(
+                            parameter,
+                            MixerParameter::LowDb | MixerParameter::MidDb | MixerParameter::HighDb
+                        ) {
+                            0.0
                         } else {
                             0.8
                         },
@@ -108,6 +113,103 @@ impl AudioEngine {
                             if let Some(width) = self.lane_width.get_mut(channel_id) {
                                 width.set_target(value);
                             }
+                        }
+                        MixerParameter::LowDb | MixerParameter::MidDb | MixerParameter::HighDb => {
+                            // The channel EQ is used as a cached coefficient
+                            // set, so the automated values are folded into it
+                            // instead of being written back into the project.
+                            // All three bands are resolved together, because any
+                            // of them can be automated.
+                            let stored = self.mixer_eq_bands(channel_id).unwrap_or_default();
+                            let low = self.automated_value(
+                                ParameterTarget::MixerChannel {
+                                    channel_id,
+                                    parameter: MixerParameter::LowDb,
+                                },
+                                stored.low_db,
+                                position,
+                            );
+                            let mid = self.automated_value(
+                                ParameterTarget::MixerChannel {
+                                    channel_id,
+                                    parameter: MixerParameter::MidDb,
+                                },
+                                stored.mid_db,
+                                position,
+                            );
+                            let high = self.automated_value(
+                                ParameterTarget::MixerChannel {
+                                    channel_id,
+                                    parameter: MixerParameter::HighDb,
+                                },
+                                stored.high_db,
+                                position,
+                            );
+                            if let Some(gains) = self.eq_gains.get_mut(channel_id) {
+                                *gains = eq_gains(low, mid, high);
+                            }
+                        }
+                        MixerParameter::Send { destination } => {
+                            let gain = finite_clamp(value, 0.0, MAX_SEND_GAIN_SUM, 0.0);
+                            if let Some(edge) = self.send_edges.iter_mut().find(|edge| {
+                                edge.source == channel_id && edge.destination == destination
+                            }) {
+                                edge.gain = gain;
+                            } else if gain > f32::EPSILON {
+                                // Automation can introduce a send the project
+                                // does not store, so the edge is created on the
+                                // fly.
+                                self.send_edges.push(SendEdge {
+                                    source: channel_id,
+                                    destination,
+                                    gain,
+                                    delayed: [0.0; 2],
+                                });
+                            }
+                        }
+                    }
+                }
+                ParameterTarget::Clip {
+                    lane_id,
+                    clip_id,
+                    parameter,
+                } => {
+                    let Some(base) = self.project.parameter_value(target) else {
+                        continue;
+                    };
+                    let value = self.automated_value(target, base, position);
+                    let Some(clip) = self
+                        .project
+                        .lanes
+                        .get_mut(lane_id)
+                        .and_then(|lane| lane.clips.get_mut(clip_id))
+                    else {
+                        continue;
+                    };
+                    match parameter {
+                        ClipParameter::Gain => {
+                            clip.sample_gain = finite_clamp(value, 0.0, 1.0, clip.sample_gain)
+                        }
+                        ClipParameter::Pan => {
+                            clip.sample_pan = finite_clamp(value, -1.0, 1.0, clip.sample_pan)
+                        }
+                        ClipParameter::Pitch => {
+                            clip.sample_pitch = finite_clamp(value, -24.0, 24.0, clip.sample_pitch)
+                        }
+                    }
+                }
+                ParameterTarget::SampleDefaults { parameter } => {
+                    let base = self.project.parameter_value(target).unwrap_or(0.8);
+                    let value = self.automated_value(target, base, position);
+                    match parameter {
+                        ClipParameter::Gain => {
+                            self.project.sample_gain = finite_clamp(value, 0.0, 1.0, 0.8)
+                        }
+                        ClipParameter::Pan => {
+                            self.project.sample_pan = finite_clamp(value, -1.0, 1.0, 0.0)
+                        }
+                        ClipParameter::Pitch => {
+                            self.project.sample_pitch = finite_clamp(value, -24.0, 24.0, 0.0)
                         }
                     }
                 }
@@ -154,10 +256,33 @@ impl AudioEngine {
                             | AutomationSource::Perlin { rate, .. }
                             | AutomationSource::SampleAndHold { rate, .. },
                             AutomationLaneParameter::RateAmount,
-                        ) => rate.amount = finite_clamp(value, 0.1, 64.0, rate.amount),
+                        ) => {
+                            // The amount is in the rate's own unit, so the clamp
+                            // follows it: a 500 ms LFO must not be squeezed into
+                            // 64 ms by the step-rate limit.
+                            let limit = match rate.unit {
+                                TimeUnit::Steps => 64.0,
+                                TimeUnit::Milliseconds => 4_000.0,
+                            };
+                            rate.amount = finite_clamp(value, 0.1, limit, rate.amount);
+                        }
                         (AutomationSource::Lfo { shape, .. }, AutomationLaneParameter::Shape) => {
                             *shape = LfoShape::from_index(value.max(0.0) as u32);
                         }
+                        (
+                            AutomationSource::MidiEnvelope { attack, .. }
+                            | AutomationSource::Peak { attack, .. },
+                            AutomationLaneParameter::Attack,
+                        ) => attack.amount = finite_clamp(value, 0.1, 4_000.0, attack.amount),
+                        (
+                            AutomationSource::MidiEnvelope { decay, .. },
+                            AutomationLaneParameter::Decay,
+                        ) => decay.amount = finite_clamp(value, 0.1, 4_000.0, decay.amount),
+                        (
+                            AutomationSource::MidiEnvelope { release, .. }
+                            | AutomationSource::Peak { release, .. },
+                            AutomationLaneParameter::Release,
+                        ) => release.amount = finite_clamp(value, 0.1, 4_000.0, release.amount),
                         _ => {}
                     }
                 }
@@ -367,9 +492,25 @@ impl AudioEngine {
         target.denormalize_value(normalized.clamp(0.0, 1.0))
     }
 
-    /// Advances the envelope follower of every peak lane by one control block,
-    /// then clears the per-channel block peaks.
+    /// Stored equaliser of a mixer channel, the master included.
     ///
+    /// # Parameters
+    ///
+    /// - `channel_id`: mixer channel index; `lanes.len()` addresses the master.
+    ///
+    /// # Returns
+    ///
+    /// The channel's three bands, or `None` when the channel no longer exists.
+    pub(crate) fn mixer_eq_bands(&self, channel_id: usize) -> Option<crate::project::ThreeBandEq> {
+        if channel_id == self.project.lanes.len() {
+            Some(self.project.master.eq)
+        } else {
+            self.project.lanes.get(channel_id).map(|lane| lane.eq)
+        }
+    }
+
+    /// Advances the envelope follower of every peak lane by one control block,
+    /// then clears the per-channel block peaks.    ///
     /// The follower keeps its own attack and release, so two lanes reading the
     /// same channel can react at different speeds.
     pub(crate) fn update_peak_followers(&mut self) {

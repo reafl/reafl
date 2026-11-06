@@ -131,6 +131,8 @@ impl eframe::App for PulseForgeApp {
                 ParameterTarget::PluginParameter { .. }
                 | ParameterTarget::MixerChannel { .. }
                 | ParameterTarget::AutomationLane { .. }
+                | ParameterTarget::Clip { .. }
+                | ParameterTarget::SampleDefaults { .. }
                 | ParameterTarget::Tempo => {
                     self.create_automation_for_target(target);
                 }

@@ -261,8 +261,26 @@ impl PulseForgeApp {
                                 });
                         }
                         ui.horizontal(|ui| {
-                            changed |= edit_time_value(ui, track_id, "Attack", attack);
-                            changed |= edit_time_value(ui, track_id, "Decay", decay);
+                            changed |= edit_time_value_automated(
+                                ui,
+                                track_id,
+                                "Attack",
+                                attack,
+                                Some(ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Attack,
+                                }),
+                            );
+                            changed |= edit_time_value_automated(
+                                ui,
+                                track_id,
+                                "Decay",
+                                decay,
+                                Some(ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Decay,
+                                }),
+                            );
                             changed |= lane_parameter_slider(
                                 ui,
                                 "Sustain",
@@ -273,7 +291,16 @@ impl PulseForgeApp {
                                     parameter: project::AutomationLaneParameter::Sustain,
                                 },
                             );
-                            changed |= edit_time_value(ui, track_id, "Release", release);
+                            changed |= edit_time_value_automated(
+                                ui,
+                                track_id,
+                                "Release",
+                                release,
+                                Some(ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Release,
+                                }),
+                            );
                             changed |= lane_parameter_slider(
                                 ui,
                                 "Base",
@@ -505,10 +532,26 @@ impl PulseForgeApp {
                                 .changed();
                         });
                         ui.horizontal(|ui| {
-                            changed |=
-                                edit_time_value_automated(ui, track_id, "Attack", attack, None);
-                            changed |=
-                                edit_time_value_automated(ui, track_id, "Release", release, None);
+                            changed |= edit_time_value_automated(
+                                ui,
+                                track_id,
+                                "Attack",
+                                attack,
+                                Some(ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Attack,
+                                }),
+                            );
+                            changed |= edit_time_value_automated(
+                                ui,
+                                track_id,
+                                "Release",
+                                release,
+                                Some(ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Release,
+                                }),
+                            );
                             changed |= lane_parameter_slider(
                                 ui,
                                 "Base",

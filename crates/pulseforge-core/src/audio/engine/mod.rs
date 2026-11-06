@@ -25,9 +25,10 @@ use crate::{
     hosted::{HostedSlot, instrument_host_id},
     plugins::EffectParameters,
     project::{
-        AutomationLaneParameter, AutomationSource, ClipSource, EffectParameter,
-        InstrumentParameter, LfoShape, MixerParameter, ParameterTarget, PianoNote, Project,
-        SignalWaveform, SynthKind, TimeUnit, TimeValue, finite_clamp, normalize_sends,
+        AutomationLaneParameter, AutomationSource, ClipParameter, ClipSource, EffectParameter,
+        InstrumentParameter, LfoShape, MAX_SEND_GAIN_SUM, MixerParameter, ParameterTarget,
+        PianoNote, Project, SignalWaveform, SynthKind, TimeUnit, TimeValue, finite_clamp,
+        normalize_sends,
     },
     smooth::SmoothedValue,
 };

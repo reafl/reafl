@@ -176,6 +176,14 @@ impl Project {
                 // the plug-in/engine is alive; nothing to prune here.
                 ParameterTarget::PluginParameter { .. } => true,
                 ParameterTarget::MixerChannel { channel_id, .. } => channel_id <= lane_count,
+                // Clip targets follow their clip: removing the clip prunes the lane.
+                ParameterTarget::Clip {
+                    lane_id, clip_id, ..
+                } => self
+                    .lanes
+                    .get(lane_id)
+                    .is_some_and(|lane| clip_id < lane.clips.len()),
+                ParameterTarget::SampleDefaults { .. } => true,
                 ParameterTarget::Tempo => true,
                 ParameterTarget::AutomationLane { track_id, .. } => track_id < track_count,
             };

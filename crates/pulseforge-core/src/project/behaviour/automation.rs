@@ -138,18 +138,41 @@ impl Project {
                 channel_id,
                 parameter,
             } => {
-                let (gain, pan, width) = if channel_id == self.lanes.len() {
-                    (self.master.gain, self.master.pan, 1.0)
+                let (gain, pan, width, eq) = if channel_id == self.lanes.len() {
+                    (self.master.gain, self.master.pan, 1.0, self.master.eq)
                 } else {
                     let lane = self.lanes.get(channel_id)?;
-                    (lane.gain, lane.pan, lane.width)
+                    (lane.gain, lane.pan, lane.width, lane.eq)
                 };
                 Some(match parameter {
                     MixerParameter::Gain => gain,
                     MixerParameter::Pan => pan,
                     MixerParameter::Width => width,
+                    MixerParameter::LowDb => eq.low_db,
+                    MixerParameter::MidDb => eq.mid_db,
+                    MixerParameter::HighDb => eq.high_db,
+                    MixerParameter::Send { destination } => {
+                        *self.sends.get(channel_id)?.get(destination)?
+                    }
                 })
             }
+            ParameterTarget::Clip {
+                lane_id,
+                clip_id,
+                parameter,
+            } => {
+                let clip = self.lanes.get(lane_id)?.clips.get(clip_id)?;
+                Some(match parameter {
+                    ClipParameter::Gain => clip.sample_gain,
+                    ClipParameter::Pan => clip.sample_pan,
+                    ClipParameter::Pitch => clip.sample_pitch,
+                })
+            }
+            ParameterTarget::SampleDefaults { parameter } => Some(match parameter {
+                ClipParameter::Gain => self.sample_gain,
+                ClipParameter::Pan => self.sample_pan,
+                ClipParameter::Pitch => self.sample_pitch,
+            }),
             ParameterTarget::Tempo => Some(self.bpm),
             ParameterTarget::Instrument {
                 instrument_id,
@@ -238,6 +261,20 @@ impl Project {
                         AutomationSource::Perlin { octaves, .. },
                         AutomationLaneParameter::Octaves,
                     ) => Some(*octaves as f32),
+                    (
+                        AutomationSource::MidiEnvelope { attack, .. }
+                        | AutomationSource::Peak { attack, .. },
+                        AutomationLaneParameter::Attack,
+                    ) => Some(attack.amount),
+                    (
+                        AutomationSource::MidiEnvelope { decay, .. },
+                        AutomationLaneParameter::Decay,
+                    ) => Some(decay.amount),
+                    (
+                        AutomationSource::MidiEnvelope { release, .. }
+                        | AutomationSource::Peak { release, .. },
+                        AutomationLaneParameter::Release,
+                    ) => Some(release.amount),
                     _ => None,
                 }
             }

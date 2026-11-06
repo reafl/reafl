@@ -104,6 +104,17 @@ pub enum MixerParameter {
     Pan,
     /// Mid/side stereo width, `0` (mono) to `2` (double side).
     Width,
+    /// Low shelf gain of the channel equaliser, in dB.
+    LowDb,
+    /// Mid band gain of the channel equaliser, in dB.
+    MidDb,
+    /// High shelf gain of the channel equaliser, in dB.
+    HighDb,
+    /// Level of the send into another channel.
+    Send {
+        /// Destination channel index, the master being `lanes.len()`.
+        destination: usize,
+    },
 }
 
 impl MixerParameter {
@@ -113,6 +124,37 @@ impl MixerParameter {
             Self::Gain => "Volume",
             Self::Pan => "Pan",
             Self::Width => "Width",
+            Self::LowDb => "EQ low",
+            Self::MidDb => "EQ mid",
+            Self::HighDb => "EQ high",
+            Self::Send { .. } => "Send",
+        }
+    }
+}
+
+/// Playback controls of an audio clip, and of the sample defaults every clip
+/// inherits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClipParameter {
+    /// Clip gain in 0..=1.
+    Gain,
+    /// Clip pan in -1..=1.
+    Pan,
+    /// Clip transpose in semitones.
+    Pitch,
+}
+
+impl ClipParameter {
+    /// Every clip parameter, in the order the clip window shows them.
+    pub const ALL: [Self; 3] = [Self::Gain, Self::Pan, Self::Pitch];
+
+    /// Human readable label for menus and tooltips.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Gain => "Volume",
+            Self::Pan => "Pan",
+            Self::Pitch => "Pitch",
         }
     }
 }
@@ -134,6 +176,12 @@ pub enum AutomationLaneParameter {
     Sustain,
     /// Perlin octave count.
     Octaves,
+    /// Attack time of the source's envelope, in the unit of the lane.
+    Attack,
+    /// Decay time of a MIDI envelope.
+    Decay,
+    /// Release time of the source's envelope.
+    Release,
 }
 
 impl AutomationLaneParameter {
@@ -146,6 +194,9 @@ impl AutomationLaneParameter {
             Self::Shape => "Shape",
             Self::Sustain => "Sustain",
             Self::Octaves => "Octaves",
+            Self::Attack => "Attack",
+            Self::Decay => "Decay",
+            Self::Release => "Release",
         }
     }
 }
@@ -190,6 +241,20 @@ pub enum ParameterTarget {
         track_id: usize,
         /// Which lane source parameter.
         parameter: AutomationLaneParameter,
+    },
+    /// A playback control of one arrangement clip.
+    Clip {
+        /// Arrangement lane the clip sits on.
+        lane_id: usize,
+        /// Index of the clip inside the lane.
+        clip_id: usize,
+        /// Which clip control.
+        parameter: ClipParameter,
+    },
+    /// The sample defaults every audio clip inherits.
+    SampleDefaults {
+        /// Which default.
+        parameter: ClipParameter,
     },
     /// Project tempo in BPM.
     Tempo,
@@ -245,10 +310,25 @@ impl ParameterTarget {
                 MixerParameter::Gain => (0.0, 1.0),
                 MixerParameter::Pan => (-1.0, 1.0),
                 MixerParameter::Width => (0.0, 2.0),
+                MixerParameter::LowDb | MixerParameter::MidDb | MixerParameter::HighDb => {
+                    (-12.0, 12.0)
+                }
+                MixerParameter::Send { .. } => (0.0, 0.95),
+            },
+            Self::Clip { parameter, .. } | Self::SampleDefaults { parameter } => match parameter {
+                ClipParameter::Gain => (0.0, 1.0),
+                ClipParameter::Pan => (-1.0, 1.0),
+                ClipParameter::Pitch => (-24.0, 24.0),
             },
             Self::AutomationLane { parameter, .. } => match parameter {
                 AutomationLaneParameter::Base | AutomationLaneParameter::Depth => (0.0, 1.0),
-                AutomationLaneParameter::RateAmount => (0.1, 64.0),
+                // Rates and envelope times are stored in their own unit, so the
+                // range covers both a short step rate and a slow millisecond
+                // one.
+                AutomationLaneParameter::RateAmount
+                | AutomationLaneParameter::Attack
+                | AutomationLaneParameter::Decay
+                | AutomationLaneParameter::Release => (0.1, 4_000.0),
                 AutomationLaneParameter::Shape => (0.0, (LfoShape::ALL.len() - 1) as f32),
                 AutomationLaneParameter::Sustain => (0.0, 1.0),
                 AutomationLaneParameter::Octaves => (1.0, 16.0),

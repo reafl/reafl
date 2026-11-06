@@ -106,22 +106,34 @@ impl PulseForgeApp {
         }
         ui.separator();
         let mut changed = false;
+        // Both the defaults and the per-clip controls are automatable; the
+        // defaults address `SampleDefaults`, the clip controls their clip.
+        let default_target =
+            |parameter: project::ClipParameter| ParameterTarget::SampleDefaults { parameter };
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new("All samples").strong());
                 changed |= Knob::new("Volume", 0.0, 1.0, "")
                     .with_default(0.8)
+                    .automates(default_target(project::ClipParameter::Gain))
                     .show(ui, &mut self.project.sample_gain);
                 changed |= Knob::new("Pan", -1.0, 1.0, "")
                     .with_default(0.0)
+                    .automates(default_target(project::ClipParameter::Pan))
                     .show(ui, &mut self.project.sample_pan);
                 changed |= Knob::new("Pitch", -24.0, 24.0, " st")
                     .with_default(0.0)
+                    .automates(default_target(project::ClipParameter::Pitch))
                     .show(ui, &mut self.project.sample_pitch);
             });
             ui.separator();
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new("This clip").strong());
+                let clip_target = |parameter: project::ClipParameter| ParameterTarget::Clip {
+                    lane_id: lane,
+                    clip_id: clip,
+                    parameter,
+                };
                 if let Some(clip) = self
                     .project
                     .lanes
@@ -130,12 +142,15 @@ impl PulseForgeApp {
                 {
                     changed |= Knob::new("Volume", 0.0, 1.0, "")
                         .with_default(0.8)
+                        .automates(clip_target(project::ClipParameter::Gain))
                         .show(ui, &mut clip.sample_gain);
                     changed |= Knob::new("Pan", -1.0, 1.0, "")
                         .with_default(0.0)
+                        .automates(clip_target(project::ClipParameter::Pan))
                         .show(ui, &mut clip.sample_pan);
                     changed |= Knob::new("Pitch", -24.0, 24.0, " st")
                         .with_default(0.0)
+                        .automates(clip_target(project::ClipParameter::Pitch))
                         .show(ui, &mut clip.sample_pitch);
                 }
             });

@@ -483,20 +483,31 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                             ui.separator();
                             ui.label(egui::RichText::new("3-BAND EQ").strong());
                             draw_eq_curve(ui, *strip.eq);
+                            // Each band is its own automation target, so the
+                            // channel EQ is automatable like the fader.
+                            let eq_target = |parameter: project::MixerParameter| {
+                                ParameterTarget::MixerChannel {
+                                    channel_id: strip.channel_id,
+                                    parameter,
+                                }
+                            };
                             ui.horizontal(|ui| {
                                 result.changed |=
                                     ValueControl::knob("LOW", &mut strip.eq.low_db, -12.0..=12.0)
                                         .with_suffix(" dB")
+                                        .automates(eq_target(project::MixerParameter::LowDb))
                                         .show(ui)
                                         .changed;
                                 result.changed |=
                                     ValueControl::knob("MID", &mut strip.eq.mid_db, -12.0..=12.0)
                                         .with_suffix(" dB")
+                                        .automates(eq_target(project::MixerParameter::MidDb))
                                         .show(ui)
                                         .changed;
                                 result.changed |=
                                     ValueControl::knob("HIGH", &mut strip.eq.high_db, -12.0..=12.0)
                                         .with_suffix(" dB")
+                                        .automates(eq_target(project::MixerParameter::HighDb))
                                         .show(ui)
                                         .changed;
                             });

@@ -1,4 +1,4 @@
-//! The toolbar and the clip picker beside the arrangement.
+﻿//! The toolbar and the clip picker beside the arrangement.
 
 use crate::*;
 

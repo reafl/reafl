@@ -706,4 +706,60 @@ mod tests {
         assert_eq!(points[1].step, 8);
         assert_eq!(points[1].value, 1.0);
     }
+
+    #[test]
+    fn mixer_eq_send_and_clip_parameters_are_readable() {
+        let mut project = Project::default();
+        project.lanes[0].eq.low_db = -4.0;
+        project.sends[0][1] = 0.3;
+        project.lanes[0].clips.push(ArrangementClip {
+            source: ClipSource::Audio {
+                path: "clip.wav".to_owned(),
+            },
+            sample_gain: 0.4,
+            sample_pan: -0.5,
+            sample_pitch: 7.0,
+            ..ArrangementClip::default()
+        });
+        let clip_id = project.lanes[0].clips.len() - 1;
+
+        let eq = ParameterTarget::MixerChannel {
+            channel_id: 0,
+            parameter: MixerParameter::LowDb,
+        };
+        assert_eq!(project.parameter_value(eq), Some(-4.0));
+        let send = ParameterTarget::MixerChannel {
+            channel_id: 0,
+            parameter: MixerParameter::Send { destination: 1 },
+        };
+        assert_eq!(project.parameter_value(send), Some(0.3));
+        let pitch = ParameterTarget::Clip {
+            lane_id: 0,
+            clip_id,
+            parameter: ClipParameter::Pitch,
+        };
+        assert_eq!(project.parameter_value(pitch), Some(7.0));
+        assert_eq!(
+            project.parameter_value(ParameterTarget::SampleDefaults {
+                parameter: ClipParameter::Gain,
+            }),
+            Some(project.sample_gain)
+        );
+    }
+
+    #[test]
+    fn lanes_for_removed_clips_are_pruned() {
+        let mut project = Project::default();
+        project.lanes[0].clips.clear();
+        project.automation_tracks.push(AutomationTrack {
+            target: ParameterTarget::Clip {
+                lane_id: 0,
+                clip_id: 0,
+                parameter: ClipParameter::Gain,
+            },
+            ..AutomationTrack::default()
+        });
+        project.normalize();
+        assert!(project.automation_tracks.is_empty());
+    }
 }

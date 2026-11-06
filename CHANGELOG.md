@@ -55,6 +55,19 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ### Added
 
+- Automation coverage for the controls that had none left: the **channel EQ**
+  (`MixerParameter::LowDb/MidDb/HighDb`, folded into the engine's cached filter
+  coefficients), **sends** (`MixerParameter::Send { destination }`, which can
+  even introduce a send the project does not store), and the **audio clip**
+  controls plus their project-wide defaults (`ParameterTarget::Clip { lane_id,
+  clip_id, parameter }` and `::SampleDefaults`, with `ClipParameter::{Gain, Pan,
+  Pitch}`). Lanes for removed clips are pruned by `Project::normalize`, and the
+  automation window groups clip lanes under their lane and sample defaults under
+  the master.
+- Envelope times of an automation lane are automatable too:
+  `AutomationLaneParameter::{Attack, Decay, Release}` cover the MIDI envelope and
+  the track-peak follower, and the rate clamp now follows the rate's own unit, so
+  automating a 500 ms LFO rate no longer squeezes it into 64 ms.
 - `AutomationSource::Peak { channel_id, post_fx, attack, release, base, depth }`:
   a lane can follow the peak level of any mixer track, read either before its
   insert chain (pre FX) or after it (post FX), with its own follower attack and
