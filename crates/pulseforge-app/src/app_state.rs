@@ -2,6 +2,20 @@
 
 use crate::*;
 
+/// Which family of parameters the automation window's picker shows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum AutomationTargetKind {
+    /// Instrument and synth parameters.
+    #[default]
+    Instrument,
+    /// Insert-effect parameters of a channel.
+    InsertEffect,
+    /// Mixer channel controls: gain, pan, width, EQ bands and sends.
+    Mixer,
+    /// Audio clip controls and the sample defaults every clip inherits.
+    Clip,
+}
+
 pub(crate) struct PulseForgeApp {
     pub(crate) project: Project,
     pub(crate) audio: Option<AudioOutput>,
@@ -24,12 +38,21 @@ pub(crate) struct PulseForgeApp {
     pub(crate) selected_instrument: usize,
     pub(crate) selected_lane: usize,
     pub(crate) selected_mixer_channel: usize,
-    pub(crate) automation_effect_mode: bool,
+    pub(crate) automation_target_kind: AutomationTargetKind,
     pub(crate) automation_instrument_id: usize,
     pub(crate) automation_instrument_parameter: InstrumentParameter,
     pub(crate) automation_channel_id: usize,
     pub(crate) automation_slot_id: usize,
     pub(crate) automation_effect_parameter: EffectParameter,
+    /// Mixer channel the mixer picker points at, the master being `lanes.len()`.
+    pub(crate) automation_mixer_channel_id: usize,
+    pub(crate) automation_mixer_parameter: MixerParameter,
+    /// Arrangement lane and clip the clip picker points at.
+    pub(crate) automation_clip_lane: usize,
+    pub(crate) automation_clip_id: usize,
+    pub(crate) automation_clip_parameter: ClipParameter,
+    /// True when the clip picker targets the project-wide sample defaults.
+    pub(crate) automation_sample_defaults: bool,
     pub(crate) selection: Option<Selection>,
     /// Additional selected items, so shift/ctrl can build a multi-selection.
     pub(crate) extra_selection: Vec<Selection>,

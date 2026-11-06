@@ -108,61 +108,12 @@ impl eframe::App for PulseForgeApp {
             data.remove_temp::<ParameterTarget>(egui::Id::new("knob_add_automation"))
         });
         if let Some(target) = automation_request {
-            match target {
-                ParameterTarget::Instrument {
-                    instrument_id,
-                    parameter,
-                } => {
-                    self.automation_effect_mode = false;
-                    self.automation_instrument_id = instrument_id;
-                    self.automation_instrument_parameter = parameter;
-                }
-                ParameterTarget::InsertEffect {
-                    channel_id,
-                    slot_id,
-                    parameter,
-                } => {
-                    self.automation_effect_mode = true;
-                    self.automation_channel_id = channel_id;
-                    self.automation_slot_id = slot_id;
-                    self.automation_effect_parameter = parameter;
-                }
-                // Global targets are added straight to the automation list.
-                ParameterTarget::PluginParameter { .. }
-                | ParameterTarget::MixerChannel { .. }
-                | ParameterTarget::AutomationLane { .. }
-                | ParameterTarget::Clip { .. }
-                | ParameterTarget::SampleDefaults { .. }
-                | ParameterTarget::Tempo => {
-                    self.create_automation_for_target(target);
-                }
-            }
-            if let Some(value) = self.project.parameter_value(target) {
-                let base = target.normalize_value(value);
-                let name = parameter_target_label(&self.project, target);
-                self.project.automation_tracks.push(AutomationTrack {
-                    name,
-                    target,
-                    start_step: 0,
-                    length_steps: 64,
-                    points: vec![
-                        AutomationPoint {
-                            step: 0,
-                            value: base,
-                            curve: AutomationCurve::Linear,
-                        },
-                        AutomationPoint {
-                            step: 16,
-                            value: base,
-                            curve: AutomationCurve::Linear,
-                        },
-                    ],
-                    modulation_points: Vec::new(),
-                    enabled: true,
-                    source: project::AutomationSource::Curve,
-                });
-                self.sync_project();
-            }
+            // Focus the picker on the parameter the control asked for, then let
+            // the shared helper create the lane. Instrument and insert targets
+            // used to be pushed here as well, which made the global ones create
+            // two lanes.
+            self.focus_automation_target(target);
+            self.create_automation_for_target(target);
             self.windows.automation = true;
         }
         if !context.wants_keyboard_input() {

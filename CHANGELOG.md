@@ -55,6 +55,14 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ### Added
 
+- The automation window's target picker now has four modes instead of two:
+  **Instrument**, **Insert FX**, **Mixer** (gain, pan, width, EQ low/mid/high
+  and a send per destination) and **Clip** (a clip's volume/pan/pitch or the
+  project-wide sample defaults). `AutomationTargetKind` replaces the old
+  `automation_effect_mode` flag, `focus_automation_target` points the picker at
+  whatever a control's context menu asked for, and the formula tool uses the
+  same selection instead of assuming an instrument target. A control's "Add
+  automation lane" now also stops creating two lanes for global targets.
 - Automation coverage for the controls that had none left: the **channel EQ**
   (`MixerParameter::LowDb/MidDb/HighDb`, folded into the engine's cached filter
   coefficients), **sends** (`MixerParameter::Send { destination }`, which can

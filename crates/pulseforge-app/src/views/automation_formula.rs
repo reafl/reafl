@@ -54,17 +54,9 @@ impl PulseForgeApp {
     ) {
         const LENGTH_STEPS: u64 = 64;
         const POINT_COUNT: u64 = 32;
-        let target = if self.automation_effect_mode {
-            ParameterTarget::InsertEffect {
-                channel_id: self.automation_channel_id,
-                slot_id: self.automation_slot_id,
-                parameter: self.automation_effect_parameter,
-            }
-        } else {
-            ParameterTarget::Instrument {
-                instrument_id: self.automation_instrument_id,
-                parameter: self.automation_instrument_parameter,
-            }
+        let Some(target) = self.selected_automation_target() else {
+            self.status = "Pick an automatable parameter first.".to_owned();
+            return;
         };
         let points: Vec<AutomationPoint> = (0..=POINT_COUNT)
             .map(|index| AutomationPoint {

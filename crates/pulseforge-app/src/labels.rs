@@ -102,6 +102,28 @@ pub(crate) fn effect_parameter_options(name: &str) -> Vec<EffectParameter> {
     }
 }
 
+/// Display name of a mixer channel, where `lanes.len()` addresses the master.
+///
+/// # Parameters
+///
+/// - `project`: the project the channel belongs to.
+/// - `channel`: mixer channel index.
+///
+/// # Returns
+///
+/// The lane name, `"Master"` for the master bus, or a placeholder when the
+/// channel no longer exists.
+pub(crate) fn channel_name(project: &Project, channel: usize) -> String {
+    if channel == project.lanes.len() {
+        "Master".to_owned()
+    } else {
+        project
+            .lanes
+            .get(channel)
+            .map_or_else(|| "Mixer".to_owned(), |lane| lane.name.clone())
+    }
+}
+
 pub(crate) fn parameter_target_label(project: &Project, target: ParameterTarget) -> String {
     match target {
         ParameterTarget::Instrument {
