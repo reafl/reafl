@@ -34,6 +34,24 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 - New `pulseforge_widgets::shape`: `DrawPoint`/`PointStyle` for lane points,
   `ScreenCurve` (line, fill and cable) and the samplers `sample_curve`,
   `value_at` and `eq_response_curve` shared by the EQ display and the lanes.
+- Every crate is now organised as one module per concern, so no file carries a
+  whole subsystem: the project model lives in
+  `project/model/{params,piano,device,targets,automation,arrangement}.rs`, its
+  behaviour in `project/behaviour/{normalize,automation,lanes,steps}.rs`, the
+  audio side in `audio/{model,sample,output,dsp}` plus
+  `audio/engine/{mod,render,voices,commands,automation,effects,setup}.rs`, the
+  settings crate in `settings/{mod,shortcuts,appearance,tests}.rs`, and the app
+  views in `views/{timeline,timeline_paint,timeline_rows,timeline_input}`,
+  `views/{automation,automation_target,automation_formula,automation_tracks}`,
+  `views/{piano,piano_grid,piano_input,piano_gestures,piano_velocity}`,
+  `views/{settings,sample_browser,clip_windows}` and `editing`, `debug_panel`,
+  `tests`. `views/timeline.rs` hands the frame geometry to the painting and
+  input passes as an immutable `TimelineGeometry`.
+- `pulseforge-core`, `pulseforge-plugins`, `pulseforge-app` and
+  `pulseforge-widgets` carry `#![warn(missing_docs)]` and are fully documented:
+  every public type, field, variant and method has rustdoc, with `# Parameters`,
+  `# Returns` and `# Errors` sections where they apply, so `cargo doc` produces
+  the reference without gaps.
 
 ### Added
 
