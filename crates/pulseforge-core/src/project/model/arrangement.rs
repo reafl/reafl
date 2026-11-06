@@ -1,14 +1,12 @@
-//! Instruments, patterns, clips, lanes, the master channel and the project itself.
-
-//! The project data model: values, targets and the structures they fill.
-
-#![allow(unused_imports)]
+﻿//! Instruments, patterns, clips, lanes, the master channel and the project itself.
 
 use serde::{Deserialize, Serialize};
 
 use super::automation::*;
+use super::device::*;
 use super::params::*;
-use super::targets::*;
+use super::piano::*;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Instrument {

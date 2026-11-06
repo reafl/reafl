@@ -1,13 +1,80 @@
 //! Automation points and tracks, and the insert slots they can drive.
 
-//! The project data model: values, targets and the structures they fill.
-
 #![allow(unused_imports)]
 
 use serde::{Deserialize, Serialize};
 
+use super::device::*;
 use super::params::*;
 use super::targets::*;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutomationCurve {
+    #[default]
+    Linear,
+    Smooth,
+    Bezier,
+    Curved,
+    Pulse,
+    Constant,
+    Steps,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub enum AutomationSource {
+    #[default]
+    Curve,
+    /// A drawn curve whose points are offsets added to the parameter's own
+    /// value rather than replacing it. Values run from `-1` to `1`, so the lane
+    /// can pull a parameter down as well as push it up.
+    RelativeCurve,
+    MidiEnvelope {
+        instrument_id: usize,
+        attack: TimeValue,
+        decay: TimeValue,
+        sustain: f32,
+        release: TimeValue,
+        base: f32,
+        depth: f32,
+    },
+    Lfo {
+        shape: LfoShape,
+        rate: TimeValue,
+        retrigger: bool,
+        base: f32,
+        depth: f32,
+    },
+    Perlin {
+        seed: u32,
+        rate: TimeValue,
+        octaves: u32,
+        base: f32,
+        depth: f32,
+    },
+    /// One random value per step of `rate`, held until the next step. Kept out
+    /// of [`LfoShape`] so it reads as its own modulation category.
+    SampleAndHold {
+        seed: u32,
+        rate: TimeValue,
+        base: f32,
+        depth: f32,
+    },
+}
+
+impl AutomationSource {
+    /// True when the source reads `track.points` as a drawn curve.
+    pub fn edits_points(&self) -> bool {
+        matches!(self, Self::Curve | Self::RelativeCurve)
+    }
+
+    /// True when the drawn curve is an offset added to the parameter instead of
+    /// replacing it, so its points may be negative.
+    pub fn is_relative(&self) -> bool {
+        matches!(self, Self::RelativeCurve)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AutomationPoint {

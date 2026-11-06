@@ -122,3 +122,18 @@ impl LfoShape {
             .unwrap_or(0) as u32
     }
 }
+
+impl Default for TimeSignature {
+    fn default() -> Self {
+        Self {
+            numerator: 4,
+            denominator: 4,
+        }
+    }
+}
+
+impl TimeSignature {
+    pub fn steps_per_bar(self) -> u64 {
+        (u64::from(self.numerator.max(1)) * 16 / u64::from(self.denominator.max(1))).max(1)
+    }
+}
