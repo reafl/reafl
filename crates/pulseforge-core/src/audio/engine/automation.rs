@@ -137,14 +137,16 @@ impl AudioEngine {
                             AutomationSource::MidiEnvelope { base, .. }
                             | AutomationSource::Lfo { base, .. }
                             | AutomationSource::Perlin { base, .. }
-                            | AutomationSource::SampleAndHold { base, .. },
+                            | AutomationSource::SampleAndHold { base, .. }
+                            | AutomationSource::Peak { base, .. },
                             AutomationLaneParameter::Base,
                         ) => *base = finite_clamp(value, 0.0, 1.0, *base),
                         (
                             AutomationSource::MidiEnvelope { depth, .. }
                             | AutomationSource::Lfo { depth, .. }
                             | AutomationSource::Perlin { depth, .. }
-                            | AutomationSource::SampleAndHold { depth, .. },
+                            | AutomationSource::SampleAndHold { depth, .. }
+                            | AutomationSource::Peak { depth, .. },
                             AutomationLaneParameter::Depth,
                         ) => *depth = finite_clamp(value, 0.0, 1.0, *depth),
                         (
@@ -347,11 +349,78 @@ impl AudioEngine {
                         * multiplier
                         - base_normalized
                 }
+                AutomationSource::Peak { base, depth, .. } => {
+                    // The follower was advanced once for this control block by
+                    // `update_peak_followers`, so reading it here is cheap.
+                    let level = self.peak_levels.get(track_id).copied().unwrap_or(0.0);
+                    let multiplier = if track.modulation_points.is_empty() {
+                        1.0
+                    } else {
+                        Project::evaluate_curve(&track.modulation_points, position)
+                    };
+                    base + level * depth * multiplier - base_normalized
+                }
             };
             additive += delta;
         }
         let normalized = curve_total.unwrap_or(base_normalized) + relative_total + additive;
         target.denormalize_value(normalized.clamp(0.0, 1.0))
+    }
+
+    /// Advances the envelope follower of every peak lane by one control block,
+    /// then clears the per-channel block peaks.
+    ///
+    /// The follower keeps its own attack and release, so two lanes reading the
+    /// same channel can react at different speeds.
+    pub(crate) fn update_peak_followers(&mut self) {
+        let block_seconds = CONTROL_INTERVAL as f32 / self.sample_rate.max(1.0);
+        let bpm = self.project.bpm;
+        for track_id in 0..self.project.automation_tracks.len() {
+            // Copy the settings out first so the project borrow ends before the
+            // follower state is written.
+            let (channel_id, post_fx, attack, release) =
+                match &self.project.automation_tracks[track_id].source {
+                    AutomationSource::Peak {
+                        channel_id,
+                        post_fx,
+                        attack,
+                        release,
+                        ..
+                    } => (*channel_id, *post_fx, *attack, *release),
+                    _ => continue,
+                };
+            let peaks = if post_fx {
+                &self.lane_peak_post
+            } else {
+                &self.lane_peak_pre
+            };
+            let raw = peaks
+                .get(channel_id)
+                .copied()
+                .unwrap_or(0.0)
+                .clamp(0.0, 1.0);
+            let Some(current) = self.peak_levels.get(track_id).copied() else {
+                continue;
+            };
+            // Rise with the attack, fall with the release, like a meter with a
+            // hold that never overshoots.
+            let time = if raw > current {
+                attack.seconds(bpm)
+            } else {
+                release.seconds(bpm)
+            };
+            let coefficient = if time <= 0.0 {
+                1.0
+            } else {
+                1.0 - (-block_seconds / time).exp()
+            };
+            if let Some(level) = self.peak_levels.get_mut(track_id) {
+                *level = (current + (raw - current) * coefficient).clamp(0.0, 1.0);
+            }
+        }
+        // Start a fresh block maximum for the next control block.
+        self.lane_peak_pre.fill(0.0);
+        self.lane_peak_post.fill(0.0);
     }
 
     pub(crate) fn lfo_phase(

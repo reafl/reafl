@@ -1,4 +1,4 @@
-﻿//! Tests for the engine and its DSP helpers.
+//! Tests for the engine and its DSP helpers.
 
 use std::{
     f32::consts::TAU,
@@ -226,6 +226,57 @@ mod tests {
         engine.update_instrument_controls(8.0);
 
         assert!((engine.instrument_controls[0].cutoff_hz - 8_020.0).abs() < 0.1);
+    }
+
+    #[test]
+    pub(crate) fn peak_source_follows_the_lane_level() {
+        let target = ParameterTarget::Instrument {
+            instrument_id: 0,
+            parameter: InstrumentParameter::Gain,
+        };
+        let mut project = Project::default();
+        project.instruments[0].synth_enabled = true;
+        project.instruments[0].synth_kind = SynthKind::Sine;
+        project
+            .automation_tracks
+            .push(crate::project::AutomationTrack {
+                target,
+                source: crate::project::AutomationSource::Peak {
+                    channel_id: 0,
+                    post_fx: true,
+                    attack: crate::project::TimeValue {
+                        amount: 1.0,
+                        unit: crate::project::TimeUnit::Milliseconds,
+                    },
+                    release: crate::project::TimeValue {
+                        amount: 50.0,
+                        unit: crate::project::TimeUnit::Milliseconds,
+                    },
+                    base: 0.0,
+                    depth: 1.0,
+                },
+                ..Default::default()
+            });
+        project.normalize();
+        let mut engine = AudioEngine::new(project, 48_000);
+        engine.playing = true;
+        engine.start_voice(0, 0, 60, 100, None);
+
+        let (_sender, receiver) = mpsc::channel();
+        let updates = empty_project_updates();
+        for _ in 0..(CONTROL_INTERVAL * 16) {
+            engine.render_frame(&receiver, &updates);
+        }
+
+        assert!(
+            engine.peak_levels[0] > 0.0,
+            "the peak follower never saw the track's audio"
+        );
+        let value = engine.automated_value(target, 0.8, 0.0);
+        assert!(
+            (value - 0.8).abs() > 1e-3,
+            "the peak lane did not drive its parameter"
+        );
     }
 
     #[test]

@@ -19,6 +19,14 @@ impl PulseForgeApp {
             .map(|track| parameter_target_label(&self.project, track.target))
             .collect();
         let snap_ticks = self.project.snap_ticks;
+        // Which of each lane's own parameters are driven by another lane, so the
+        // row can say so without re-reading the project inside the borrow.
+        let modulated: Vec<Option<String>> = (0..self.project.automation_tracks.len())
+            .map(|track_id| {
+                let labels = lane_automated_parameters(&self.project, track_id);
+                (!labels.is_empty()).then(|| labels.join(" · "))
+            })
+            .collect();
         egui::ScrollArea::vertical().show(ui, |ui| {
             for (track_id, track) in self.project.automation_tracks.iter_mut().enumerate() {
                 ui.horizontal(|ui| {
@@ -27,18 +35,19 @@ impl PulseForgeApp {
                         .add(egui::TextEdit::singleline(&mut track.name).desired_width(180.0))
                         .changed();
                     ui.label(&target_labels[track_id]);
+                    if let Some(labels) = &modulated[track_id] {
+                        ui.label(
+                            egui::RichText::new(format!("↺ {labels}"))
+                                .small()
+                                .color(egui::Color32::from_rgb(200, 165, 240)),
+                        )
+                        .on_hover_text("Another lane drives these parameters of this lane.");
+                    }
                     if ui.small_button("Remove lane").clicked() {
                         remove_track = Some(track_id);
                     }
                 });
-                let source_label = match track.source {
-                    project::AutomationSource::Curve => "Curve",
-                    project::AutomationSource::RelativeCurve => "Relative curve",
-                    project::AutomationSource::MidiEnvelope { .. } => "MIDI envelope",
-                    project::AutomationSource::Lfo { .. } => "LFO",
-                    project::AutomationSource::SampleAndHold { .. } => "Sample & hold",
-                    project::AutomationSource::Perlin { .. } => "Perlin",
-                };
+                let source_label = track.source.label();
                 egui::ComboBox::from_id_salt(("automation_source", track_id))
                     .selected_text(source_label)
                     .show_ui(ui, |ui| {
@@ -148,6 +157,33 @@ impl PulseForgeApp {
                                 octaves: 4,
                                 base: 0.5,
                                 depth: 0.5,
+                            };
+                            changed = true;
+                        }
+                        if ui
+                            .selectable_label(
+                                matches!(track.source, project::AutomationSource::Peak { .. }),
+                                "Track peak",
+                            )
+                            .on_hover_text(
+                                "Follows the level of a mixer track, read before or after its \
+                                 insert chain, so audio can drive any parameter.",
+                            )
+                            .clicked()
+                        {
+                            track.source = project::AutomationSource::Peak {
+                                channel_id: 0,
+                                post_fx: true,
+                                attack: project::TimeValue {
+                                    amount: 5.0,
+                                    unit: project::TimeUnit::Milliseconds,
+                                },
+                                release: project::TimeValue {
+                                    amount: 180.0,
+                                    unit: project::TimeUnit::Milliseconds,
+                                },
+                                base: 0.0,
+                                depth: 1.0,
                             };
                             changed = true;
                         }
@@ -435,9 +471,92 @@ impl PulseForgeApp {
                             );
                         });
                     }
+                    project::AutomationSource::Peak {
+                        channel_id,
+                        post_fx,
+                        attack,
+                        release,
+                        base,
+                        depth,
+                    } => {
+                        let master_id = self.project.lanes.len();
+                        *channel_id = (*channel_id).min(master_id);
+                        ui.horizontal(|ui| {
+                            ui.label("Track");
+                            let selected = if *channel_id == master_id {
+                                "Master".to_owned()
+                            } else {
+                                self.project.lanes[*channel_id].name.clone()
+                            };
+                            egui::ComboBox::from_id_salt(("automation_peak_channel", track_id))
+                                .selected_text(selected)
+                                .show_ui(ui, |ui| {
+                                    for (id, lane) in self.project.lanes.iter().enumerate() {
+                                        ui.selectable_value(channel_id, id, &lane.name);
+                                    }
+                                    ui.selectable_value(channel_id, master_id, "Master");
+                                });
+                            changed |= ui
+                                .checkbox(post_fx, "Post FX")
+                                .on_hover_text(
+                                    "Read the level after the insert chain instead of the level \
+                                     that enters it.",
+                                )
+                                .changed();
+                        });
+                        ui.horizontal(|ui| {
+                            changed |=
+                                edit_time_value_automated(ui, track_id, "Attack", attack, None);
+                            changed |=
+                                edit_time_value_automated(ui, track_id, "Release", release, None);
+                            changed |= lane_parameter_slider(
+                                ui,
+                                "Base",
+                                base,
+                                0.0..=1.0,
+                                ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Base,
+                                },
+                            );
+                            changed |= lane_parameter_slider(
+                                ui,
+                                "Depth",
+                                depth,
+                                0.0..=1.0,
+                                ParameterTarget::AutomationLane {
+                                    track_id,
+                                    parameter: project::AutomationLaneParameter::Depth,
+                                },
+                            );
+                        });
+                    }
                 }
                 if track.source.is_relative() {
                     ui.label("Draw offsets from -1 to 1; they are added to the parameter.");
+                } else if track.source.is_live() {
+                    let channel = match &track.source {
+                        project::AutomationSource::Peak {
+                            channel_id,
+                            post_fx,
+                            ..
+                        } => {
+                            let master_id = self.project.lanes.len();
+                            let name = if *channel_id == master_id {
+                                "Master".to_owned()
+                            } else {
+                                self.project.lanes.get(*channel_id).map_or_else(
+                                    || "a missing track".to_owned(),
+                                    |lane| lane.name.clone(),
+                                )
+                            };
+                            format!("{name} ({})", if *post_fx { "post FX" } else { "pre FX" })
+                        }
+                        _ => String::new(),
+                    };
+                    ui.label(format!(
+                        "Follows the level of {channel}; the lane draws a placeholder clip."
+                    ));
                 } else if !track.source.edits_points() {
                     ui.label("Draw a 0-1 modulation multiplier directly over the lane.");
                 }

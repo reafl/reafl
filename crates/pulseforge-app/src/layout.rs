@@ -280,6 +280,99 @@ pub(crate) fn automation_time_steps(value: project::TimeValue, bpm: f32) -> f64 
     value.seconds(bpm) as f64 / (60.0 / f64::from(bpm.max(1.0)) / 4.0)
 }
 
+/// Names of the lane's own parameters that another lane drives.
+///
+/// The arrangement draws them as badges on the clip, so automation of a lane's
+/// base, depth, rate, shape, sustain or octave count is visible where the lane
+/// lives instead of only in the automation window.
+///
+/// # Parameters
+///
+/// - `project`: the project to inspect.
+/// - `track_id`: the lane whose parameters are checked.
+///
+/// # Returns
+///
+/// One label per automated parameter, in picker order.
+pub(crate) fn lane_automated_parameters(project: &Project, track_id: usize) -> Vec<&'static str> {
+    use project::{AutomationLaneParameter as Parameter, ParameterTarget};
+    [
+        Parameter::Base,
+        Parameter::Depth,
+        Parameter::RateAmount,
+        Parameter::Shape,
+        Parameter::Sustain,
+        Parameter::Octaves,
+    ]
+    .into_iter()
+    .filter(|parameter| {
+        project.has_automation(ParameterTarget::AutomationLane {
+            track_id,
+            parameter: *parameter,
+        })
+    })
+    .map(|parameter| parameter.label())
+    .collect()
+}
+
+/// Samples a lane's own base and depth for every drawing column.
+///
+/// When the lane's base or depth is itself automated, its envelope no longer
+/// follows the stored values; sampling the driven values per column lets the
+/// drawn curve show what the automation actually produces.
+///
+/// # Parameters
+///
+/// - `project`: the project to inspect.
+/// - `track_id`: the lane being drawn.
+/// - `columns`: number of samples to take, inclusive of both ends.
+/// - `step_at`: maps a column index to a transport position in steps.
+///
+/// # Returns
+///
+/// `(base, depth)` per column, or `None` when neither is automated or the
+/// source has no such values.
+pub(crate) fn lane_source_columns(
+    project: &Project,
+    track_id: usize,
+    columns: usize,
+    step_at: impl Fn(usize) -> f64,
+) -> Option<(Vec<f32>, Vec<f32>)> {
+    use project::{AutomationLaneParameter as Parameter, ParameterTarget};
+    let source = &project.automation_tracks.get(track_id)?.source;
+    let base = source.base()?;
+    let depth = source.depth()?;
+    let base_target = ParameterTarget::AutomationLane {
+        track_id,
+        parameter: Parameter::Base,
+    };
+    let depth_target = ParameterTarget::AutomationLane {
+        track_id,
+        parameter: Parameter::Depth,
+    };
+    let base_driven = project.has_automation(base_target);
+    let depth_driven = project.has_automation(depth_target);
+    if !base_driven && !depth_driven {
+        return None;
+    }
+    let mut bases = Vec::with_capacity(columns + 1);
+    let mut depths = Vec::with_capacity(columns + 1);
+    for index in 0..=columns {
+        let step = step_at(index);
+        bases.push(if base_driven {
+            project.automated_value(base_target, base, step)
+        } else {
+            base
+        });
+        depths.push(if depth_driven {
+            project.automated_value(depth_target, depth, step)
+        } else {
+            depth
+        });
+    }
+    Some((bases, depths))
+}
+
 pub(crate) fn automation_source_preview(
     source: &project::AutomationSource,
     target: ParameterTarget,
@@ -366,6 +459,10 @@ pub(crate) fn automation_source_preview(
             let phase = local / automation_time_steps(*rate, bpm).max(0.001);
             *base + project::perlin_noise_octaves(*seed, phase, *octaves) * *depth
         }
+        // A peak lane has no stored shape: its value comes from the audio that
+        // is playing, so the preview is the flat rest level and the lane draws a
+        // placeholder clip instead of a curve.
+        project::AutomationSource::Peak { base, .. } => *base,
     }
 }
 

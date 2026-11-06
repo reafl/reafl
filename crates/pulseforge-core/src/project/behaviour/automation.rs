@@ -200,14 +200,16 @@ impl Project {
                         AutomationSource::MidiEnvelope { base, .. }
                         | AutomationSource::Lfo { base, .. }
                         | AutomationSource::Perlin { base, .. }
-                        | AutomationSource::SampleAndHold { base, .. },
+                        | AutomationSource::SampleAndHold { base, .. }
+                        | AutomationSource::Peak { base, .. },
                         AutomationLaneParameter::Base,
                     ) => Some(*base),
                     (
                         AutomationSource::MidiEnvelope { depth, .. }
                         | AutomationSource::Lfo { depth, .. }
                         | AutomationSource::Perlin { depth, .. }
-                        | AutomationSource::SampleAndHold { depth, .. },
+                        | AutomationSource::SampleAndHold { depth, .. }
+                        | AutomationSource::Peak { depth, .. },
                         AutomationLaneParameter::Depth,
                     ) => Some(*depth),
                     (
@@ -221,7 +223,9 @@ impl Project {
                         AutomationSource::Lfo { rate, .. }
                         | AutomationSource::Perlin { rate, .. }
                         | AutomationSource::SampleAndHold { rate, .. } => rate.amount,
-                        AutomationSource::Curve | AutomationSource::RelativeCurve => return None,
+                        AutomationSource::Curve
+                        | AutomationSource::RelativeCurve
+                        | AutomationSource::Peak { .. } => return None,
                     }),
                     (AutomationSource::Lfo { shape, .. }, AutomationLaneParameter::Shape) => {
                         Some(shape.index() as f32)

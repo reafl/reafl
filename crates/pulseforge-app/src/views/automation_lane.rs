@@ -121,6 +121,24 @@ impl PulseForgeApp {
                 self.sync_project();
             }
         }
+        // Nested automation: the lane's own base and depth can be driven by
+        // other lanes, so the envelope is sampled from the driven values and
+        // the clip carries a badge per automated parameter. Both are computed
+        // before the project is borrowed mutably.
+        let clip_left = (grid.grid_left
+            + (track_start as f64 - grid.start_step as f64) as f32 * grid.step_width)
+            .max(grid.grid_left);
+        let clip_right = grid.grid_left
+            + (track_start.saturating_add(track_length) as f64 - grid.start_step as f64) as f32
+                * grid.step_width;
+        let draw_columns = (((clip_right - clip_left) / grid.step_width.max(1.0) / 0.25).ceil()
+            as usize)
+            .clamp(2, 768);
+        let lane_columns = lane_source_columns(&self.project, track_id, draw_columns, |index| {
+            let x = clip_left + (clip_right - clip_left) * index as f32 / draw_columns as f32;
+            grid.start_step as f64 + f64::from(x - grid.grid_left) / f64::from(grid.step_width)
+        });
+        let lane_parameters = lane_automated_parameters(&self.project, track_id);
         let project = &mut self.project;
         let lanes = &project.lanes;
         let patterns = &project.patterns;
@@ -172,6 +190,32 @@ impl PulseForgeApp {
             egui::FontId::proportional(12.0),
             egui::Color32::from_rgb(205, 155, 238),
         );
+        // Automation of the lane itself: one pill per parameter that another
+        // lane drives, right-aligned in the title band so the clip shows at a
+        // glance that, say, its depth is being modulated.
+        let mut badge_right = clip_rect.right() - 6.0;
+        for label in &lane_parameters {
+            let galley = painter.layout_no_wrap(
+                format!("↺ {label}"),
+                egui::FontId::proportional(9.5),
+                egui::Color32::from_rgb(232, 205, 255),
+            );
+            let size = galley.size() + egui::vec2(6.0, 2.0);
+            if badge_right - size.x < clip_rect.left() + 4.0 {
+                break;
+            }
+            let badge = egui::Rect::from_min_size(
+                egui::pos2(badge_right - size.x, clip_rect.top() + 1.0),
+                size,
+            );
+            painter.rect_filled(badge, 2.0, egui::Color32::from_rgb(78, 54, 104));
+            painter.galley(
+                badge.min + egui::vec2(3.0, 1.0),
+                galley,
+                egui::Color32::WHITE,
+            );
+            badge_right = badge.left() - 4.0;
+        }
         painter.line_segment(
             [
                 egui::pos2(grid.grid_left, row.bottom()),
@@ -254,10 +298,57 @@ impl PulseForgeApp {
                 curve,
                 egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(202, 158, 238)),
             ));
+        } else if track.source.is_live() {
+            // A peak lane has no stored shape: it follows the audio of a mixer
+            // track, so the clip stays blank and carries a caption saying what
+            // it listens to.
+            let (channel_id, post_fx) = match &track.source {
+                project::AutomationSource::Peak {
+                    channel_id,
+                    post_fx,
+                    ..
+                } => (*channel_id, *post_fx),
+                _ => (0, true),
+            };
+            let master_id = lanes.len();
+            let channel_name = if channel_id == master_id {
+                "Master".to_owned()
+            } else {
+                lanes
+                    .get(channel_id)
+                    .map_or_else(|| "a missing track".to_owned(), |lane| lane.name.clone())
+            };
+            let side = if post_fx { "post FX" } else { "pre FX" };
+            // Follower motif: one loud bar and a decaying tail, so the blank
+            // clip reads as an envelope and not as an empty lane.
+            let motif_right = clip_rect.right() - 10.0;
+            let bars = ((clip_rect.width() - 24.0) / 9.0).clamp(0.0, 9.0) as usize;
+            for bar in 0..bars {
+                let height = (clip_rect.height() - 26.0).max(6.0)
+                    * (0.85 * 0.72_f32.powi(bar as i32)).max(0.06);
+                let x = motif_right - bar as f32 * 9.0;
+                painter.line_segment(
+                    [
+                        egui::pos2(x, clip_rect.center().y + height * 0.5),
+                        egui::pos2(x, clip_rect.center().y - height * 0.5),
+                    ],
+                    egui::Stroke::new(
+                        3.0_f32,
+                        egui::Color32::from_rgba_unmultiplied(112, 208, 190, 120),
+                    ),
+                );
+            }
+            painter.text(
+                egui::pos2(clip_rect.left() + 8.0, clip_rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                format!("Peak of {channel_name} ({side})"),
+                egui::FontId::proportional(11.5),
+                egui::Color32::from_rgb(150, 220, 205),
+            );
         } else {
             let source = track.source.clone();
             let target = track.target;
-            let sample_count = ((visible_span_steps / 0.25).ceil() as usize).clamp(2, 768);
+            let sample_count = draw_columns;
             let mut combined = Vec::with_capacity(sample_count + 1);
             let mut raw = Vec::with_capacity(sample_count + 1);
             let mut multiplier_curve = Vec::new();
@@ -268,8 +359,14 @@ impl PulseForgeApp {
                 let x = clip_start + clip_rect.width() * index as f32 / sample_count as f32;
                 let step = grid.start_step as f64
                     + f64::from(x - grid.grid_left) / f64::from(grid.step_width);
+                // When the lane's own base or depth is automated, draw the
+                // driven values instead of the stored ones.
+                let column_source = match &lane_columns {
+                    Some((bases, depths)) => source.with_base_depth(bases[index], depths[index]),
+                    None => source.clone(),
+                };
                 let value = automation_source_preview(
-                    &source,
+                    &column_source,
                     target,
                     lanes,
                     patterns,

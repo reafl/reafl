@@ -55,6 +55,21 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ### Added
 
+- `AutomationSource::Peak { channel_id, post_fx, attack, release, base, depth }`:
+  a lane can follow the peak level of any mixer track, read either before its
+  insert chain (pre FX) or after it (post FX), with its own follower attack and
+  release. The engine keeps a per-block maximum per channel plus a per-lane
+  follower, so two lanes can read the same track at different speeds, and
+  `base`/`depth` stay automatable like every other source. Because the value
+  only exists during playback, the lane draws a blank **placeholder clip** whose
+  caption names the track and the tap point ("Peak of Track 02 (post FX)").
+- Automation of an automation lane's own parameters is now visible where the
+  lane lives: the arrangement clip carries a `↺ base` / `↺ depth` badge per
+  parameter that another lane drives, the automation window repeats the list
+  next to the lane's target, and the drawn envelope samples the *driven* base
+  and depth instead of the stored ones, so a modulated lane shows what it
+  actually does. `AutomationSource` gained `label`, `has_parameters`, `is_live`,
+  `base`, `depth` and `with_base_depth` so the views do not duplicate that logic.
 - Sample and hold is its own automation source
   (`AutomationSource::SampleAndHold { seed, rate, base, depth }`) with its own
   picker entry, lane preview and parameter row (rate, base, depth, seed).

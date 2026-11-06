@@ -161,6 +161,10 @@ impl AudioEngine {
             .reserve(event_capacity.saturating_sub(self.trigger_events.len()));
         self.lane_inputs.resize(lane_count, [0.0; 2]);
         self.meter_levels.resize(lane_count, 0.0);
+        self.lane_peak_pre.resize(lane_count, 0.0);
+        self.lane_peak_post.resize(lane_count, 0.0);
+        self.peak_levels
+            .resize(self.project.automation_tracks.len(), 0.0);
         self.eq_states.resize(lane_count, EqState::default());
         self.eq_gains = self
             .project

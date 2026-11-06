@@ -94,6 +94,26 @@ pub enum AutomationSource {
         /// Amount the random values swing around `base`.
         depth: f32,
     },
+    /// Follows the peak level of a mixer channel, so the audio of a track can
+    /// drive any parameter (ducking, envelope following, cross-modulation).
+    ///
+    /// Unlike the other generated sources this one has no shape of its own: it
+    /// depends on what is playing, which is why the lane draws it as a
+    /// placeholder clip instead of a curve.
+    Peak {
+        /// Mixer channel whose level is followed; `lanes.len()` is the master.
+        channel_id: usize,
+        /// Follow the level after the insert chain instead of before it.
+        post_fx: bool,
+        /// Attack of the envelope follower.
+        attack: TimeValue,
+        /// Release of the envelope follower.
+        release: TimeValue,
+        /// Level the lane rests at while the channel is silent.
+        base: f32,
+        /// Amount the peak swings above `base`.
+        depth: f32,
+    },
 }
 
 impl AutomationSource {
@@ -106,6 +126,75 @@ impl AutomationSource {
     /// replacing it, so its points may be negative.
     pub fn is_relative(&self) -> bool {
         matches!(self, Self::RelativeCurve)
+    }
+
+    /// Short label used by the source picker and the lane captions.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Curve => "Curve",
+            Self::RelativeCurve => "Relative curve",
+            Self::MidiEnvelope { .. } => "MIDI envelope",
+            Self::Lfo { .. } => "LFO",
+            Self::Perlin { .. } => "Perlin",
+            Self::SampleAndHold { .. } => "Sample & hold",
+            Self::Peak { .. } => "Track peak",
+        }
+    }
+
+    /// True when the lane's own base, depth or rate can be automated, which is
+    /// what the automation window lists under the source picker.
+    pub fn has_parameters(&self) -> bool {
+        !matches!(self, Self::Curve | Self::RelativeCurve)
+    }
+
+    /// True when the values only exist while the transport runs, so the lane
+    /// cannot draw a curve for them and shows a placeholder clip instead.
+    pub fn is_live(&self) -> bool {
+        matches!(self, Self::Peak { .. })
+    }
+
+    /// Centre value of the modulation, when the source has one.
+    pub fn base(&self) -> Option<f32> {
+        match self {
+            Self::Curve | Self::RelativeCurve => None,
+            Self::MidiEnvelope { base, .. }
+            | Self::Lfo { base, .. }
+            | Self::Perlin { base, .. }
+            | Self::SampleAndHold { base, .. }
+            | Self::Peak { base, .. } => Some(*base),
+        }
+    }
+
+    /// Amount the modulation swings, when the source has one.
+    pub fn depth(&self) -> Option<f32> {
+        match self {
+            Self::Curve | Self::RelativeCurve => None,
+            Self::MidiEnvelope { depth, .. }
+            | Self::Lfo { depth, .. }
+            | Self::Perlin { depth, .. }
+            | Self::SampleAndHold { depth, .. }
+            | Self::Peak { depth, .. } => Some(*depth),
+        }
+    }
+
+    /// Copy of the source with a different base and depth.
+    ///
+    /// Used by the lane drawing, which modulates those two values with their
+    /// own automation before sampling the source.
+    pub fn with_base_depth(&self, new_base: f32, new_depth: f32) -> Self {
+        let mut copy = self.clone();
+        match &mut copy {
+            Self::MidiEnvelope { base, depth, .. }
+            | Self::Lfo { base, depth, .. }
+            | Self::Perlin { base, depth, .. }
+            | Self::SampleAndHold { base, depth, .. }
+            | Self::Peak { base, depth, .. } => {
+                *base = new_base;
+                *depth = new_depth;
+            }
+            Self::Curve | Self::RelativeCurve => {}
+        }
+        copy
     }
 }
 

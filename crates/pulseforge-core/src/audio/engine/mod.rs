@@ -50,6 +50,15 @@ pub(crate) struct AudioEngine {
     pub(crate) send_edges: Vec<SendEdge>,
     pub(crate) lane_inputs: Vec<[f32; 2]>,
     pub(crate) meter_levels: Vec<f32>,
+    /// Block peak of each channel as it enters its insert chain, used by
+    /// `AutomationSource::Peak { post_fx: false }`.
+    pub(crate) lane_peak_pre: Vec<f32>,
+    /// Block peak of each channel after its insert chain, used by
+    /// `AutomationSource::Peak { post_fx: true }`.
+    pub(crate) lane_peak_post: Vec<f32>,
+    /// Followed peak level per automation lane, so a peak lane keeps its own
+    /// attack and release.
+    pub(crate) peak_levels: Vec<f32>,
     pub(crate) eq_states: Vec<EqState>,
     pub(crate) eq_gains: Vec<[f32; 3]>,
     pub(crate) effect_processors: Vec<Vec<Option<EffectProcessor>>>,
@@ -143,6 +152,9 @@ impl AudioEngine {
             send_edges: Vec::new(),
             lane_inputs: vec![[0.0; 2]; channel_count],
             meter_levels: vec![0.0; channel_count],
+            lane_peak_pre: vec![0.0; channel_count],
+            lane_peak_post: vec![0.0; channel_count],
+            peak_levels: vec![0.0; automation_track_count],
             eq_states: vec![EqState::default(); channel_count],
             eq_gains: Vec::new(),
             effect_processors: Vec::new(),

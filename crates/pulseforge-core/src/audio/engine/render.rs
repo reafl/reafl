@@ -12,6 +12,9 @@ impl AudioEngine {
         let automation_position =
             self.position_steps as f64 + self.frames_into_step / self.frames_per_step().max(1.0);
         if self.control_countdown == 0 {
+            // Peak lanes read the previous block's maximum, so the followers are
+            // advanced before any automation is evaluated.
+            self.update_peak_followers();
             if self.playing {
                 self.update_instrument_controls(automation_position);
                 self.apply_global_automation(automation_position);
@@ -213,6 +216,16 @@ impl AudioEngine {
                 self.eq_alpha_250,
                 self.eq_alpha_2k,
             );
+            // Pre-FX peak: what the insert chain receives. Kept as a block
+            // maximum so peak lanes are evaluated from the loudest moment of
+            // the block instead of one arbitrary sample.
+            let pre_peak = self.lane_inputs[lane_id][0]
+                .abs()
+                .max(self.lane_inputs[lane_id][1].abs())
+                .min(1.0);
+            if pre_peak > self.lane_peak_pre[lane_id] {
+                self.lane_peak_pre[lane_id] = pre_peak;
+            }
             for slot_id in 0..self.effect_processors[lane_id].len() {
                 let mut parameters = self.effect_parameters[lane_id][slot_id];
                 if let Some(mix) = self
@@ -223,6 +236,14 @@ impl AudioEngine {
                     parameters.mix = mix.advance();
                 }
                 self.run_insert(lane_id, slot_id, parameters);
+            }
+            // Post-FX peak: what leaves the insert chain.
+            let post_peak = self.lane_inputs[lane_id][0]
+                .abs()
+                .max(self.lane_inputs[lane_id][1].abs())
+                .min(1.0);
+            if post_peak > self.lane_peak_post[lane_id] {
+                self.lane_peak_post[lane_id] = post_peak;
             }
         }
 
@@ -255,6 +276,13 @@ impl AudioEngine {
         let master_right = (1.0 + master_pan).clamp(0.0, 1.0);
         self.lane_inputs[master_index][0] *= master_gain * master_left;
         self.lane_inputs[master_index][1] *= master_gain * master_right;
+        let master_pre_peak = self.lane_inputs[master_index][0]
+            .abs()
+            .max(self.lane_inputs[master_index][1].abs())
+            .min(1.0);
+        if master_pre_peak > self.lane_peak_pre[master_index] {
+            self.lane_peak_pre[master_index] = master_pre_peak;
+        }
         self.lane_inputs[master_index] = process_eq(
             self.lane_inputs[master_index],
             &mut self.eq_states[master_index],
@@ -272,6 +300,13 @@ impl AudioEngine {
                 parameters.mix = mix.advance();
             }
             self.run_insert(master_index, slot_id, parameters);
+        }
+        let master_peak = self.lane_inputs[master_index][0]
+            .abs()
+            .max(self.lane_inputs[master_index][1].abs())
+            .min(1.0);
+        if master_peak > self.lane_peak_post[master_index] {
+            self.lane_peak_post[master_index] = master_peak;
         }
 
         for edge in &mut self.send_edges {
