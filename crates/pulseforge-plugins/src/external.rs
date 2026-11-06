@@ -18,12 +18,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PluginFormat {
+    /// Classic VST 2.x bundle.
     Vst2,
+    /// VST 3 bundle, a directory on every supported platform.
     Vst3,
+    /// CLAP bundle.
     Clap,
 }
 
 impl PluginFormat {
+    /// Human readable label for menus and tooltips.
     pub fn label(self) -> &'static str {
         match self {
             Self::Vst2 => "VST",
@@ -65,9 +69,11 @@ impl PluginFormat {
 /// A discovered external plug-in.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExternalPlugin {
+    /// Format the bundle was discovered as.
     pub format: PluginFormat,
     /// Display name, normally the file stem with separators cleaned up.
     pub name: String,
+    /// Absolute path of the bundle.
     pub path: String,
 }
 
@@ -205,8 +211,11 @@ fn detect_format(path: &Path) -> PluginFormat {
 /// Identity read from the bundle itself rather than guessed from its file name.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PluginMetadata {
+    /// Name the bundle reports for itself.
     pub name: String,
+    /// Vendor the bundle reports for itself.
     pub vendor: String,
+    /// Version string the bundle reports.
     pub version: String,
     /// Class names declared by a VST3 module, in file order.
     pub classes: Vec<String>,
@@ -283,8 +292,11 @@ pub fn read_metadata(path: &str) -> PluginMetadata {
 /// Sample/stereo parameters handed to a hosted external plug-in.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HostParameters {
+    /// Dry/wet balance in 0..=1.
     pub mix: f32,
+    /// Gain applied before the plug-in.
     pub input_gain: f32,
+    /// Gain applied after the plug-in.
     pub output_gain: f32,
 }
 

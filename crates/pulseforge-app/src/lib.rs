@@ -8,6 +8,8 @@
 //!
 //! [`run`] is the entry point used by the `pulseforge` binary.
 
+#![warn(missing_docs)]
+
 use std::{
     collections::BTreeSet,
     sync::{Arc, Mutex, mpsc::SyncSender},

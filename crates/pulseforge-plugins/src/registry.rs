@@ -12,14 +12,18 @@ pub struct PluginDescriptor {
     pub id: &'static str,
     /// Text shown in the plug-in picker and window titles.
     pub name: &'static str,
+    /// Whether the plug-in generates audio or processes it.
     pub kind: PluginKind,
     /// One-line description for the picker tooltip.
     pub summary: &'static str,
 }
 
+/// What a built-in plug-in does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PluginKind {
+    /// Instrument: turns notes into audio.
     Generator,
+    /// Effect: processes the channel's audio.
     Effect,
 }
 

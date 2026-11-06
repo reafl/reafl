@@ -10,6 +10,8 @@
 //! reference plug-ins by name or path, and conversion lives in the audio crate.
 //! That keeps the DSP reusable and avoids a dependency cycle.
 
+#![warn(missing_docs)]
+
 pub mod builtin;
 pub mod external;
 pub mod registry;
