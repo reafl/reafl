@@ -45,6 +45,8 @@ pub enum InstrumentParameter {
     ArpRate,
     /// MIDI note the signal generator holds, rounded to a whole note.
     SynthNote,
+    /// Maximum number of simultaneously sounding voices, rounded.
+    VoiceCount,
 }
 
 impl InstrumentParameter {
@@ -56,6 +58,7 @@ impl InstrumentParameter {
             Self::ArpMode => Some(ArpMode::ALL.len() as u32),
             Self::ArpOctaves => Some(7),
             Self::SynthNote => Some(128),
+            Self::VoiceCount => Some(64),
             _ => None,
         }
     }
@@ -290,6 +293,7 @@ impl ParameterTarget {
                 InstrumentParameter::ArpOctaves => (1.0, 8.0),
                 InstrumentParameter::ArpRate => (0.1, 64.0),
                 InstrumentParameter::SynthNote => (0.0, 127.0),
+                InstrumentParameter::VoiceCount => (1.0, 64.0),
             },
             Self::InsertEffect { parameter, .. } => match parameter {
                 EffectParameter::Mix
@@ -370,6 +374,7 @@ impl InstrumentParameter {
             Self::ArpOctaves => "Arp octaves",
             Self::ArpRate => "Arp rate",
             Self::SynthNote => "MIDI note",
+            Self::VoiceCount => "Voices",
         }
     }
 }

@@ -63,7 +63,26 @@ impl PulseForgeApp {
                     ui.add(egui::DragValue::new(&mut instrument.voices.audio_out).range(0..=15));
                     ui.end_row();
                     ui.label("Voices");
-                    ui.add(egui::DragValue::new(&mut instrument.voices.voice_count).range(1..=64));
+                    let mut voices = f32::from(instrument.voices.voice_count);
+                    let voices_target = ParameterTarget::Instrument {
+                        instrument_id,
+                        parameter: InstrumentParameter::VoiceCount,
+                    };
+                    let voices_response = ui.add(
+                        egui::DragValue::new(&mut voices)
+                            .range(1.0..=64.0)
+                            .speed(0.2),
+                    );
+                    // Polyphony is a synth parameter, so it can be automated
+                    // like the filter or the arpeggiator.
+                    automation_context_menu(
+                        &voices_response,
+                        &format!("Voices · {voices:.0}"),
+                        voices_target,
+                    );
+                    if voices_response.changed() {
+                        instrument.voices.voice_count = voices.round().clamp(1.0, 64.0) as u8;
+                    }
                     ui.end_row();
                 });
 

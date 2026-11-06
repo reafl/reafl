@@ -299,6 +299,7 @@ impl AudioEngine {
                         | InstrumentParameter::ArpOctaves
                         | InstrumentParameter::ArpRate
                         | InstrumentParameter::SynthNote
+                        | InstrumentParameter::VoiceCount
                 ) =>
                 {
                     let Some(base) = self.project.parameter_value(target) else {
@@ -334,6 +335,10 @@ impl AudioEngine {
                         }
                         InstrumentParameter::SynthNote => {
                             instrument.synth_note = finite_clamp(value, 0.0, 127.0, 60.0) as u8
+                        }
+                        InstrumentParameter::VoiceCount => {
+                            instrument.voices.voice_count =
+                                finite_clamp(value, 1.0, 64.0, 16.0) as u8
                         }
                         _ => {}
                     }

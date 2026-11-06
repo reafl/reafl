@@ -36,6 +36,7 @@ pub(crate) fn instrument_parameter_options(kind: SynthKind) -> Vec<InstrumentPar
         InstrumentParameter::ArpGate,
         InstrumentParameter::ArpOctaves,
         InstrumentParameter::ArpRate,
+        InstrumentParameter::VoiceCount,
     ]);
     parameters
 }

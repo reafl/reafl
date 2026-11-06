@@ -211,6 +211,7 @@ impl Project {
                     InstrumentParameter::ArpOctaves => f32::from(instrument.arpeggio.octaves),
                     InstrumentParameter::ArpRate => instrument.arpeggio.rate.amount,
                     InstrumentParameter::SynthNote => f32::from(instrument.synth_note),
+                    InstrumentParameter::VoiceCount => f32::from(instrument.voices.voice_count),
                 })
             }
             ParameterTarget::AutomationLane {
