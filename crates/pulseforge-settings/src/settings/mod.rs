@@ -5,8 +5,8 @@
 //! lists every command, and [`Settings::bind`] assigns a chord to one, so a new
 //! command only needs an enum variant plus a handler.
 //!
-//! The value types live in their own modules: [`shortcuts`] holds the bindable
-//! commands and chords, [`appearance`] the theme and tooltip options.
+//! The value types live in their own modules: `shortcuts` holds the bindable
+//! commands and chords, `appearance` the theme and tooltip options.
 
 mod appearance;
 mod shortcuts;

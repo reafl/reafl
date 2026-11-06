@@ -239,7 +239,7 @@ pub fn thread_channel() -> (Channel, u16) {
     THREAD.with(Cell::get)
 }
 
-/// Records the end of a scope; created by [`profile_scope!`].
+/// Records the end of a scope; created by `profile_scope!`.
 #[must_use = "the scope ends when the guard is dropped"]
 pub struct Scope {
     name: &'static str,

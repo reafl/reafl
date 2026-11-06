@@ -161,7 +161,7 @@ impl ContextMenu {
     /// # Parameters
     ///
     /// - `ui`: the menu's own layout, normally the body of
-    ///   [`egui::Response::context_menu`].
+    ///   `egui::Response::context_menu`.
     ///
     /// # Returns
     ///

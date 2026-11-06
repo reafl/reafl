@@ -1,7 +1,7 @@
-//! The PulseForge editor: application state, windows and panels.
+﻿//! The PulseForge editor: application state, windows and panels.
 //!
 //! This crate owns everything that needs to know about a loaded project: the
-//! [`PulseForgeApp`] type, the arrangement, mixer, piano roll, channel rack and
+//! `PulseForgeApp` type, the arrangement, mixer, piano roll, channel rack and
 //! automation views, the plug-in windows and the glue back to the audio engine.
 //! Reusable drawing code lives in `pulseforge-widgets`, settings and background
 //! jobs in their own crates, so this one is only the shell.
