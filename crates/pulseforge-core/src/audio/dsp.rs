@@ -209,6 +209,15 @@ pub(crate) fn finite_sample(value: f32) -> f32 {
     }
 }
 
+/// Decodes a WAV file into the engine's sample representation.
+///
+/// # Parameters
+///
+/// - `path`: file to read.
+///
+/// # Errors
+///
+/// Returns a message when the file cannot be opened, decoded or read.
 pub fn read_wav(path: &str) -> Result<SampleData, String> {
     let mut reader = hound::WavReader::open(path)
         .map_err(|error| format!("Could not open WAV file: {error}"))?;
@@ -255,6 +264,20 @@ pub fn read_wav(path: &str) -> Result<SampleData, String> {
     })
 }
 
+/// Renders the whole arrangement offline into a stereo 16-bit WAV file.
+///
+/// # Parameters
+///
+/// - `project`: the project to render; it is cloned, not mutated.
+/// - `path`: output file to write.
+///
+/// # Returns
+///
+/// The number of frames written.
+///
+/// # Errors
+///
+/// Returns a message when the file cannot be created or written.
 pub fn render_project_to_wav(project: &Project, path: &str) -> Result<u64, String> {
     const SAMPLE_RATE: u32 = 44_100;
     let mut engine = AudioEngine::new(project.clone(), SAMPLE_RATE);

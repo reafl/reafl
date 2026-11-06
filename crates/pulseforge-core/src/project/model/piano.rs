@@ -8,42 +8,59 @@ use serde::{Deserialize, Serialize};
 
 use super::params::{TimeUnit, TimeValue};
 
+/// One cell of the step sequencer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StepHit {
+    /// Instrument the step triggers.
     pub instrument_id: usize,
+    /// Step index inside the pattern.
     pub step: u64,
 }
 
+/// One note of the piano roll.
 ///
 /// `repeat_count` and `repeat_ticks` implement FL-style note repeats: the note
 /// re-triggers `repeat_count` extra times, `repeat_ticks` apart (0 = half the
 /// note length), with velocity falling off by `repeat_decay` per repeat.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PianoNote {
+    /// Instrument the note plays.
     pub instrument_id: usize,
+    /// Start step inside the pattern.
     pub start_step: u64,
+    /// Sub-step offset in ticks, 0..=15.
     pub start_substep: u8,
+    /// Duration in whole steps.
     pub duration_steps: u64,
+    /// Extra duration in ticks, 0..15.
     pub duration_substeps: u8,
+    /// MIDI note number.
     pub pitch: u8,
+    /// MIDI velocity, 1..=127.
     pub velocity: u8,
+    /// Number of extra triggers after the first one.
     pub repeat_count: u8,
+    /// Distance between repeats in ticks; 0 means half the note length.
     pub repeat_ticks: u8,
+    /// Velocity lost per repeat.
     pub repeat_decay: u8,
 }
 
+/// Ticks per step. A step is the smallest grid unit of the sequencers.
 pub const TICKS_PER_STEP: u64 = 16;
 
 /// Pitch used by the merged step sequencer (C5).
 pub const STEP_SEQUENCER_PITCH: u8 = 72;
 
 impl PianoNote {
+    /// Start position in ticks from the pattern start.
     pub fn start_tick(self) -> u64 {
         self.start_step
             .saturating_mul(TICKS_PER_STEP)
             .saturating_add(u64::from(self.start_substep.min(15)))
     }
 
+    /// Length in ticks; always at least one tick.
     pub fn duration_ticks(self) -> u64 {
         self.duration_steps
             .saturating_mul(TICKS_PER_STEP)
@@ -51,11 +68,13 @@ impl PianoNote {
             .max(1)
     }
 
+    /// Moves the note to an absolute tick position.
     pub fn set_start_tick(&mut self, tick: u64) {
         self.start_step = tick / 16;
         self.start_substep = (tick % TICKS_PER_STEP) as u8;
     }
 
+    /// Stretches the note to an absolute length in ticks.
     pub fn set_duration_ticks(&mut self, ticks: u64) {
         let ticks = ticks.max(1);
         self.duration_steps = ticks / 16;
@@ -84,16 +103,23 @@ impl PianoNote {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ArpMode {
+    /// Lowest to highest note.
     #[default]
     Up,
+    /// Highest to lowest note.
     Down,
+    /// Up, then down again.
     UpDown,
+    /// Down, then up again.
     DownUp,
+    /// Random order.
     Random,
+    /// The order the notes were pressed in.
     Order,
 }
 
 impl ArpMode {
+    /// Every mode, in the order the UI lists them.
     pub const ALL: [Self; 6] = [
         Self::Up,
         Self::Down,
@@ -103,6 +129,7 @@ impl ArpMode {
         Self::Order,
     ];
 
+    /// Human readable label for menus and tooltips.
     pub fn label(self) -> &'static str {
         match self {
             Self::Up => "Up",
@@ -119,6 +146,7 @@ impl ArpMode {
         Self::ALL[(index as usize).min(Self::ALL.len() - 1)]
     }
 
+    /// Index of this mode in [`ArpMode::ALL`], used by the automation lanes.
     pub fn index(self) -> u32 {
         Self::ALL.iter().position(|mode| *mode == self).unwrap_or(0) as u32
     }
@@ -167,8 +195,11 @@ impl ArpMode {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Arpeggio {
+    /// Whether held notes are turned into an arpeggio.
     pub enabled: bool,
+    /// Order the held notes are played in.
     pub mode: ArpMode,
+    /// Time between two arpeggio notes.
     pub rate: TimeValue,
     /// Note length as a fraction of the arp step.
     pub gate: f32,

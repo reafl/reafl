@@ -17,6 +17,10 @@ impl Project {
         }
     }
 
+    /// Clamps every numeric field of the project into its documented range.
+    ///
+    /// Called after loading and after edits that can produce out-of-range
+    /// values, so the engine never sees a value it cannot render.
     pub fn normalize(&mut self) {
         self.normalize_sample_controls();
         self.bpm = finite_clamp(self.bpm, 20.0, 300.0, 120.0);

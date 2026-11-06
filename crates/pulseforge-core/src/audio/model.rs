@@ -33,12 +33,30 @@ pub(crate) const CONTROL_INTERVAL: u32 = 16;
 /// the device default is used when a fixed size is not supported.
 pub(crate) const PREFERRED_BUFFER_FRAMES: u32 = 256;
 
+/// A decoded sample: interleaved stereo frames plus the rate they were captured
+/// at.
+///
+/// Samples are shared between clips by path, so the engine owns one copy per
+/// file even when the arrangement uses it in several places.
 pub struct SampleData {
+    /// Sample rate the frames were captured at.
     pub sample_rate: u32,
+    /// Stereo frames.
     pub frames: Vec<[f32; 2]>,
 }
 
 impl SampleData {
+    /// Synthesises one of the shipped drum samples.
+    ///
+    /// # Parameters
+    ///
+    /// - `kind`: which drum sample to build; [`DefaultSample::None`] yields
+    ///   `None`.
+    /// - `sample_rate`: rate the frames should be generated at.
+    ///
+    /// # Returns
+    ///
+    /// The generated sample, or `None` when no sample was requested.
     pub(crate) fn default_drum(kind: DefaultSample, sample_rate: u32) -> Option<Self> {
         let duration = match kind {
             DefaultSample::Kick => 0.48,
@@ -94,46 +112,71 @@ impl SampleData {
     }
 }
 
+/// Everything the UI can ask the audio thread to do.
+///
+/// The engine owns all of its state, so a change from the UI is a message on
+/// this channel rather than a shared mutable value.
 pub enum AudioCommand {
+    /// Starts or stops playback.
     SetPlaying(bool),
     /// Moves the transport back to the start of the loop (or zero) without
     /// changing the play state.
     Rewind,
     /// Moves the transport to an absolute step position.
     Seek(u64),
+    /// Enables or disables the metronome click.
     SetMetronome(bool),
+    /// Selects the pattern the step sequencer plays, `None` for the arrangement.
     SetSelectedPattern(Option<usize>),
+    /// Sets the arrangement loop range in steps, `None` to clear it.
     SetLoop(Option<(u64, u64)>),
+    /// Sets the project tempo in BPM.
     SetTempo(f32),
+    /// Replaces the engine's copy of the project.
     SetProject(Box<Project>),
+    /// Caches a decoded sample for one instrument.
     LoadInstrumentSample {
+        /// Instrument the sample belongs to.
         instrument_id: usize,
+        /// The decoded sample.
         sample: SampleData,
     },
     /// Caches a decoded WAV by path. Clips resolve their audio from this
     /// cache, so the sample survives the project rebuild that follows an edit
     /// and can arrive before the clip itself exists.
     LoadAudioClip {
+        /// Path the sample was decoded from, used as the cache key.
         path: String,
+        /// The decoded sample.
         sample: SampleData,
     },
+    /// Plays a note on an instrument immediately, bypassing the sequencer.
     MidiNote {
+        /// Instrument the note is sent to.
         instrument_id: usize,
+        /// MIDI note number.
         note: u8,
+        /// MIDI velocity, 1..=127.
         velocity: u8,
+        /// `true` for note-on, `false` for note-off.
         on: bool,
     },
     /// Plays a one-shot sample through the master bus for auditioning.
     PreviewSample(Box<SampleData>),
     /// Enables or disables linear parameter ramping and sets its length.
     SetSmoothing {
+        /// Whether parameter ramping is active.
         enabled: bool,
+        /// Ramp length in milliseconds.
         milliseconds: f32,
     },
     /// Hands a real VST3/CLAP audio half to the engine so it can render there.
     LoadHosted {
+        /// Host instance id of the plug-in.
         id: u64,
+        /// The audio half of the hosted plug-in.
         audio: Box<pulseforge_hosting::HostedAudio>,
+        /// Whether the plug-in is an instrument rather than an effect.
         instrument: bool,
         /// Debug counters owned by the UI's plug-in registry; the slot writes
         /// its block times there so the debug panel can list them.
@@ -141,13 +184,20 @@ pub enum AudioCommand {
     },
     /// Drops a hosted plug-in (its editor is closed on the UI thread).
     UnloadHosted {
+        /// Host instance id of the plug-in.
         id: u64,
     },
 }
 
+/// The UI-side handle of a running audio engine.
+///
+/// Dropping it stops the stream, so the editor keeps one for its lifetime.
 pub struct AudioOutput {
+    /// Channel to the audio thread.
     pub sender: SyncSender<AudioCommand>,
+    /// Meter levels in dB, one per mixer channel plus the master.
     pub meters: Arc<Mutex<Vec<f32>>>,
+    /// Integer playhead in steps, published every callback.
     pub playhead_steps: Arc<AtomicU64>,
     /// Fractional playhead in steps, published as `f64` bits so the UI can
     /// animate it smoothly between audio buffers.
@@ -158,13 +208,28 @@ pub struct AudioOutput {
     pub dsp_load: Arc<AtomicU32>,
     /// Frames the device hands to the callback.
     pub block_frames: Arc<AtomicU32>,
+    /// Project versions waiting to be picked up by the audio thread.
     pub(crate) project_updates: Arc<Mutex<Option<Box<Project>>>>,
+    /// Projects that were replaced on the audio thread and can be dropped from
+    /// the UI thread, so the callback never frees memory.
     pub(crate) retired_projects: Arc<Mutex<Vec<Project>>>,
+    /// The stream itself; kept alive so the device keeps running.
     pub(crate) _stream: Stream,
+    /// Sample rate the device is running at.
     pub sample_rate: u32,
 }
 
 impl AudioOutput {
+    /// Opens the default output device and starts the engine.
+    ///
+    /// # Parameters
+    ///
+    /// - `project`: the project the engine starts with.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message describing the failing step when no output device
+    /// exists, the format cannot be queried or the stream cannot be created.
     pub fn start(project: &Project) -> Result<Self, String> {
         let host = cpal::default_host();
         let device = host
@@ -292,6 +357,11 @@ impl AudioOutput {
         self.block_frames.load(Ordering::Relaxed)
     }
 
+    /// Replaces the engine's copy of the project.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message when the pending-update lock is poisoned.
     pub fn set_project(&self, project: Project) -> Result<(), String> {
         let mut pending = self
             .project_updates

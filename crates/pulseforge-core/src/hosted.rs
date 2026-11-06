@@ -25,6 +25,10 @@ pub fn effect_host_id(lane: usize, slot: usize) -> u64 {
     (1u64 << 40) | ((lane as u64) << 16) | slot as u64
 }
 
+/// The audio half of one hosted VST3/CLAP plug-in.
+///
+/// The UI keeps the editor and the state; this type owns the processor and the
+/// block buffers, and is driven from the audio thread only.
 pub struct HostedSlot {
     audio: Option<HostedAudio>,
     input: [[f32; HOST_BLOCK]; 2],
@@ -69,6 +73,7 @@ impl HostedSlot {
         slot
     }
 
+    /// Sets one plug-in parameter by its own id.
     pub fn set_parameter(&mut self, id: u32, value: f32) {
         match self.parameter_values.iter_mut().find(|(key, _)| *key == id) {
             Some((_, stored)) => *stored = value,
@@ -96,16 +101,19 @@ impl HostedSlot {
         self.pending_notes.push((note, velocity, true));
     }
 
+    /// Releases every sounding note, for example when playback stops.
     pub fn release(&mut self) {
         if let Some(note) = self.held_note.take() {
             self.pending_notes.push((note, 0.0, false));
         }
     }
 
+    /// Starts a note on the instrument half.
     pub fn note_on(&mut self, note: u8, velocity: f32) {
         self.pending_notes.push((note, velocity, true));
     }
 
+    /// Stops a note on the instrument half.
     pub fn note_off(&mut self, note: u8) {
         self.pending_notes.push((note, 0.0, false));
     }
@@ -162,6 +170,7 @@ impl HostedSlot {
         self.input = [[0.0; HOST_BLOCK]; 2];
     }
 
+    /// Clears the plug-in's internal state, used when the engine reloads it.
     pub fn reset(&mut self) {
         self.release();
         if let Some(audio) = self.audio.as_mut() {

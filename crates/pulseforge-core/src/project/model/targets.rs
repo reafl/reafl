@@ -9,18 +9,29 @@ use super::device::*;
 use super::params::*;
 use super::piano::*;
 
+/// Continuous and integer parameters of an instrument.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InstrumentParameter {
+    /// Output gain in 0..=1.
     Gain,
+    /// Pan in -1..=1.
     Pan,
+    /// Filter cutoff in Hz.
     CutoffHz,
+    /// Filter resonance.
     Resonance,
+    /// Pulse width of the Juno style voice.
     PulseWidth,
+    /// Sub oscillator level of the Juno style voice.
     SubLevel,
+    /// Tone control of the M1 style voice.
     Tone,
+    /// Decay of the M1 style voice.
     Decay,
+    /// FM modulator ratio.
     FmRatio,
+    /// FM modulation index.
     FmIndex,
     /// Index into [`SignalWaveform`]: an enum automated as a plain integer.
     Waveform,
@@ -55,19 +66,31 @@ impl InstrumentParameter {
     }
 }
 
+/// Parameters of an insert effect slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EffectParameter {
+    /// Dry/wet balance.
     Mix,
+    /// Generic amount control.
     Amount,
+    /// Low band gain in dB.
     LowDb,
+    /// Mid band gain in dB.
     MidDb,
+    /// High band gain in dB.
     HighDb,
+    /// Delay or release time in seconds.
     TimeSeconds,
+    /// Feedback amount.
     Feedback,
+    /// Modulation rate in Hz.
     RateHz,
+    /// Modulation depth.
     Depth,
+    /// Reverb room size.
     RoomSize,
+    /// Waveshaper drive.
     Drive,
 }
 
@@ -75,13 +98,16 @@ pub enum EffectParameter {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MixerParameter {
+    /// Channel fader gain.
     Gain,
+    /// Channel pan.
     Pan,
     /// Mid/side stereo width, `0` (mono) to `2` (double side).
     Width,
 }
 
 impl MixerParameter {
+    /// Human readable label for menus and tooltips.
     pub fn label(self) -> &'static str {
         match self {
             Self::Gain => "Volume",
@@ -96,7 +122,9 @@ impl MixerParameter {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AutomationLaneParameter {
+    /// Centre value of the modulation.
     Base,
+    /// Amount the modulation swings around the base.
     Depth,
     /// The rate amount, in whatever unit the lane's `rate` uses.
     RateAmount,
@@ -109,6 +137,7 @@ pub enum AutomationLaneParameter {
 }
 
 impl AutomationLaneParameter {
+    /// Human readable label for menus and tooltips.
     pub fn label(self) -> &'static str {
         match self {
             Self::Base => "Base",
@@ -121,28 +150,45 @@ impl AutomationLaneParameter {
     }
 }
 
+/// Address of one automatable parameter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ParameterTarget {
+    /// A parameter of a channel-rack instrument.
     Instrument {
+        /// Index into [`Project::instruments`](super::arrangement::Project::instruments).
         instrument_id: usize,
+        /// Which instrument parameter.
         parameter: InstrumentParameter,
     },
+    /// A parameter of one insert slot.
     InsertEffect {
+        /// Mixer channel, or the master index for the master bus.
         channel_id: usize,
+        /// Slot index inside the channel's insert chain.
         slot_id: usize,
+        /// Which effect parameter.
         parameter: EffectParameter,
     },
     /// A parameter of a hosted VST3/CLAP instance. The value is normalized.
-    PluginParameter { host_id: u64, parameter_id: u32 },
+    PluginParameter {
+        /// Host instance id of the plug-in.
+        host_id: u64,
+        /// Parameter index inside the plug-in.
+        parameter_id: u32,
+    },
     /// A mixer channel's own volume or pan.
     MixerChannel {
+        /// Mixer channel, or the master index for the master bus.
         channel_id: usize,
+        /// Which mixer control.
         parameter: MixerParameter,
     },
     /// A parameter of another automation lane's source.
     AutomationLane {
+        /// Index into [`Project::automation_tracks`](super::arrangement::Project::automation_tracks).
         track_id: usize,
+        /// Which lane source parameter.
         parameter: AutomationLaneParameter,
     },
     /// Project tempo in BPM.
@@ -159,6 +205,7 @@ impl Default for ParameterTarget {
 }
 
 impl ParameterTarget {
+    /// Lowest and highest value this parameter accepts.
     pub fn range(self) -> (f32, f32) {
         match self {
             Self::Instrument { parameter, .. } => match parameter {
@@ -210,11 +257,13 @@ impl ParameterTarget {
         }
     }
 
+    /// Maps a real value into the normalized 0..=1 range automation uses.
     pub fn normalize_value(self, value: f32) -> f32 {
         let (min, max) = self.range();
         ((value - min) / (max - min)).clamp(0.0, 1.0)
     }
 
+    /// Maps a normalized 0..=1 automation value back into the real range.
     pub fn denormalize_value(self, value: f32) -> f32 {
         let (min, max) = self.range();
         min + value.clamp(0.0, 1.0) * (max - min)
@@ -222,6 +271,7 @@ impl ParameterTarget {
 }
 
 impl InstrumentParameter {
+    /// Human readable label for menus and tooltips.
     pub fn label(self) -> &'static str {
         match self {
             Self::Gain => "Gain",
@@ -245,6 +295,7 @@ impl InstrumentParameter {
 }
 
 impl EffectParameter {
+    /// Human readable label for menus and tooltips.
     pub fn label(self) -> &'static str {
         match self {
             Self::Mix => "Mix",

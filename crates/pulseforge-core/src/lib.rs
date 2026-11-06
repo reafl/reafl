@@ -1,3 +1,11 @@
+﻿//! Core data model and audio engine of PulseForge.
+//!
+//! The crate is deliberately UI-free: [`project`] holds the document model and
+//! its behaviour, [`audio`] renders it, [`expr`] evaluates the automation
+//! formula language and [`hosted`] bridges the plug-in layer.
+
+#![warn(missing_docs)]
+
 pub mod audio;
 pub mod expr;
 pub mod hosted;

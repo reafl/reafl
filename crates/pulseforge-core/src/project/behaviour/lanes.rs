@@ -3,6 +3,7 @@
 use super::*;
 
 impl Project {
+    /// Appends a new empty mixer channel and arrangement lane.
     pub fn add_lane(&mut self) {
         let old_lane_count = self.lanes.len();
         let new_len = old_lane_count + 1;

@@ -12,6 +12,8 @@ mod steps;
 
 use super::*;
 
+/// Clamps `value` into `min..=max`, falling back to `fallback` when it is not
+/// a finite number.
 pub fn finite_clamp(value: f32, min: f32, max: f32, fallback: f32) -> f32 {
     if value.is_finite() {
         value.clamp(min, max)
@@ -20,6 +22,8 @@ pub fn finite_clamp(value: f32, min: f32, max: f32, fallback: f32) -> f32 {
     }
 }
 
+/// Makes the send matrix square and keeps every destination's absolute gain sum
+/// below [`MAX_SEND_GAIN_SUM`].
 pub fn normalize_sends(sends: &mut [Vec<f32>]) {
     let lane_count = sends.len();
     for row in sends.iter_mut() {
@@ -40,6 +44,7 @@ pub fn normalize_sends(sends: &mut [Vec<f32>]) {
     }
 }
 
+/// Removes every send into and out of `channel`.
 pub fn disconnect_channel(sends: &mut [Vec<f32>], channel: usize) {
     for row in sends.iter_mut() {
         if let Some(gain) = row.get_mut(channel) {

@@ -39,6 +39,7 @@ pub struct Expression {
 /// Why a formula could not be parsed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExprError {
+    /// Human readable description of the problem.
     pub message: String,
     /// Byte-ish index (in characters) of the offending token.
     pub position: usize,

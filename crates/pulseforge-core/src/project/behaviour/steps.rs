@@ -12,6 +12,13 @@ impl Project {
     }
 
     /// Step-sequencer edit for a specific pattern.
+    ///
+    /// # Parameters
+    ///
+    /// - `pattern_id`: pattern to edit.
+    /// - `instrument_id`: instrument whose step is changed.
+    /// - `step`: step index inside the pattern.
+    /// - `enabled`: `true` to add the hit, `false` to remove it.
     pub fn set_step_note_on_pattern(
         &mut self,
         pattern_id: usize,
@@ -57,6 +64,7 @@ impl Project {
         })
     }
 
+    /// Appends a new empty pattern and returns its index.
     pub fn add_pattern(&mut self) -> usize {
         let id = self.patterns.len();
         self.patterns.push(Pattern {
@@ -66,6 +74,11 @@ impl Project {
         id
     }
 
+    /// Copies a clip onto the same lane, immediately after it.
+    ///
+    /// # Returns
+    ///
+    /// The index of the new clip, or `None` when the source clip is missing.
     pub fn duplicate_clip_after(&mut self, lane_id: usize, clip_index: usize) -> Option<usize> {
         let lane = self.lanes.get_mut(lane_id)?;
         let source = lane.clips.get(clip_index)?.clone();
@@ -88,6 +101,12 @@ impl Project {
         Some(insertion_index)
     }
 
+    /// Copies the clip's pattern so edits to it no longer affect other clips
+    /// that shared it.
+    ///
+    /// # Returns
+    ///
+    /// The index of the new pattern, or `None` for an audio clip.
     pub fn make_clip_pattern_unique(&mut self, lane_id: usize, clip_index: usize) -> Option<usize> {
         let pattern_id = match &self.lanes.get(lane_id)?.clips.get(clip_index)?.source {
             ClipSource::Pattern { pattern_id } => *pattern_id,

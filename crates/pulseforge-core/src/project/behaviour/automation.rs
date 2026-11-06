@@ -3,12 +3,24 @@
 use super::*;
 
 impl Project {
+    /// True when an enabled lane drives `target`.
     pub fn has_automation(&self, target: ParameterTarget) -> bool {
         self.automation_tracks
             .iter()
             .any(|track| track.enabled && track.target == target)
     }
 
+    /// Resolves a parameter at a transport position.
+    ///
+    /// # Parameters
+    ///
+    /// - `target`: the parameter to resolve.
+    /// - `base_value`: the value to use when no lane drives the parameter.
+    /// - `step`: transport position in steps.
+    ///
+    /// # Returns
+    ///
+    /// The automated value, or `base_value` when nothing drives the target.
     pub fn automated_value(&self, target: ParameterTarget, base_value: f32, step: f64) -> f32 {
         let position = step.max(0.0);
         let mut normalized = None;
@@ -45,6 +57,16 @@ impl Project {
         target.denormalize_value((base + relative).clamp(0.0, 1.0))
     }
 
+    /// Samples a drawn curve at a position, honouring each point's segment type.
+    ///
+    /// # Parameters
+    ///
+    /// - `points`: the curve, expected to be sorted by step.
+    /// - `position`: position in steps.
+    ///
+    /// # Returns
+    ///
+    /// The interpolated value in 0..=1, or -1..=1 for a relative curve.
     pub fn evaluate_curve(points: &[AutomationPoint], position: f64) -> f32 {
         fn cubic_bezier(t: f32, control_1: f32, control_2: f32) -> f32 {
             let inverse = 1.0 - t;
@@ -98,6 +120,15 @@ impl Project {
         }
     }
 
+    /// The stored value of a parameter, without automation applied.
+    ///
+    /// # Parameters
+    ///
+    /// - `target`: the parameter to read.
+    ///
+    /// # Returns
+    ///
+    /// The value, or `None` when the target no longer exists.
     pub fn parameter_value(&self, target: ParameterTarget) -> Option<f32> {
         match target {
             // Hosted values are injected by the UI layer, which owns the
