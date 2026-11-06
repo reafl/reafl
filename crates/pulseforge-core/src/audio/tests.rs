@@ -55,6 +55,96 @@ mod tests {
     }
 
     #[test]
+    pub(crate) fn mixer_eq_automation_moves_the_filter_gains() {
+        let target = ParameterTarget::MixerChannel {
+            channel_id: 0,
+            parameter: crate::project::MixerParameter::LowDb,
+        };
+        let mut project = Project::default();
+        project
+            .automation_tracks
+            .push(crate::project::AutomationTrack {
+                target,
+                points: vec![crate::project::AutomationPoint {
+                    step: 0,
+                    value: 1.0,
+                    curve: crate::project::AutomationCurve::Linear,
+                }],
+                ..Default::default()
+            });
+        project.normalize();
+        let mut engine = AudioEngine::new(project, 48_000);
+        let before = engine.eq_gains[0];
+        engine.playing = true;
+
+        engine.apply_global_automation(0.0);
+
+        assert_ne!(
+            engine.eq_gains[0], before,
+            "the automated EQ band never reached the filter gains"
+        );
+    }
+
+    #[test]
+    pub(crate) fn automation_of_a_lane_parameter_reaches_its_source() {
+        use crate::project::{
+            AutomationLaneParameter, AutomationSource, LfoShape, MixerParameter, TimeUnit,
+            TimeValue,
+        };
+        let mut project = Project::default();
+        // Lane 0 is an LFO whose base is 0 and whose depth is 0.2.
+        project
+            .automation_tracks
+            .push(crate::project::AutomationTrack {
+                target: ParameterTarget::Instrument {
+                    instrument_id: 0,
+                    parameter: InstrumentParameter::Gain,
+                },
+                source: AutomationSource::Lfo {
+                    shape: LfoShape::Sine,
+                    rate: TimeValue {
+                        amount: 1.0,
+                        unit: TimeUnit::Steps,
+                    },
+                    retrigger: false,
+                    base: 0.0,
+                    depth: 0.2,
+                },
+                ..Default::default()
+            });
+        // Lane 1 drives that base up to 1.
+        project
+            .automation_tracks
+            .push(crate::project::AutomationTrack {
+                target: ParameterTarget::AutomationLane {
+                    track_id: 0,
+                    parameter: AutomationLaneParameter::Base,
+                },
+                points: vec![crate::project::AutomationPoint {
+                    step: 0,
+                    value: 1.0,
+                    curve: crate::project::AutomationCurve::Linear,
+                }],
+                ..Default::default()
+            });
+        project.normalize();
+        let mut engine = AudioEngine::new(project, 48_000);
+        engine.playing = true;
+
+        engine.apply_global_automation(0.0);
+
+        let base = engine.project.automation_tracks[0]
+            .source
+            .base()
+            .expect("the LFO keeps a base");
+        assert!(
+            (base - 1.0).abs() < 1e-4,
+            "the lane base never followed its automation, got {base}"
+        );
+        let _ = MixerParameter::Gain;
+    }
+
+    #[test]
     pub(crate) fn arrangement_loop_wraps_playhead_at_end_step() {
         let mut engine = AudioEngine::new(Project::default(), 48_000);
         engine.playing = true;

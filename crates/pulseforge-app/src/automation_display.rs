@@ -45,7 +45,7 @@ impl PulseForgeApp {
         let mut normalized: Option<f32> = None;
         let mut relative = 0.0;
         let mut touched = false;
-        for track in &self.project.automation_tracks {
+        for (track_id, track) in self.project.automation_tracks.iter().enumerate() {
             if !track.enabled
                 || track.target != target
                 || position < track.start_step as f64
@@ -75,7 +75,13 @@ impl PulseForgeApp {
                 Project::evaluate_curve(&track.modulation_points, position).clamp(0.0, 1.0)
             };
             let source_value = automation_source_preview(
-                &track.source,
+                &resolved_lane_source(
+                    &self.project,
+                    track_id,
+                    position,
+                    &lane_driven_parameters(&self.project, track_id),
+                )
+                .unwrap_or_else(|| track.source.clone()),
                 target,
                 &self.project.lanes,
                 &self.project.patterns,

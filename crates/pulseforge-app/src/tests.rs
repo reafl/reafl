@@ -239,3 +239,51 @@ fn routing_helpers_interpolate_colors_and_measure_cable_distance() {
             < 0.001
     );
 }
+
+#[test]
+fn lane_preview_follows_automation_of_its_own_rate() {
+    use project::{AutomationLaneParameter, AutomationSource, TimeUnit, TimeValue};
+    let mut project = Project::default();
+    project.automation_tracks.push(AutomationTrack {
+        target: ParameterTarget::Instrument {
+            instrument_id: 0,
+            parameter: InstrumentParameter::Gain,
+        },
+        source: AutomationSource::Lfo {
+            shape: project::LfoShape::Sine,
+            rate: TimeValue {
+                amount: 500.0,
+                unit: TimeUnit::Milliseconds,
+            },
+            retrigger: false,
+            base: 0.5,
+            depth: 0.5,
+        },
+        ..AutomationTrack::default()
+    });
+    project.automation_tracks.push(AutomationTrack {
+        target: ParameterTarget::AutomationLane {
+            track_id: 0,
+            parameter: AutomationLaneParameter::RateAmount,
+        },
+        points: vec![AutomationPoint {
+            step: 0,
+            value: 0.0,
+            curve: AutomationCurve::Linear,
+        }],
+        ..AutomationTrack::default()
+    });
+    project.normalize();
+
+    let driven = lane_driven_parameters(&project, 0);
+    assert_eq!(driven, vec![AutomationLaneParameter::RateAmount]);
+    let resolved = resolved_lane_source(&project, 0, 0.0, &driven).expect("lane exists");
+    let AutomationSource::Lfo { rate, .. } = resolved else {
+        panic!("source should stay an LFO");
+    };
+    assert!(
+        (rate.amount - 0.1).abs() < 1e-3,
+        "preview kept the stored rate {} instead of the automated one",
+        rate.amount
+    );
+}

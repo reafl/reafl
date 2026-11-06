@@ -286,8 +286,8 @@ pub(crate) fn automation_time_steps(value: project::TimeValue, bpm: f32) -> f64 
 /// Names of the lane's own parameters that another lane drives.
 ///
 /// The arrangement draws them as badges on the clip, so automation of a lane's
-/// base, depth, rate, shape, sustain or octave count is visible where the lane
-/// lives instead of only in the automation window.
+/// base, depth, rate, shape, sustain, octaves or envelope times is visible where
+/// the lane lives instead of only in the automation window.
 ///
 /// # Parameters
 ///
@@ -298,6 +298,27 @@ pub(crate) fn automation_time_steps(value: project::TimeValue, bpm: f32) -> f64 
 ///
 /// One label per automated parameter, in picker order.
 pub(crate) fn lane_automated_parameters(project: &Project, track_id: usize) -> Vec<&'static str> {
+    use project::AutomationLaneParameter as Parameter;
+    lane_driven_parameters(project, track_id)
+        .into_iter()
+        .map(Parameter::label)
+        .collect()
+}
+
+/// Which of a lane's own parameters another lane drives.
+///
+/// # Parameters
+///
+/// - `project`: the project to inspect.
+/// - `track_id`: the lane whose parameters are checked.
+///
+/// # Returns
+///
+/// Every driven parameter, in picker order.
+pub(crate) fn lane_driven_parameters(
+    project: &Project,
+    track_id: usize,
+) -> Vec<project::AutomationLaneParameter> {
     use project::{AutomationLaneParameter as Parameter, ParameterTarget};
     [
         Parameter::Base,
@@ -306,6 +327,9 @@ pub(crate) fn lane_automated_parameters(project: &Project, track_id: usize) -> V
         Parameter::Shape,
         Parameter::Sustain,
         Parameter::Octaves,
+        Parameter::Attack,
+        Parameter::Decay,
+        Parameter::Release,
     ]
     .into_iter()
     .filter(|parameter| {
@@ -314,15 +338,162 @@ pub(crate) fn lane_automated_parameters(project: &Project, track_id: usize) -> V
             parameter: *parameter,
         })
     })
-    .map(|parameter| parameter.label())
     .collect()
 }
 
-/// Samples a lane's own base and depth for every drawing column.
+/// A copy of a lane's source with its own automation applied at `position`.
 ///
-/// When the lane's base or depth is itself automated, its envelope no longer
-/// follows the stored values; sampling the driven values per column lets the
-/// drawn curve show what the automation actually produces.
+/// A lane can automate another lane's base, depth, rate, shape, sustain, octave
+/// count and envelope times. The engine folds those in before evaluating the
+/// lane, so the UI has to do the same or the drawn envelope and the live values
+/// would show the stored settings instead of what is heard.
+///
+/// # Parameters
+///
+/// - `project`: the project to inspect.
+/// - `track_id`: the lane whose source is resolved.
+/// - `position`: transport position in steps.
+/// - `driven`: which parameters are automated, from [`lane_driven_parameters`].
+///
+/// # Returns
+///
+/// The resolved source. It is a plain copy when nothing drives the lane.
+pub(crate) fn resolved_lane_source(
+    project: &Project,
+    track_id: usize,
+    position: f64,
+    driven: &[project::AutomationLaneParameter],
+) -> Option<project::AutomationSource> {
+    use project::{
+        AutomationLaneParameter as Parameter, AutomationSource, LfoShape, ParameterTarget,
+    };
+    let mut source = project.automation_tracks.get(track_id)?.source.clone();
+    if driven.is_empty() {
+        return Some(source);
+    }
+    let value = |parameter: Parameter, current: f32| {
+        project.automated_value(
+            ParameterTarget::AutomationLane {
+                track_id,
+                parameter,
+            },
+            current,
+            position,
+        )
+    };
+    let drives = |parameter: Parameter| driven.contains(&parameter);
+    match &mut source {
+        AutomationSource::MidiEnvelope {
+            attack,
+            decay,
+            sustain,
+            release,
+            base,
+            depth,
+            ..
+        } => {
+            if drives(Parameter::Base) {
+                *base = value(Parameter::Base, *base);
+            }
+            if drives(Parameter::Depth) {
+                *depth = value(Parameter::Depth, *depth);
+            }
+            if drives(Parameter::Sustain) {
+                *sustain = value(Parameter::Sustain, *sustain);
+            }
+            if drives(Parameter::Attack) {
+                attack.amount = value(Parameter::Attack, attack.amount);
+            }
+            if drives(Parameter::Decay) {
+                decay.amount = value(Parameter::Decay, decay.amount);
+            }
+            if drives(Parameter::Release) {
+                release.amount = value(Parameter::Release, release.amount);
+            }
+        }
+        AutomationSource::Lfo {
+            shape,
+            rate,
+            base,
+            depth,
+            ..
+        } => {
+            if drives(Parameter::Base) {
+                *base = value(Parameter::Base, *base);
+            }
+            if drives(Parameter::Depth) {
+                *depth = value(Parameter::Depth, *depth);
+            }
+            if drives(Parameter::RateAmount) {
+                rate.amount = value(Parameter::RateAmount, rate.amount);
+            }
+            if drives(Parameter::Shape) {
+                *shape = LfoShape::from_index(
+                    value(Parameter::Shape, shape.index() as f32).max(0.0) as u32,
+                );
+            }
+        }
+        AutomationSource::SampleAndHold {
+            rate, base, depth, ..
+        } => {
+            if drives(Parameter::Base) {
+                *base = value(Parameter::Base, *base);
+            }
+            if drives(Parameter::Depth) {
+                *depth = value(Parameter::Depth, *depth);
+            }
+            if drives(Parameter::RateAmount) {
+                rate.amount = value(Parameter::RateAmount, rate.amount);
+            }
+        }
+        AutomationSource::Perlin {
+            rate,
+            octaves,
+            base,
+            depth,
+            ..
+        } => {
+            if drives(Parameter::Base) {
+                *base = value(Parameter::Base, *base);
+            }
+            if drives(Parameter::Depth) {
+                *depth = value(Parameter::Depth, *depth);
+            }
+            if drives(Parameter::RateAmount) {
+                rate.amount = value(Parameter::RateAmount, rate.amount);
+            }
+            if drives(Parameter::Octaves) {
+                *octaves = value(Parameter::Octaves, *octaves as f32)
+                    .round()
+                    .clamp(1.0, 16.0) as u32;
+            }
+        }
+        AutomationSource::Peak {
+            attack,
+            release,
+            base,
+            depth,
+            ..
+        } => {
+            if drives(Parameter::Base) {
+                *base = value(Parameter::Base, *base);
+            }
+            if drives(Parameter::Depth) {
+                *depth = value(Parameter::Depth, *depth);
+            }
+            if drives(Parameter::Attack) {
+                attack.amount = value(Parameter::Attack, attack.amount);
+            }
+            if drives(Parameter::Release) {
+                release.amount = value(Parameter::Release, release.amount);
+            }
+        }
+        AutomationSource::Curve | AutomationSource::RelativeCurve => {}
+    }
+    Some(source)
+}
+
+/// One resolved source per drawing column.
 ///
 /// # Parameters
 ///
@@ -333,47 +504,28 @@ pub(crate) fn lane_automated_parameters(project: &Project, track_id: usize) -> V
 ///
 /// # Returns
 ///
-/// `(base, depth)` per column, or `None` when neither is automated or the
-/// source has no such values.
+/// A source per column, or `None` when nothing drives the lane's own
+/// parameters, in which case the caller can use the stored source directly.
 pub(crate) fn lane_source_columns(
     project: &Project,
     track_id: usize,
     columns: usize,
     step_at: impl Fn(usize) -> f64,
-) -> Option<(Vec<f32>, Vec<f32>)> {
-    use project::{AutomationLaneParameter as Parameter, ParameterTarget};
-    let source = &project.automation_tracks.get(track_id)?.source;
-    let base = source.base()?;
-    let depth = source.depth()?;
-    let base_target = ParameterTarget::AutomationLane {
-        track_id,
-        parameter: Parameter::Base,
-    };
-    let depth_target = ParameterTarget::AutomationLane {
-        track_id,
-        parameter: Parameter::Depth,
-    };
-    let base_driven = project.has_automation(base_target);
-    let depth_driven = project.has_automation(depth_target);
-    if !base_driven && !depth_driven {
+) -> Option<Vec<project::AutomationSource>> {
+    let driven = lane_driven_parameters(project, track_id);
+    if driven.is_empty() {
         return None;
     }
-    let mut bases = Vec::with_capacity(columns + 1);
-    let mut depths = Vec::with_capacity(columns + 1);
+    let mut sources = Vec::with_capacity(columns + 1);
     for index in 0..=columns {
-        let step = step_at(index);
-        bases.push(if base_driven {
-            project.automated_value(base_target, base, step)
-        } else {
-            base
-        });
-        depths.push(if depth_driven {
-            project.automated_value(depth_target, depth, step)
-        } else {
-            depth
-        });
+        sources.push(resolved_lane_source(
+            project,
+            track_id,
+            step_at(index),
+            &driven,
+        )?);
     }
-    Some((bases, depths))
+    Some(sources)
 }
 
 pub(crate) fn automation_source_preview(

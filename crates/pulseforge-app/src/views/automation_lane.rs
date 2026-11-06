@@ -359,10 +359,10 @@ impl PulseForgeApp {
                 let x = clip_start + clip_rect.width() * index as f32 / sample_count as f32;
                 let step = grid.start_step as f64
                     + f64::from(x - grid.grid_left) / f64::from(grid.step_width);
-                // When the lane's own base or depth is automated, draw the
-                // driven values instead of the stored ones.
+                // When another lane drives this lane's own parameters, draw the
+                // resolved source so the envelope shows what will be heard.
                 let column_source = match &lane_columns {
-                    Some((bases, depths)) => source.with_base_depth(bases[index], depths[index]),
+                    Some(sources) => sources[index].clone(),
                     None => source.clone(),
                 };
                 let value = automation_source_preview(
