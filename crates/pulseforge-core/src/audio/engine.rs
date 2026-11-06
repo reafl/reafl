@@ -1,543 +1,95 @@
+//! The render engine: mixing, automation application and effect chains.
+
 use std::{
     collections::HashMap,
     f32::consts::TAU,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU32, AtomicU64, Ordering},
-        mpsc::{self, SyncSender},
+        mpsc::{self},
     },
-    time::{Duration, Instant},
 };
 
-use cpal::{
-    BufferSize, SampleFormat, Stream,
-    traits::{DeviceTrait, HostTrait, StreamTrait},
-};
-use pulseforge_profiling::{Channel, SlotCounters, profile_scope, set_thread_channel};
 
 use crate::{
-    hosted::{HostedSlot, effect_host_id, instrument_host_id},
-    plugins::{BuiltinEffect, EffectParameters},
+    hosted::{HostedSlot, instrument_host_id},
+    plugins::EffectParameters,
     project::{
-        AutomationLaneParameter, AutomationSource, ClipSource, DefaultSample, EffectParameter,
-        Instrument, InstrumentParameter, LfoShape, MixerParameter, ParameterTarget, PianoNote,
+        AutomationLaneParameter, AutomationSource, ClipSource, EffectParameter, InstrumentParameter, LfoShape, MixerParameter, ParameterTarget, PianoNote,
         Project, SignalWaveform, SynthKind, TimeUnit, TimeValue, finite_clamp, normalize_sends,
     },
     smooth::SmoothedValue,
 };
 
-const VOICE_COUNT: usize = 64;
 
-/// Automation and instrument controls are refreshed once per control block
-/// instead of once per sample. Sixteen frames is far below the audible zipper
-/// threshold while cutting the automation cost by more than an order of
-/// magnitude on dense projects.
-const CONTROL_INTERVAL: u32 = 16;
+use super::model::*;
+use super::dsp::*;
 
-/// Requested output buffer in frames. Small buffers lower monitoring latency;
-/// the device default is used when a fixed size is not supported.
-const PREFERRED_BUFFER_FRAMES: u32 = 256;
-
-pub struct SampleData {
-    pub sample_rate: u32,
-    pub frames: Vec<[f32; 2]>,
-}
-
-impl SampleData {
-    fn default_drum(kind: DefaultSample, sample_rate: u32) -> Option<Self> {
-        let duration = match kind {
-            DefaultSample::Kick => 0.48,
-            DefaultSample::Snare => 0.32,
-            DefaultSample::HiHat => 0.12,
-            DefaultSample::None => return None,
-        };
-        let frame_count = (duration * sample_rate as f32) as usize;
-        let mut noise_state: u32 = match kind {
-            DefaultSample::Kick => 0x2a31_9d2b,
-            DefaultSample::Snare => 0x5a17_02e3,
-            DefaultSample::HiHat => 0x7f4a_7c15,
-            DefaultSample::None => 0,
-        };
-        let frames = (0..frame_count)
-            .map(|index| {
-                let time = index as f32 / sample_rate as f32;
-                let progress = time / duration;
-                let signal = match kind {
-                    DefaultSample::Kick => {
-                        let pitch = 42.0 + 105.0 * (-time * 15.0).exp();
-                        let envelope = (-time * 9.0).exp();
-                        (TAU * pitch * time).sin() * envelope * 0.88
-                    }
-                    DefaultSample::Snare => {
-                        noise_state ^= noise_state << 13;
-                        noise_state ^= noise_state >> 17;
-                        noise_state ^= noise_state << 5;
-                        let noise = noise_state as i32 as f32 / i32::MAX as f32;
-                        let envelope = (-progress * 8.5).exp();
-                        let body = (TAU * 185.0 * time).sin() * (-time * 18.0).exp() * 0.42;
-                        (noise * 0.68 + body) * envelope * 0.78
-                    }
-                    DefaultSample::HiHat => {
-                        noise_state ^= noise_state << 13;
-                        noise_state ^= noise_state >> 17;
-                        noise_state ^= noise_state << 5;
-                        let noise = noise_state as i32 as f32 / i32::MAX as f32;
-                        let envelope = (-progress * 13.0).exp();
-                        let high_pass = noise
-                            - (noise_state.rotate_left(7) as i32 as f32 / i32::MAX as f32) * 0.55;
-                        high_pass * envelope * 0.48
-                    }
-                    DefaultSample::None => 0.0,
-                };
-                [signal, signal]
-            })
-            .collect();
-        Some(Self {
-            sample_rate,
-            frames,
-        })
-    }
-}
-
-pub enum AudioCommand {
-    SetPlaying(bool),
-    /// Moves the transport back to the start of the loop (or zero) without
-    /// changing the play state.
-    Rewind,
-    /// Moves the transport to an absolute step position.
-    Seek(u64),
-    SetMetronome(bool),
-    SetSelectedPattern(Option<usize>),
-    SetLoop(Option<(u64, u64)>),
-    SetTempo(f32),
-    SetProject(Box<Project>),
-    LoadInstrumentSample {
-        instrument_id: usize,
-        sample: SampleData,
-    },
-    /// Caches a decoded WAV by path. Clips resolve their audio from this
-    /// cache, so the sample survives the project rebuild that follows an edit
-    /// and can arrive before the clip itself exists.
-    LoadAudioClip {
-        path: String,
-        sample: SampleData,
-    },
-    MidiNote {
-        instrument_id: usize,
-        note: u8,
-        velocity: u8,
-        on: bool,
-    },
-    /// Plays a one-shot sample through the master bus for auditioning.
-    PreviewSample(Box<SampleData>),
-    /// Enables or disables linear parameter ramping and sets its length.
-    SetSmoothing {
-        enabled: bool,
-        milliseconds: f32,
-    },
-    /// Hands a real VST3/CLAP audio half to the engine so it can render there.
-    LoadHosted {
-        id: u64,
-        audio: Box<pulseforge_hosting::HostedAudio>,
-        instrument: bool,
-        /// Debug counters owned by the UI's plug-in registry; the slot writes
-        /// its block times there so the debug panel can list them.
-        counters: Option<Arc<SlotCounters>>,
-    },
-    /// Drops a hosted plug-in (its editor is closed on the UI thread).
-    UnloadHosted {
-        id: u64,
-    },
-}
-
-pub struct AudioOutput {
-    pub sender: SyncSender<AudioCommand>,
-    pub meters: Arc<Mutex<Vec<f32>>>,
-    pub playhead_steps: Arc<AtomicU64>,
-    /// Fractional playhead in steps, published as `f64` bits so the UI can
-    /// animate it smoothly between audio buffers.
-    pub playhead_position: Arc<AtomicU64>,
-    /// Callback work as a fraction of the callback period, stored as f32 bits.
-    /// This is the engine's own real-time load, the number that tells a user
-    /// whether a plug-in is about to overrun the buffer.
-    pub dsp_load: Arc<AtomicU32>,
-    /// Frames the device hands to the callback.
-    pub block_frames: Arc<AtomicU32>,
-    project_updates: Arc<Mutex<Option<Box<Project>>>>,
-    retired_projects: Arc<Mutex<Vec<Project>>>,
-    _stream: Stream,
-    pub sample_rate: u32,
-}
-
-impl AudioOutput {
-    pub fn start(project: &Project) -> Result<Self, String> {
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .ok_or_else(|| "No default audio output device is available.".to_owned())?;
-        let supported = device
-            .default_output_config()
-            .map_err(|error| format!("Could not query the default audio format: {error}"))?;
-
-        if supported.sample_format() != SampleFormat::F32 {
-            return Err(format!(
-                "The default output uses {:?}; this build currently requires f32 output.",
-                supported.sample_format()
-            ));
-        }
-
-        let config = supported.config();
-        let sample_rate = config.sample_rate.0;
-        let channels = usize::from(config.channels);
-        if channels == 0 {
-            return Err("The default audio device reports zero output channels.".to_owned());
-        }
-
-        let meters = Arc::new(Mutex::new(vec![0.0; project.lanes.len() + 1]));
-        let project_updates = Arc::new(Mutex::new(None));
-        let retired_projects = Arc::new(Mutex::new(Vec::new()));
-        let playhead_steps = Arc::new(AtomicU64::new(0));
-        let playhead_position = Arc::new(AtomicU64::new(0.0_f64.to_bits()));
-        let dsp_load = Arc::new(AtomicU32::new(0));
-        let block_frames = Arc::new(AtomicU32::new(0));
-        // A small fixed buffer keeps monitoring latency low. The device default
-        // is used when the backend refuses that size.
-        let mut sender = None;
-        let mut build = |buffer_size: BufferSize| -> Result<Stream, String> {
-            let (stream_sender, receiver) = mpsc::sync_channel(512);
-            let callback_meters = Arc::clone(&meters);
-            let callback_project_updates = Arc::clone(&project_updates);
-            let callback_retired_projects = Arc::clone(&retired_projects);
-            let callback_playhead_steps = Arc::clone(&playhead_steps);
-            let callback_playhead_position = Arc::clone(&playhead_position);
-            let callback_dsp_load = Arc::clone(&dsp_load);
-            let callback_block_frames = Arc::clone(&block_frames);
-            let mut engine = AudioEngine::new(project.clone(), sample_rate);
-            let mut stream_config = config.clone();
-            stream_config.buffer_size = buffer_size;
-            let stream = device
-                .build_output_stream(
-                    &stream_config,
-                    move |output: &mut [f32], _| {
-                        // The callback owns this thread, so the profiler is told
-                        // once per buffer which channel the spans belong to.
-                        set_thread_channel(Channel::Audio);
-                        profile_scope!("audio callback");
-                        let started = Instant::now();
-                        for frame in output.chunks_mut(channels) {
-                            let stereo = engine.render_frame(&receiver, &callback_project_updates);
-                            match frame {
-                                [left, right, rest @ ..] => {
-                                    *left = stereo[0];
-                                    *right = stereo[1];
-                                    rest.fill(0.0);
-                                }
-                                [mono] => *mono = (stereo[0] + stereo[1]) * 0.5,
-                                [] => {}
-                            }
-                        }
-                        // Load against the real-time budget of this buffer: the
-                        // single most useful audio number when a plug-in is hot.
-                        let frames = output.len() / channels.max(1);
-                        let period = frames as f32 / sample_rate as f32;
-                        let load = started.elapsed().as_secs_f32() / period.max(f32::EPSILON);
-                        callback_dsp_load.store(load.to_bits(), Ordering::Relaxed);
-                        callback_block_frames.store(frames as u32, Ordering::Relaxed);
-                        if let Ok(mut published) = callback_meters.try_lock() {
-                            published.clone_from(&engine.meter_levels);
-                        }
-                        if let Some(retired) = engine.retired_project.take()
-                            && let Ok(mut pool) = callback_retired_projects.try_lock()
-                        {
-                            pool.push(*retired);
-                        }
-                        callback_playhead_steps.store(engine.position_steps, Ordering::Relaxed);
-                        callback_playhead_position
-                            .store(engine.playhead_position().to_bits(), Ordering::Relaxed);
-                    },
-                    |error| eprintln!("Audio stream error: {error}"),
-                    Some(Duration::from_millis(100)),
-                )
-                .map_err(|error| format!("Could not create the audio output stream: {error}"))?;
-            sender = Some(stream_sender);
-            Ok(stream)
-        };
-        let stream = match build(BufferSize::Fixed(PREFERRED_BUFFER_FRAMES)) {
-            Ok(stream) => stream,
-            Err(_) => build(BufferSize::Default)?,
-        };
-        stream
-            .play()
-            .map_err(|error| format!("Could not start the audio output stream: {error}"))?;
-        let Some(sender) = sender else {
-            return Err("The audio output stream did not start.".to_owned());
-        };
-
-        Ok(Self {
-            sender,
-            meters,
-            playhead_steps,
-            playhead_position,
-            dsp_load,
-            block_frames,
-            project_updates,
-            retired_projects,
-            _stream: stream,
-            sample_rate,
-        })
-    }
-
-    /// Latest callback load as a fraction of the buffer period.
-    pub fn load(&self) -> f32 {
-        f32::from_bits(self.dsp_load.load(Ordering::Relaxed))
-    }
-
-    /// Frames per callback the device is currently using.
-    pub fn block_frames(&self) -> u32 {
-        self.block_frames.load(Ordering::Relaxed)
-    }
-
-    pub fn set_project(&self, project: Project) -> Result<(), String> {
-        let mut pending = self
-            .project_updates
-            .lock()
-            .map_err(|_| "The pending audio project lock is poisoned.".to_owned())?;
-        *pending = Some(Box::new(project));
-        Ok(())
-    }
-
-    /// Drops replaced project snapshots on the caller's thread so the audio
-    /// callback never pays for freeing large buffers.
-    pub fn collect_retired_projects(&self) {
-        if let Ok(mut pool) = self.retired_projects.try_lock() {
-            pool.clear();
-        }
-    }
-}
-
-struct Voice {
-    instrument_id: usize,
-    mixer_lane: usize,
-    note: u8,
-    phase: f32,
-    second_phase: f32,
-    sub_phase: f32,
-    filter_state: f32,
-    age_seconds: f32,
-    velocity: f32,
-    envelope: f32,
-    active: bool,
-    released: bool,
-    release_at_tick: Option<u64>,
-}
-
-impl Default for Voice {
-    fn default() -> Self {
-        Self {
-            instrument_id: 0,
-            mixer_lane: 0,
-            note: 0,
-            phase: 0.0,
-            second_phase: 0.0,
-            sub_phase: 0.0,
-            filter_state: 0.0,
-            age_seconds: 0.0,
-            velocity: 0.0,
-            envelope: 0.0,
-            active: false,
-            released: false,
-            release_at_tick: None,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Default)]
-struct InstrumentControls {
-    gain: f32,
-    pan: f32,
-    cutoff_hz: f32,
-    resonance: f32,
-    pulse_width: f32,
-    sub_level: f32,
-    tone: f32,
-    decay: f32,
-    fm_ratio: f32,
-    fm_index: f32,
-}
-
-#[derive(Clone, Copy, Default)]
-struct AutomationRuntime {
-    start_frame: Option<u64>,
-    release_frame: Option<u64>,
-    release_level: f32,
-}
-
-/// One scheduled arpeggiator note.
-#[derive(Clone, Copy)]
-struct ArpEvent {
-    at_tick: u64,
-    release_tick: u64,
-    instrument_id: usize,
-    lane_id: usize,
-    pitch: u8,
-    velocity: u8,
-}
-
-struct SampleVoice {
-    instrument_id: usize,
-    mixer_lane: usize,
-    cursor: f64,
-    active: bool,
-}
-
-impl Default for SampleVoice {
-    fn default() -> Self {
-        Self {
-            instrument_id: 0,
-            mixer_lane: 0,
-            cursor: 0.0,
-            active: false,
-        }
-    }
-}
-
-struct AudioClipRuntime {
-    /// Shared by every clip that references the same file, so sliced or
-    /// duplicated audio clips keep playing without re-reading the WAV.
-    sample: Option<Arc<SampleData>>,
-    cursor: f64,
-    active: bool,
-    /// Set when the clip has played to its end. Cleared when the transport
-    /// leaves the clip, so re-entering it plays again.
-    finished: bool,
-}
-
-impl Default for AudioClipRuntime {
-    fn default() -> Self {
-        Self {
-            sample: None,
-            cursor: 0.0,
-            active: false,
-            finished: false,
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-enum TriggerEvent {
-    InstrumentHit {
-        instrument_id: usize,
-        lane_id: usize,
-    },
-    Note {
-        note: PianoNote,
-        lane_id: usize,
-    },
-    AudioClip {
-        lane_id: usize,
-        clip_index: usize,
-    },
-}
-
-/// One insert slot's processor. Built-in effects run their DSP; external
-/// plug-in bundles run through the hosting boundary, which passes audio through
-/// until a format backend is installed.
-enum EffectProcessor {
-    Builtin(BuiltinEffect),
-    /// Hosted VST3/CLAP insert, addressed by host id in `AudioEngine::hosted`.
-    External(u64),
-}
-
-impl EffectProcessor {
-    /// Identity used to decide whether the processor must be rebuilt.
-    fn identity(&self) -> (&'static str, &str) {
-        match self {
-            Self::Builtin(effect) => ("builtin", effect.effect_name()),
-            Self::External(_) => ("external", ""),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Default)]
-struct EqState {
-    low_250: [f32; 2],
-    low_2k: [f32; 2],
-}
-
-#[derive(Clone, Copy)]
-struct SendEdge {
-    source: usize,
-    destination: usize,
-    gain: f32,
-    delayed: [f32; 2],
-}
-
-struct AudioEngine {
-    sample_rate: f32,
-    playing: bool,
-    position_steps: u64,
-    frames_into_step: f64,
-    last_triggered_tick: Option<u64>,
-    selected_pattern: Option<usize>,
-    loop_range: Option<(u64, u64)>,
-    project: Project,
-    instrument_samples: Vec<Option<SampleData>>,
-    audio_clips: Vec<Vec<AudioClipRuntime>>,
-    send_edges: Vec<SendEdge>,
-    lane_inputs: Vec<[f32; 2]>,
-    meter_levels: Vec<f32>,
-    eq_states: Vec<EqState>,
-    eq_gains: Vec<[f32; 3]>,
-    effect_processors: Vec<Vec<Option<EffectProcessor>>>,
-    eq_alpha_250: f32,
-    eq_alpha_2k: f32,
-    trigger_events: Vec<TriggerEvent>,
-    releasing_instruments: Vec<usize>,
-    voices: [Voice; VOICE_COUNT],
-    sample_voices: [SampleVoice; VOICE_COUNT],
-    instrument_controls: Vec<InstrumentControls>,
-    automation_runtime: Vec<AutomationRuntime>,
+pub(crate) struct AudioEngine {
+    pub(crate) sample_rate: f32,
+    pub(crate) playing: bool,
+    pub(crate) position_steps: u64,
+    pub(crate) frames_into_step: f64,
+    pub(crate) last_triggered_tick: Option<u64>,
+    pub(crate) selected_pattern: Option<usize>,
+    pub(crate) loop_range: Option<(u64, u64)>,
+    pub(crate) project: Project,
+    pub(crate) instrument_samples: Vec<Option<SampleData>>,
+    pub(crate) audio_clips: Vec<Vec<AudioClipRuntime>>,
+    pub(crate) send_edges: Vec<SendEdge>,
+    pub(crate) lane_inputs: Vec<[f32; 2]>,
+    pub(crate) meter_levels: Vec<f32>,
+    pub(crate) eq_states: Vec<EqState>,
+    pub(crate) eq_gains: Vec<[f32; 3]>,
+    pub(crate) effect_processors: Vec<Vec<Option<EffectProcessor>>>,
+    pub(crate) eq_alpha_250: f32,
+    pub(crate) eq_alpha_2k: f32,
+    pub(crate) trigger_events: Vec<TriggerEvent>,
+    pub(crate) releasing_instruments: Vec<usize>,
+    pub(crate) voices: [Voice; VOICE_COUNT],
+    pub(crate) sample_voices: [SampleVoice; VOICE_COUNT],
+    pub(crate) instrument_controls: Vec<InstrumentControls>,
+    pub(crate) automation_runtime: Vec<AutomationRuntime>,
     /// Automation lane indices grouped by the parameter they drive, so
     /// evaluation only walks lanes that actually match the target.
-    automation_index: HashMap<ParameterTarget, Vec<usize>>,
+    pub(crate) automation_index: HashMap<ParameterTarget, Vec<usize>>,
     /// Effect parameters cached for the current control block.
-    effect_parameters: Vec<Vec<EffectParameters>>,
-    control_countdown: u32,
+    pub(crate) effect_parameters: Vec<Vec<EffectParameters>>,
+    pub(crate) control_countdown: u32,
     /// Linear ramps that keep parameter jumps from producing zipper noise.
-    lane_gain: Vec<SmoothedValue>,
-    lane_pan: Vec<SmoothedValue>,
-    lane_width: Vec<SmoothedValue>,
-    master_gain: SmoothedValue,
-    master_pan: SmoothedValue,
-    effect_mix: Vec<Vec<SmoothedValue>>,
-    smoothing_enabled: bool,
-    smoothing_milliseconds: f32,
-    smoothing_samples: u32,
+    pub(crate) lane_gain: Vec<SmoothedValue>,
+    pub(crate) lane_pan: Vec<SmoothedValue>,
+    pub(crate) lane_width: Vec<SmoothedValue>,
+    pub(crate) master_gain: SmoothedValue,
+    pub(crate) master_pan: SmoothedValue,
+    pub(crate) effect_mix: Vec<Vec<SmoothedValue>>,
+    pub(crate) smoothing_enabled: bool,
+    pub(crate) smoothing_milliseconds: f32,
+    pub(crate) smoothing_samples: u32,
     /// Absolute-tick arpeggiator events produced from played notes.
-    arp_queue: Vec<ArpEvent>,
+    pub(crate) arp_queue: Vec<ArpEvent>,
     /// Cleared when the project changes so the next control block snaps instead
     /// of ramping from stale values.
-    controls_snapped: bool,
-    preview: Option<Box<SampleData>>,
-    preview_cursor: f64,
-    metronome: bool,
-    click_frames_left: u64,
-    click_length_frames: u64,
-    click_frequency: f32,
-    click_phase: f32,
-    rendered_frames: u64,
-    retired_project: Option<Box<Project>>,
+    pub(crate) controls_snapped: bool,
+    pub(crate) preview: Option<Box<SampleData>>,
+    pub(crate) preview_cursor: f64,
+    pub(crate) metronome: bool,
+    pub(crate) click_frames_left: u64,
+    pub(crate) click_length_frames: u64,
+    pub(crate) click_frequency: f32,
+    pub(crate) click_phase: f32,
+    pub(crate) rendered_frames: u64,
+    pub(crate) retired_project: Option<Box<Project>>,
     /// Decoded audio clips keyed by file path, shared by every clip that uses
     /// the same file.
-    clip_samples: HashMap<String, Arc<SampleData>>,
+    pub(crate) clip_samples: HashMap<String, Arc<SampleData>>,
     /// Live VST3/CLAP instances, keyed by host id (see `hosted::*_host_id`).
-    hosted: HashMap<u64, HostedSlot>,
+    pub(crate) hosted: HashMap<u64, HostedSlot>,
     /// Instrument ids that currently have a hosted generator.
-    hosted_instruments: Vec<usize>,
+    pub(crate) hosted_instruments: Vec<usize>,
 }
 
 impl AudioEngine {
-    fn new(mut project: Project, sample_rate: u32) -> Self {
+    pub(crate) fn new(mut project: Project, sample_rate: u32) -> Self {
         project.normalize();
         let instrument_count = project.instruments.len();
         let automation_track_count = project.automation_tracks.len();
@@ -627,7 +179,7 @@ impl AudioEngine {
     /// Re-creates the ramp lengths after the smoothing setting changes. A
     /// disabled smoother snaps straight to its target, which is exactly what a
     /// one-sample ramp does.
-    fn apply_smoothing_settings(&mut self) {
+    pub(crate) fn apply_smoothing_settings(&mut self) {
         let ramp = self.smoothing_samples.max(1);
         for value in self
             .lane_gain
@@ -673,7 +225,7 @@ impl AudioEngine {
     ///
     /// Existing ramps retarget smoothly; ramps created for the first time start
     /// at their target so a freshly loaded project never fades in from silence.
-    fn retarget_smoothing(&mut self) {
+    pub(crate) fn retarget_smoothing(&mut self) {
         let ramp = if self.smoothing_enabled {
             self.smoothing_samples.max(1)
         } else {
@@ -747,7 +299,7 @@ impl AudioEngine {
         self.master_pan.set_target(self.project.master.pan);
     }
 
-    fn resize_routing(&mut self) {
+    pub(crate) fn resize_routing(&mut self) {
         let lane_count = self.project.lanes.len() + 1;
         self.audio_clips
             .resize_with(self.project.lanes.len(), Vec::new);
@@ -828,7 +380,7 @@ impl AudioEngine {
 
     /// Groups enabled automation lanes by target. Rebuilt only when the
     /// project structure changes, never inside the sample loop.
-    fn rebuild_automation_index(&mut self) {
+    pub(crate) fn rebuild_automation_index(&mut self) {
         self.automation_index.clear();
         for (track_id, track) in self.project.automation_tracks.iter().enumerate() {
             if !track.enabled {
@@ -841,7 +393,7 @@ impl AudioEngine {
         }
     }
 
-    fn resize_effect_parameters(&mut self) {
+    pub(crate) fn resize_effect_parameters(&mut self) {
         self.effect_parameters.clear();
         self.effect_parameters
             .resize_with(self.project.lanes.len() + 1, Vec::new);
@@ -857,7 +409,7 @@ impl AudioEngine {
     /// Refresh the mixer values that can change without resizing anything.
     /// Keeping this path allocation-light avoids audio dropouts while the user
     /// drags knobs or automation points.
-    fn refresh_mix_state(&mut self) {
+    pub(crate) fn refresh_mix_state(&mut self) {
         self.eq_gains.clear();
         self.eq_gains.extend(
             self.project
@@ -898,7 +450,7 @@ impl AudioEngine {
 
     /// Rebuilds send edges while keeping their one-sample delay history, so
     /// editing the routing does not introduce clicks.
-    fn rebuild_send_edges(&mut self) {
+    pub(crate) fn rebuild_send_edges(&mut self) {
         normalize_sends(&mut self.project.sends);
         let mut previous = std::mem::take(&mut self.send_edges);
         self.send_edges.reserve(previous.len());
@@ -921,7 +473,7 @@ impl AudioEngine {
         }
     }
 
-    fn update_instrument_controls(&mut self, position: f64) {
+    pub(crate) fn update_instrument_controls(&mut self, position: f64) {
         self.instrument_controls.resize(
             self.project.instruments.len(),
             InstrumentControls::default(),
@@ -976,7 +528,7 @@ impl AudioEngine {
     /// Applies automation for targets that are not instrument/insert knobs:
     /// hosted plug-in parameters, mixer volume/pan and the tempo. These are
     /// pushed straight to their owner instead of being read by the renderer.
-    fn apply_global_automation(&mut self, position: f64) {
+    pub(crate) fn apply_global_automation(&mut self, position: f64) {
         for index in 0..self.project.automation_tracks.len() {
             let (enabled, target) = {
                 let track = &self.project.automation_tracks[index];
@@ -1140,13 +692,13 @@ impl AudioEngine {
     /// Per-control-block interpolation factor for parameters that are not
     /// driven by a `SmoothedValue`. One step of the control block relative to
     /// the configured smoothing time, clamped to a full jump.
-    fn control_smoothing_blend(&self) -> impl Fn(f32, f32) -> f32 {
+    pub(crate) fn control_smoothing_blend(&self) -> impl Fn(f32, f32) -> f32 {
         let ramp = self.smoothing_samples.max(1) as f32;
         let amount = (CONTROL_INTERVAL as f32 / ramp).clamp(0.0, 1.0);
         move |current: f32, target: f32| current + (target - current) * amount
     }
 
-    fn automated_value(&self, target: ParameterTarget, base_value: f32, position: f64) -> f32 {
+    pub(crate) fn automated_value(&self, target: ParameterTarget, base_value: f32, position: f64) -> f32 {
         let Some(lane_ids) = self.automation_index.get(&target) else {
             return base_value;
         };
@@ -1270,7 +822,7 @@ impl AudioEngine {
         target.denormalize_value(normalized.clamp(0.0, 1.0))
     }
 
-    fn lfo_phase(&self, track_id: usize, rate: TimeValue, retrigger: bool, position: f64) -> f32 {
+    pub(crate) fn lfo_phase(&self, track_id: usize, rate: TimeValue, retrigger: bool, position: f64) -> f32 {
         let elapsed = if retrigger {
             let start = self
                 .automation_runtime
@@ -1289,7 +841,7 @@ impl AudioEngine {
         cycles as f32
     }
 
-    fn midi_envelope_level(
+    pub(crate) fn midi_envelope_level(
         &self,
         track_id: usize,
         instrument_id: usize,
@@ -1336,7 +888,7 @@ impl AudioEngine {
         (state.release_level * (1.0 - release_elapsed / release_seconds)).clamp(0.0, 1.0)
     }
 
-    fn trigger_automation(&mut self, instrument_id: usize) {
+    pub(crate) fn trigger_automation(&mut self, instrument_id: usize) {
         self.automation_runtime.resize(
             self.project.automation_tracks.len(),
             AutomationRuntime::default(),
@@ -1374,7 +926,7 @@ impl AudioEngine {
         }
     }
 
-    fn release_automation(&mut self, instrument_id: usize) {
+    pub(crate) fn release_automation(&mut self, instrument_id: usize) {
         for track_id in 0..self.project.automation_tracks.len() {
             let source = self.project.automation_tracks[track_id].source.clone();
             let AutomationSource::MidiEnvelope {
@@ -1399,7 +951,7 @@ impl AudioEngine {
         }
     }
 
-    fn automate_effect_parameters(
+    pub(crate) fn automate_effect_parameters(
         &self,
         channel_id: usize,
         slot_id: usize,
@@ -1433,7 +985,7 @@ impl AudioEngine {
 
     /// Refreshes the cached insert-effect parameters for the current control
     /// block, so the sample loop only copies values it already has.
-    fn update_effect_parameters(&mut self, position: f64) {
+    pub(crate) fn update_effect_parameters(&mut self, position: f64) {
         let lane_count = self.project.lanes.len();
         for channel in 0..=lane_count {
             let slot_count = self.effect_parameters[channel].len();
@@ -1480,7 +1032,7 @@ impl AudioEngine {
 
     /// Runs one insert slot. Hosted inserts render through their block-buffered
     /// slot, built-in ones run their own DSP.
-    fn run_insert(&mut self, lane_id: usize, slot_id: usize, parameters: EffectParameters) {
+    pub(crate) fn run_insert(&mut self, lane_id: usize, slot_id: usize, parameters: EffectParameters) {
         let Some(processor) = self
             .effect_processors
             .get_mut(lane_id)
@@ -1505,7 +1057,7 @@ impl AudioEngine {
     }
 
     /// Mixes every hosted generator into its instrument's mixer lane.
-    fn render_hosted_instruments(&mut self, lane_count: usize) {
+    pub(crate) fn render_hosted_instruments(&mut self, lane_count: usize) {
         for index in 0..self.hosted_instruments.len() {
             let instrument_id = self.hosted_instruments[index];
             if !self.instrument_audible(instrument_id) {
@@ -1531,7 +1083,7 @@ impl AudioEngine {
         }
     }
 
-    fn render_frame(
+    pub(crate) fn render_frame(
         &mut self,
         receiver: &mpsc::Receiver<AudioCommand>,
         project_updates: &Mutex<Option<Box<Project>>>,
@@ -1833,7 +1385,7 @@ impl AudioEngine {
         output
     }
 
-    fn apply_pending(
+    pub(crate) fn apply_pending(
         &mut self,
         receiver: &mpsc::Receiver<AudioCommand>,
         project_updates: &Mutex<Option<Box<Project>>>,
@@ -1975,7 +1527,7 @@ impl AudioEngine {
         }
     }
 
-    fn apply_project(&mut self, mut project: Project) {
+    pub(crate) fn apply_project(&mut self, mut project: Project) {
         project.normalize();
         let old_project = std::mem::replace(&mut self.project, project);
         self.control_countdown = 0;
@@ -2105,17 +1657,17 @@ impl AudioEngine {
         self.retired_project = Some(Box::new(old_project));
     }
 
-    fn frames_per_step(&self) -> f64 {
+    pub(crate) fn frames_per_step(&self) -> f64 {
         self.sample_rate as f64 * 60.0 / f64::from(self.project.bpm) / 4.0
     }
 
     /// Fractional transport position in steps, used for smooth playhead
     /// animation on the UI thread.
-    fn playhead_position(&self) -> f64 {
+    pub(crate) fn playhead_position(&self) -> f64 {
         self.position_steps as f64 + self.frames_into_step / self.frames_per_step().max(1.0)
     }
 
-    fn trigger_step(&mut self, position_tick: u64) {
+    pub(crate) fn trigger_step(&mut self, position_tick: u64) {
         let position = position_tick / 16;
         let substep = (position_tick % 16) as u8;
         if self.metronome && substep == 0 && position % 4 == 0 {
@@ -2264,7 +1816,7 @@ impl AudioEngine {
 
     /// Expands a played note into arpeggiator events. Returns true when the
     /// instrument has an arpeggiator, so the original note must not sound.
-    fn schedule_arpeggio(&mut self, note: &PianoNote, lane_id: usize, tick: u64) -> bool {
+    pub(crate) fn schedule_arpeggio(&mut self, note: &PianoNote, lane_id: usize, tick: u64) -> bool {
         let Some(instrument) = self.project.instruments.get(note.instrument_id) else {
             return false;
         };
@@ -2306,7 +1858,7 @@ impl AudioEngine {
     }
 
     /// Starts every arpeggiator note due at `tick`.
-    fn drain_arpeggio(&mut self, tick: u64) {
+    pub(crate) fn drain_arpeggio(&mut self, tick: u64) {
         if self.arp_queue.is_empty() {
             return;
         }
@@ -2328,7 +1880,7 @@ impl AudioEngine {
         }
     }
 
-    fn trigger_instrument(&mut self, instrument_id: usize, mixer_lane: usize) {
+    pub(crate) fn trigger_instrument(&mut self, instrument_id: usize, mixer_lane: usize) {
         let Some(instrument) = self.project.instruments.get(instrument_id) else {
             return;
         };
@@ -2374,7 +1926,7 @@ impl AudioEngine {
         }
     }
 
-    fn next_audio_clips(&mut self, lane_id: usize) -> [f32; 2] {
+    pub(crate) fn next_audio_clips(&mut self, lane_id: usize) -> [f32; 2] {
         let mut output = [0.0; 2];
         if !self.playing {
             // A stopped transport must not keep streaming clips; rewind so the
@@ -2452,7 +2004,7 @@ impl AudioEngine {
     }
 
     /// Applies the instrument power switch and solo state.
-    fn instrument_audible(&self, instrument_id: usize) -> bool {
+    pub(crate) fn instrument_audible(&self, instrument_id: usize) -> bool {
         let Some(instrument) = self.project.instruments.get(instrument_id) else {
             return false;
         };
@@ -2463,7 +2015,7 @@ impl AudioEngine {
     }
 
     /// Applies the track power switch and solo state.
-    fn lane_audible(&self, lane_id: usize) -> bool {
+    pub(crate) fn lane_audible(&self, lane_id: usize) -> bool {
         let Some(lane) = self.project.lanes.get(lane_id) else {
             return false;
         };
@@ -2475,7 +2027,7 @@ impl AudioEngine {
 
     /// Frees the oldest voice for `instrument_id` when its configured limit is
     /// reached, so a low voice count actually constrains polyphony.
-    fn enforce_voice_limit(&mut self, instrument_id: usize) {
+    pub(crate) fn enforce_voice_limit(&mut self, instrument_id: usize) {
         let limit = self
             .project
             .instruments
@@ -2504,7 +2056,7 @@ impl AudioEngine {
         }
     }
 
-    fn start_voice(
+    pub(crate) fn start_voice(
         &mut self,
         instrument_id: usize,
         mixer_lane: usize,
@@ -2569,7 +2121,7 @@ impl AudioEngine {
         }
     }
 
-    fn handle_midi_note(&mut self, instrument_id: usize, note: u8, velocity: u8, on: bool) {
+    pub(crate) fn handle_midi_note(&mut self, instrument_id: usize, note: u8, velocity: u8, on: bool) {
         if instrument_id >= self.project.instruments.len() {
             return;
         }
@@ -2595,1094 +2147,3 @@ impl AudioEngine {
     }
 }
 
-fn update_effect_chain(
-    lane: usize,
-    slots: &[crate::project::InsertFxSlot],
-    processors: &mut Vec<Option<EffectProcessor>>,
-    sample_rate: u32,
-) {
-    processors.resize_with(slots.len(), || None);
-    processors.truncate(slots.len());
-    // A soloed insert silences the rest of the chain so it can be auditioned
-    // on its own, mirroring the track-level solo rule.
-    let any_solo = slots.iter().any(|slot| slot.solo && slot.enabled);
-    for (slot_index, (processor, slot)) in processors.iter_mut().zip(slots).enumerate() {
-        let wanted = if !slot.enabled || (any_solo && !slot.solo) {
-            None
-        } else if slot.is_external() {
-            Some(EffectProcessor::External(effect_host_id(lane, slot_index)))
-        } else {
-            BuiltinEffect::new(&slot.name, sample_rate).map(EffectProcessor::Builtin)
-        };
-        let same = match (&*processor, &wanted) {
-            (Some(current), Some(next)) => current.identity() == next.identity(),
-            (None, None) => true,
-            _ => false,
-        };
-        if !same {
-            *processor = wanted;
-        }
-    }
-}
-
-fn instrument_controls(instrument: &Instrument, bpm: f32) -> InstrumentControls {
-    let (cutoff_hz, resonance) = match instrument.synth_kind {
-        SynthKind::Ms20 => (instrument.ms20_cutoff_hz, instrument.ms20_resonance),
-        SynthKind::JunoPoly => (instrument.juno_cutoff_hz, instrument.juno_resonance),
-        _ => (1_800.0, 0.2),
-    };
-    InstrumentControls {
-        gain: instrument.gain,
-        pan: instrument.pan,
-        cutoff_hz,
-        resonance,
-        pulse_width: instrument.juno_pulse_width,
-        sub_level: instrument.juno_sub_level,
-        tone: instrument.m1_tone,
-        decay: TimeValue {
-            amount: match instrument.m1_decay_unit {
-                TimeUnit::Steps => instrument.m1_decay_steps,
-                TimeUnit::Milliseconds => instrument.m1_decay * 1000.0,
-            },
-            unit: instrument.m1_decay_unit,
-        }
-        .seconds(bpm)
-        .clamp(0.05, 4.0),
-        fm_ratio: instrument.fm_ratio,
-        fm_index: instrument.fm_index,
-    }
-}
-
-/// One random value in `-1..=1` per whole step of `phase`, held in between.
-/// `seed` lets independent lanes produce independent noise.
-pub fn sample_and_hold(phase: f32, seed: u32) -> f32 {
-    let cycle = phase.floor() as u32;
-    let mut value = cycle.wrapping_mul(0x9e37_79b9).wrapping_add(seed);
-    value ^= value >> 16;
-    value = value.wrapping_mul(0x85eb_ca6b);
-    value ^= value >> 13;
-    (value as f32 / u32::MAX as f32) * 2.0 - 1.0
-}
-
-fn lfo_wave(shape: LfoShape, phase: f32) -> f32 {
-    match shape {
-        LfoShape::Sine => (TAU * phase.fract()).sin(),
-        LfoShape::Triangle => 1.0 - 4.0 * (phase.fract() - 0.5).abs(),
-        LfoShape::Saw => phase.fract() * 2.0 - 1.0,
-        LfoShape::Square => {
-            if phase.fract() < 0.5 {
-                1.0
-            } else {
-                -1.0
-            }
-        }
-        LfoShape::SampleAndHold => sample_and_hold(phase, 0x7f4a_7c15),
-    }
-}
-
-/// True when two clip sources resolve to the same cached audio runtime, so a
-/// project update can keep the loaded sample in place instead of reloading.
-/// Queues every repeat of `note` that lands on `local_tick`.
-///
-/// Repeats wrap inside the pattern length, so a note repeat never escapes its
-/// pattern even when the note sits at the very end.
-fn push_note_triggers(
-    events: &mut Vec<TriggerEvent>,
-    note: &PianoNote,
-    local_tick: u64,
-    lane_id: usize,
-    pattern_length_steps: u64,
-) {
-    let pattern_ticks = pattern_length_steps.saturating_mul(16).max(16);
-    for (offset, velocity) in note.trigger_offsets() {
-        let tick = note.start_tick().saturating_add(offset) % pattern_ticks;
-        if tick == local_tick {
-            let mut triggered = *note;
-            triggered.velocity = velocity;
-            events.push(TriggerEvent::Note {
-                note: triggered,
-                lane_id,
-            });
-        }
-    }
-}
-
-fn clip_routes_match(left: &ClipSource, right: &ClipSource) -> bool {
-    match (left, right) {
-        (ClipSource::Pattern { pattern_id: left }, ClipSource::Pattern { pattern_id: right }) => {
-            left == right
-        }
-        (ClipSource::Audio { path: left }, ClipSource::Audio { path: right }) => left == right,
-        _ => false,
-    }
-}
-
-fn interpolate_sample(sample: &SampleData, cursor: f64) -> [f32; 2] {
-    let index = cursor as usize;
-    if index >= sample.frames.len() {
-        return [0.0; 2];
-    }
-    let next_index = (index + 1).min(sample.frames.len() - 1);
-    let fraction = (cursor - index as f64) as f32;
-    let current = sample.frames[index];
-    let next = sample.frames[next_index];
-    [
-        finite_sample(current[0] + (next[0] - current[0]) * fraction),
-        finite_sample(current[1] + (next[1] - current[1]) * fraction),
-    ]
-}
-
-fn waveform(waveform: SignalWaveform, phase: f32) -> f32 {
-    let cycle = (phase / TAU).fract();
-    match waveform {
-        SignalWaveform::Sine => phase.sin(),
-        SignalWaveform::Triangle => 1.0 - 4.0 * (cycle - 0.5).abs(),
-        SignalWaveform::Saw => cycle * 2.0 - 1.0,
-        SignalWaveform::Square => {
-            if cycle < 0.5 {
-                1.0
-            } else {
-                -1.0
-            }
-        }
-    }
-}
-
-fn eq_gains(low_db: f32, mid_db: f32, high_db: f32) -> [f32; 3] {
-    [
-        10.0_f32.powf(low_db.clamp(-12.0, 12.0) / 20.0),
-        10.0_f32.powf(mid_db.clamp(-12.0, 12.0) / 20.0),
-        10.0_f32.powf(high_db.clamp(-12.0, 12.0) / 20.0),
-    ]
-}
-
-fn process_eq(
-    input: [f32; 2],
-    state: &mut EqState,
-    gains: [f32; 3],
-    alpha_250: f32,
-    alpha_2k: f32,
-) -> [f32; 2] {
-    let mut output = [0.0; 2];
-    for channel in 0..2 {
-        state.low_250[channel] += alpha_250 * (input[channel] - state.low_250[channel]);
-        state.low_2k[channel] += alpha_2k * (input[channel] - state.low_2k[channel]);
-        let low = state.low_250[channel];
-        let mid = state.low_2k[channel] - low;
-        let high = input[channel] - state.low_2k[channel];
-        let value = low * gains[0] + mid * gains[1] + high * gains[2];
-        output[channel] = if value.is_finite() { value } else { 0.0 };
-    }
-    output
-}
-
-fn finite_sample(value: f32) -> f32 {
-    if value.is_finite() {
-        value.clamp(-1.0, 1.0)
-    } else {
-        0.0
-    }
-}
-
-pub fn read_wav(path: &str) -> Result<SampleData, String> {
-    let mut reader = hound::WavReader::open(path)
-        .map_err(|error| format!("Could not open WAV file: {error}"))?;
-    let spec = reader.spec();
-    if spec.channels == 0 {
-        return Err("The WAV file has no channels.".to_owned());
-    }
-
-    let values = match spec.sample_format {
-        hound::SampleFormat::Float => reader
-            .samples::<f32>()
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| format!("Could not decode WAV samples: {error}"))?,
-        hound::SampleFormat::Int => {
-            let scale = 2.0_f32.powi(i32::from(spec.bits_per_sample.saturating_sub(1)));
-            reader
-                .samples::<i32>()
-                .map(|sample| {
-                    sample
-                        .map(|value| value as f32 / scale)
-                        .map_err(|error| format!("Could not decode WAV samples: {error}"))
-                })
-                .collect::<Result<Vec<_>, _>>()?
-        }
-    };
-
-    let channels = usize::from(spec.channels);
-    let mut frames = Vec::with_capacity(values.len().div_ceil(channels));
-    for frame in values.chunks(channels) {
-        let left = finite_sample(frame[0]);
-        let right = if channels > 1 {
-            finite_sample(frame[1])
-        } else {
-            left
-        };
-        frames.push([left, right]);
-    }
-    if frames.is_empty() {
-        return Err("The WAV file contains no audio frames.".to_owned());
-    }
-    Ok(SampleData {
-        sample_rate: spec.sample_rate,
-        frames,
-    })
-}
-
-pub fn render_project_to_wav(project: &Project, path: &str) -> Result<u64, String> {
-    const SAMPLE_RATE: u32 = 44_100;
-    let mut engine = AudioEngine::new(project.clone(), SAMPLE_RATE);
-    for (instrument_id, instrument) in engine.project.instruments.iter().enumerate() {
-        if !instrument.sample_path.trim().is_empty() {
-            engine.instrument_samples[instrument_id] = Some(read_wav(&instrument.sample_path)?);
-        }
-    }
-    for (lane_id, lane) in engine.project.lanes.iter().enumerate() {
-        for (clip_index, clip) in lane.clips.iter().enumerate() {
-            if let ClipSource::Audio { path } = &clip.source {
-                engine.audio_clips[lane_id][clip_index].sample = Some(Arc::new(read_wav(path)?));
-            }
-        }
-    }
-    let end_step = engine
-        .project
-        .lanes
-        .iter()
-        .flat_map(|lane| &lane.clips)
-        .map(|clip| clip.start_step.saturating_add(clip.length_steps))
-        .max()
-        .ok_or_else(|| "Add an arrangement clip before rendering.".to_owned())?;
-    let frames_per_step = engine.frames_per_step();
-    let render_frames = (end_step as f64 * frames_per_step).ceil() + f64::from(SAMPLE_RATE) * 2.0;
-    if !render_frames.is_finite() || render_frames > usize::MAX as f64 {
-        return Err("The arrangement is too long to render on this system.".to_owned());
-    }
-    let render_frames = render_frames as usize;
-    let spec = hound::WavSpec {
-        channels: 2,
-        sample_rate: SAMPLE_RATE,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let mut writer = hound::WavWriter::create(path, spec).map_err(|error| error.to_string())?;
-    let (_sender, receiver) = mpsc::channel();
-    let project_updates = Mutex::new(None);
-    engine.playing = true;
-    for _ in 0..render_frames {
-        let frame = engine.render_frame(&receiver, &project_updates);
-        for sample in frame {
-            let sample = if sample.is_finite() {
-                sample.clamp(-1.0, 1.0)
-            } else {
-                0.0
-            };
-            writer
-                .write_sample((sample * f32::from(i16::MAX)) as i16)
-                .map_err(|error| error.to_string())?;
-        }
-    }
-    writer.finalize().map_err(|error| error.to_string())?;
-    Ok(render_frames as u64)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::project::{ArrangementClip, Pattern, TimeSignature};
-
-    fn empty_project_updates() -> Mutex<Option<Box<Project>>> {
-        Mutex::new(None)
-    }
-
-    #[test]
-    fn sample_and_hold_lfo_changes_only_at_cycle_boundaries() {
-        let held = lfo_wave(LfoShape::SampleAndHold, 2.0);
-        assert_eq!(held, lfo_wave(LfoShape::SampleAndHold, 2.75));
-        assert_ne!(held, lfo_wave(LfoShape::SampleAndHold, 3.0));
-    }
-
-    #[test]
-    fn selected_pattern_playback_uses_instrument_mixer_lane() {
-        let mut project = Project::default();
-        project.patterns[0].step_hits.push(crate::project::StepHit {
-            instrument_id: 0,
-            step: 0,
-        });
-        project.instruments[0].default_mixer_lane = 2;
-        let mut engine = AudioEngine::new(project, 48_000);
-        engine.selected_pattern = Some(0);
-        engine.trigger_step(0);
-        assert!(engine.trigger_events.iter().any(|event| matches!(
-            event,
-            TriggerEvent::InstrumentHit {
-                instrument_id: 0,
-                lane_id: 2
-            }
-        )));
-    }
-
-    #[test]
-    fn arrangement_loop_wraps_playhead_at_end_step() {
-        let mut engine = AudioEngine::new(Project::default(), 48_000);
-        engine.playing = true;
-        engine.position_steps = 3;
-        engine.loop_range = Some((2, 4));
-        engine.frames_into_step = engine.frames_per_step() - 1.0;
-        let (_sender, receiver) = mpsc::channel();
-        engine.render_frame(&receiver, &empty_project_updates());
-        assert_eq!(engine.position_steps, 2);
-    }
-
-    #[test]
-    fn stopping_playback_releases_ringing_voices() {
-        let mut project = Project::default();
-        project.instruments[0].synth_kind = SynthKind::Sine;
-        project.instruments[0].synth_enabled = true;
-        let mut engine = AudioEngine::new(project, 48_000);
-        engine.playing = true;
-        engine.start_voice(0, 0, 60, 110, Some(64));
-        assert!(
-            engine
-                .voices
-                .iter()
-                .any(|voice| voice.active && !voice.released)
-        );
-
-        let (sender, receiver) = mpsc::channel();
-        sender.send(AudioCommand::SetPlaying(false)).unwrap();
-        engine.apply_pending(&receiver, &empty_project_updates());
-
-        assert!(!engine.playing);
-        assert!(
-            engine
-                .voices
-                .iter()
-                .filter(|voice| voice.active)
-                .all(|voice| voice.released),
-            "voices kept ringing after stop"
-        );
-    }
-
-    #[test]
-    fn default_drum_samples_are_non_silent_and_finite() {
-        for kind in [
-            DefaultSample::Kick,
-            DefaultSample::Snare,
-            DefaultSample::HiHat,
-        ] {
-            let sample = SampleData::default_drum(kind, 48_000).unwrap();
-            assert!(!sample.frames.is_empty());
-            assert!(
-                sample
-                    .frames
-                    .iter()
-                    .flatten()
-                    .all(|frame| frame.is_finite())
-            );
-            let peak = sample
-                .frames
-                .iter()
-                .flatten()
-                .map(|frame| frame.abs())
-                .fold(0.0_f32, f32::max);
-            assert!(peak > 0.01, "{kind:?} sample is silent");
-        }
-        assert!(SampleData::default_drum(DefaultSample::None, 48_000).is_none());
-    }
-
-    #[test]
-    fn offline_wav_render_writes_a_stereo_file_with_audio() {
-        let mut project = Project::default();
-        project.lanes[0].clips[0].length_steps = 16;
-        let path =
-            std::env::temp_dir().join(format!("pulseforge-render-{}.wav", std::process::id()));
-        let frames = render_project_to_wav(&project, path.to_str().unwrap()).unwrap();
-        let mut reader = hound::WavReader::open(&path).unwrap();
-        assert_eq!(reader.spec().channels, 2);
-        assert_eq!(reader.spec().sample_rate, 44_100);
-        assert_eq!(reader.duration(), frames as u32);
-        assert!(
-            reader
-                .samples::<i16>()
-                .take(44_100)
-                .any(|sample| sample.unwrap().unsigned_abs() > 0)
-        );
-        drop(reader);
-        std::fs::remove_file(path).unwrap();
-    }
-
-    #[test]
-    fn ms20_instrument_reuses_a_single_voice() {
-        let mut project = Project::default();
-        project.instruments[0].synth_enabled = true;
-        project.instruments[0].synth_kind = SynthKind::Ms20;
-        let mut engine = AudioEngine::new(project, 48_000);
-
-        engine.start_voice(0, 0, 60, 100, None);
-        engine.start_voice(0, 0, 67, 100, None);
-
-        let active: Vec<_> = engine
-            .voices
-            .iter()
-            .filter(|voice| voice.active && voice.instrument_id == 0)
-            .collect();
-        assert_eq!(active.len(), 1);
-        assert_eq!(active[0].note, 67);
-    }
-
-    #[test]
-    fn classic_synth_models_render_finite_audio() {
-        for kind in [
-            SynthKind::JunoPoly,
-            SynthKind::M1Workstation,
-            SynthKind::FmSynth,
-        ] {
-            let mut project = Project::default();
-            project.instruments[0].synth_enabled = true;
-            project.instruments[0].synth_kind = kind;
-            let mut engine = AudioEngine::new(project, 48_000);
-            engine.start_voice(0, 0, 60, 110, None);
-            let (_sender, receiver) = mpsc::channel();
-            let mut peak = 0.0_f32;
-            for _ in 0..100 {
-                let output = engine.render_frame(&receiver, &empty_project_updates());
-                assert!(output.into_iter().all(f32::is_finite));
-                peak = peak.max(output[0].abs()).max(output[1].abs());
-            }
-            assert!(peak > 0.0001, "{kind:?} produced silence");
-            if kind == SynthKind::JunoPoly {
-                let voice = engine
-                    .voices
-                    .iter()
-                    .find(|voice| voice.active && voice.instrument_id == 0)
-                    .unwrap();
-                assert!((voice.phase - 2.0 * voice.sub_phase).abs() < 0.001);
-            }
-        }
-    }
-
-    #[test]
-    fn instrument_automation_updates_audio_rate_controls() {
-        let target = ParameterTarget::Instrument {
-            instrument_id: 0,
-            parameter: InstrumentParameter::CutoffHz,
-        };
-        let mut project = Project::default();
-        project.instruments[0].synth_kind = SynthKind::JunoPoly;
-        project
-            .automation_tracks
-            .push(crate::project::AutomationTrack {
-                target,
-                points: vec![
-                    crate::project::AutomationPoint {
-                        step: 0,
-                        value: 0.0,
-                        curve: crate::project::AutomationCurve::Linear,
-                    },
-                    crate::project::AutomationPoint {
-                        step: 16,
-                        value: 1.0,
-                        curve: crate::project::AutomationCurve::Linear,
-                    },
-                ],
-                ..Default::default()
-            });
-        project.normalize();
-        let mut engine = AudioEngine::new(project, 48_000);
-
-        engine.update_instrument_controls(8.0);
-
-        assert!((engine.instrument_controls[0].cutoff_hz - 8_020.0).abs() < 0.1);
-    }
-
-    #[test]
-    fn control_rate_automation_reaches_the_instrument_within_one_block() {
-        let target = ParameterTarget::Instrument {
-            instrument_id: 0,
-            parameter: InstrumentParameter::CutoffHz,
-        };
-        let mut project = Project::default();
-        project.instruments[0].synth_kind = SynthKind::JunoPoly;
-        project
-            .automation_tracks
-            .push(crate::project::AutomationTrack {
-                target,
-                points: vec![
-                    crate::project::AutomationPoint {
-                        step: 0,
-                        value: 0.0,
-                        curve: crate::project::AutomationCurve::Linear,
-                    },
-                    crate::project::AutomationPoint {
-                        step: 16,
-                        value: 1.0,
-                        curve: crate::project::AutomationCurve::Linear,
-                    },
-                ],
-                ..Default::default()
-            });
-        project.normalize();
-        let mut engine = AudioEngine::new(project, 48_000);
-        engine.playing = true;
-        let (_sender, receiver) = mpsc::channel();
-        let resting = engine.instrument_controls[0].cutoff_hz;
-        for _ in 0..CONTROL_INTERVAL + 1 {
-            engine.render_frame(&receiver, &empty_project_updates());
-        }
-        let moved = engine.instrument_controls[0].cutoff_hz;
-        assert!(
-            (moved - resting).abs() > 1.0,
-            "control-rate automation did not update the instrument ({resting} -> {moved})"
-        );
-        assert!(!engine.automation_index.is_empty());
-    }
-
-    #[test]
-    fn disabled_automation_lanes_are_skipped_by_the_index() {
-        let mut project = Project::default();
-        project
-            .automation_tracks
-            .push(crate::project::AutomationTrack {
-                target: ParameterTarget::Instrument {
-                    instrument_id: 0,
-                    parameter: InstrumentParameter::Gain,
-                },
-                enabled: false,
-                ..Default::default()
-            });
-        project.normalize();
-        let engine = AudioEngine::new(project, 48_000);
-        assert!(engine.automation_index.is_empty());
-    }
-
-    #[test]
-    fn metronome_clicks_without_any_instrument_content() {
-        let project = Project::default();
-        let mut engine = AudioEngine::new(project, 48_000);
-        let (sender, receiver) = mpsc::channel();
-        sender.send(AudioCommand::SetMetronome(true)).unwrap();
-        sender.send(AudioCommand::SetPlaying(true)).unwrap();
-        engine.apply_pending(&receiver, &empty_project_updates());
-        let mut peak = 0.0_f32;
-        for _ in 0..64 {
-            let output = engine.render_frame(&receiver, &empty_project_updates());
-            assert!(output.into_iter().all(f32::is_finite));
-            peak = peak.max(output[0].abs());
-        }
-        assert!(peak > 0.0005, "metronome produced no click");
-    }
-
-    #[test]
-    fn unchanged_project_updates_keep_audio_runtimes_in_place() {
-        let mut project = Project::default();
-        project.lanes[0].clips.push(ArrangementClip {
-            start_step: 0,
-            length_steps: 16,
-            offset_steps: 0,
-            source: ClipSource::Audio {
-                path: "held.wav".to_owned(),
-            },
-            ..ArrangementClip::default()
-        });
-        project.normalize();
-        let mut engine = AudioEngine::new(project.clone(), 48_000);
-        engine.audio_clips[0][0].sample = Some(Arc::new(SampleData {
-            sample_rate: 48_000,
-            frames: vec![[0.5, 0.5]],
-        }));
-        let original_len = engine.audio_clips[0].len();
-
-        let mut edited = project;
-        edited.lanes[0].gain = 0.42;
-        engine.apply_project(edited);
-
-        assert_eq!(engine.audio_clips[0].len(), original_len);
-        assert!(
-            engine.audio_clips[0][0].sample.is_some(),
-            "a non-structural project edit dropped the loaded sample"
-        );
-    }
-
-    #[test]
-    fn duplicated_audio_clips_share_one_loaded_sample() {
-        let mut project = Project::default();
-        project.lanes[0].clips.clear();
-        project.lanes[0].clips.push(ArrangementClip {
-            start_step: 0,
-            length_steps: 16,
-            offset_steps: 0,
-            source: ClipSource::Audio {
-                path: "shared.wav".to_owned(),
-            },
-            ..ArrangementClip::default()
-        });
-        project.normalize();
-        let mut engine = AudioEngine::new(project.clone(), 48_000);
-        engine.audio_clips[0][0].sample = Some(Arc::new(SampleData {
-            sample_rate: 48_000,
-            frames: vec![[0.1, 0.1]],
-        }));
-
-        let mut duplicated = project;
-        duplicated.lanes[0].clips.push(ArrangementClip {
-            start_step: 16,
-            length_steps: 16,
-            offset_steps: 0,
-            source: ClipSource::Audio {
-                path: "shared.wav".to_owned(),
-            },
-            ..ArrangementClip::default()
-        });
-        engine.apply_project(duplicated);
-
-        assert_eq!(engine.audio_clips[0].len(), 2);
-        for runtime in &engine.audio_clips[0] {
-            assert!(
-                runtime.sample.is_some(),
-                "a duplicated audio clip lost its sample"
-            );
-        }
-        assert!(Arc::ptr_eq(
-            engine.audio_clips[0][0].sample.as_ref().unwrap(),
-            engine.audio_clips[0][1].sample.as_ref().unwrap()
-        ));
-    }
-
-    #[test]
-    fn audio_clips_start_from_their_source_offset() {
-        let mut project = Project {
-            bpm: 120.0,
-            ..Project::default()
-        };
-        project.lanes[0].clips.clear();
-        project.lanes[0].clips.push(ArrangementClip {
-            start_step: 0,
-            length_steps: 16,
-            offset_steps: 4,
-            source: ClipSource::Audio {
-                path: "offset.wav".to_owned(),
-            },
-            ..ArrangementClip::default()
-        });
-        project.normalize();
-        let mut engine = AudioEngine::new(project, 48_000);
-        engine.audio_clips[0][0].sample = Some(Arc::new(SampleData {
-            sample_rate: 48_000,
-            frames: vec![[0.1, 0.1]; 48_000],
-        }));
-
-        engine.trigger_step(0);
-
-        assert!(engine.audio_clips[0][0].active);
-        // 4 steps at 120 BPM is 0.5 s, which is 24 000 frames at 48 kHz.
-        assert!((engine.audio_clips[0][0].cursor - 24_000.0).abs() < 1.0);
-    }
-
-    #[test]
-    fn note_repeats_queue_one_trigger_per_repeat() {
-        let mut project = Project::default();
-        project.instruments[0].synth_enabled = true;
-        project.patterns[0].notes = vec![PianoNote {
-            instrument_id: 0,
-            pitch: 60,
-            velocity: 100,
-            duration_steps: 1,
-            repeat_count: 2,
-            repeat_ticks: 4,
-            repeat_decay: 10,
-            ..PianoNote::default()
-        }];
-        project.normalize();
-        let mut engine = AudioEngine::new(project, 48_000);
-        engine.trigger_step(0);
-        let at_zero = engine
-            .trigger_events
-            .iter()
-            .filter(|event| matches!(event, TriggerEvent::Note { .. }))
-            .count();
-        assert_eq!(at_zero, 1, "the first repeat fires on the note start");
-
-        engine.trigger_step(4);
-        let at_four = engine
-            .trigger_events
-            .iter()
-            .filter(|event| matches!(event, TriggerEvent::Note { note, .. } if note.velocity == 90))
-            .count();
-        assert_eq!(at_four, 1, "the second repeat fires four ticks later");
-    }
-
-    #[test]
-    fn disabling_smoothing_snaps_mixer_gain_immediately() {
-        let project = Project::default();
-        let mut engine = AudioEngine::new(project, 48_000);
-        assert!(engine.smoothing_enabled);
-        let (sender, receiver) = mpsc::channel();
-        sender
-            .send(AudioCommand::SetSmoothing {
-                enabled: false,
-                milliseconds: 50.0,
-            })
-            .unwrap();
-        engine.apply_pending(&receiver, &empty_project_updates());
-        assert!(!engine.smoothing_enabled);
-        // With smoothing off, one rendered frame reaches the new target.
-        let mut project = engine.project.clone();
-        project.lanes[0].gain = 0.1;
-        engine.apply_project(project);
-        engine.render_frame(&receiver, &empty_project_updates());
-        assert!((engine.lane_gain[0].value() - 0.1).abs() < 1e-5);
-    }
-
-    #[test]
-    fn smoothing_ramps_toward_a_new_gain_over_several_frames() {
-        let mut project = Project::default();
-        project.instruments[0].synth_enabled = true;
-        project.normalize();
-        let mut engine = AudioEngine::new(project, 48_000);
-        let (sender, receiver) = mpsc::channel();
-        sender
-            .send(AudioCommand::SetSmoothing {
-                enabled: true,
-                milliseconds: 40.0,
-            })
-            .unwrap();
-        engine.apply_pending(&receiver, &empty_project_updates());
-        let mut changed = engine.project.clone();
-        changed.lanes[0].gain = 0.2;
-        engine.apply_project(changed);
-        engine.render_frame(&receiver, &empty_project_updates());
-        let after_one = engine.lane_gain[0].value();
-        assert!(
-            after_one > 0.2 && after_one < 0.8,
-            "gain should be mid-ramp, got {after_one}"
-        );
-        for _ in 0..4_000 {
-            engine.render_frame(&receiver, &empty_project_updates());
-        }
-        assert!((engine.lane_gain[0].value() - 0.2).abs() < 1e-4);
-    }
-
-    #[test]
-    fn preview_sample_plays_through_the_master_bus() {
-        let project = Project::default();
-        let mut engine = AudioEngine::new(project, 48_000);
-        let (sender, receiver) = mpsc::channel();
-        sender
-            .send(AudioCommand::PreviewSample(Box::new(SampleData {
-                sample_rate: 48_000,
-                frames: vec![[0.5, 0.5]; 480],
-            })))
-            .unwrap();
-        engine.apply_pending(&receiver, &empty_project_updates());
-        let output = engine.render_frame(&receiver, &empty_project_updates());
-        assert!(output[0].abs() > 0.1, "preview sample was inaudible");
-        for _ in 0..600 {
-            engine.render_frame(&receiver, &empty_project_updates());
-        }
-        assert!(engine.preview.is_none(), "preview sample did not finish");
-    }
-
-    #[test]
-    fn audio_clips_play_when_the_transport_starts_inside_them() {
-        let mut project = Project {
-            bpm: 120.0,
-            ..Project::default()
-        };
-        project.lanes[0].clips.clear();
-        project.lanes[0].clips.push(ArrangementClip {
-            start_step: 8,
-            length_steps: 8,
-            offset_steps: 0,
-            source: ClipSource::Audio {
-                path: "mid.wav".to_owned(),
-            },
-            ..ArrangementClip::default()
-        });
-        project.normalize();
-        let mut engine = AudioEngine::new(project, 48_000);
-        engine.audio_clips[0][0].sample = Some(Arc::new(SampleData {
-            sample_rate: 48_000,
-            frames: vec![[0.5, 0.5]; 48_000],
-        }));
-        engine.playing = true;
-        // Transport jumps into the middle of the clip: step 10 of 8..16.
-        engine.position_steps = 10;
-
-        let output = engine.next_audio_clips(0);
-
-        assert!(engine.audio_clips[0][0].active);
-        assert!(
-            output[0].abs() > 0.1,
-            "clip was silent when starting mid-clip"
-        );
-        // Two steps at 120 BPM is 0.25 s, which is 12 000 frames at 48 kHz.
-        assert!((engine.audio_clips[0][0].cursor - 12_000.0).abs() < 2.0);
-    }
-
-    #[test]
-    fn audio_clips_rewind_after_leaving_their_range() {
-        let mut project = Project::default();
-        project.lanes[0].clips.clear();
-        project.lanes[0].clips.push(ArrangementClip {
-            start_step: 0,
-            length_steps: 4,
-            offset_steps: 0,
-            source: ClipSource::Audio {
-                path: "short.wav".to_owned(),
-            },
-            ..ArrangementClip::default()
-        });
-        project.normalize();
-        let mut engine = AudioEngine::new(project, 48_000);
-        engine.audio_clips[0][0].sample = Some(Arc::new(SampleData {
-            sample_rate: 48_000,
-            frames: vec![[0.5, 0.5]; 1_000],
-        }));
-        engine.playing = true;
-        engine.position_steps = 0;
-        let _ = engine.next_audio_clips(0);
-        engine.position_steps = 9;
-        let _ = engine.next_audio_clips(0);
-        assert!(!engine.audio_clips[0][0].active);
-        assert!(!engine.audio_clips[0][0].finished);
-        assert_eq!(engine.audio_clips[0][0].cursor, 0.0);
-    }
-
-    #[test]
-    fn muted_instruments_and_tracks_stay_silent() {
-        let mut project = Project::default();
-        project.instruments[0].synth_enabled = true;
-        project.instruments[0].enabled = false;
-        project.normalize();
-        let mut engine = AudioEngine::new(project, 48_000);
-        engine.playing = true;
-        assert!(!engine.instrument_audible(0));
-
-        let mut project = engine.project.clone();
-        project.instruments[0].enabled = true;
-        project.lanes[0].enabled = false;
-        engine.apply_project(project);
-        assert!(engine.instrument_audible(0));
-        assert!(!engine.lane_audible(0));
-    }
-
-    #[test]
-    fn soloing_one_instrument_silences_the_others() {
-        let mut project = Project::default();
-        project.instruments[1].solo = true;
-        project.normalize();
-        let engine = AudioEngine::new(project, 48_000);
-        assert!(!engine.instrument_audible(0));
-        assert!(engine.instrument_audible(1));
-    }
-
-    #[test]
-    fn arpeggiator_schedules_one_note_per_rate_step() {
-        let mut project = Project {
-            bpm: 120.0,
-            ..Project::default()
-        };
-        project.instruments[0].synth_enabled = true;
-        project.instruments[0].arpeggio.enabled = true;
-        project.instruments[0].arpeggio.octaves = 2;
-        project.patterns[0].notes = vec![PianoNote {
-            instrument_id: 0,
-            pitch: 60,
-            velocity: 100,
-            duration_steps: 4,
-            ..PianoNote::default()
-        }];
-        project.normalize();
-        let mut engine = AudioEngine::new(project, 48_000);
-        engine.trigger_step(0);
-        // Two octaves over four steps => more than one scheduled event.
-        assert!(
-            engine.arp_queue.len() > 1,
-            "arpeggiator scheduled {} events",
-            engine.arp_queue.len()
-        );
-        assert!(engine.arp_queue.iter().all(|event| event.at_tick % 16 == 0));
-    }
-
-    #[test]
-    fn external_generators_do_not_fall_back_to_a_builtin_voice() {
-        let mut project = Project::default();
-        project.instruments[0].synth_enabled = true;
-        project.instruments[0].synth_kind = SynthKind::External;
-        project.instruments[0].plugin_path = "C:/Plugins/Thing.vst3".to_owned();
-        project.normalize();
-        assert_eq!(project.instruments[0].synth_kind, SynthKind::External);
-        let mut engine = AudioEngine::new(project, 48_000);
-        engine.start_voice(0, 0, 60, 110, None);
-        assert!(
-            !engine
-                .voices
-                .iter()
-                .any(|voice| voice.active && voice.instrument_id == 0),
-            "an external plug-in must not allocate a built-in voice"
-        );
-    }
-
-    #[test]
-    fn signal_generator_waveforms_stay_in_unit_range() {
-        for shape in [
-            SignalWaveform::Sine,
-            SignalWaveform::Triangle,
-            SignalWaveform::Saw,
-            SignalWaveform::Square,
-        ] {
-            for step in 0..512 {
-                let phase = TAU * step as f32 / 512.0;
-                let sample = waveform(shape, phase);
-                assert!((-1.0..=1.0).contains(&sample));
-            }
-        }
-    }
-
-    #[test]
-    fn pattern_clip_routes_note_to_its_arrangement_lane() {
-        let mut project = Project::default();
-        project.add_lane();
-        project.lanes[1].name = "Second".to_owned();
-        project.instruments[3].default_mixer_lane = 0;
-        project.patterns = vec![Pattern {
-            name: "Notes".to_owned(),
-            length_steps: 16,
-            notes: vec![PianoNote {
-                repeat_count: 0,
-                repeat_ticks: 0,
-                repeat_decay: 0,
-                instrument_id: 3,
-                start_step: 0,
-                start_substep: 0,
-                duration_steps: 4,
-                duration_substeps: 0,
-                pitch: 60,
-                velocity: 100,
-            }],
-            ..Pattern::default()
-        }];
-        project.lanes[1].clips.push(ArrangementClip {
-            start_step: 0,
-            length_steps: 16,
-            source: ClipSource::Pattern { pattern_id: 0 },
-            offset_steps: 0,
-            ..ArrangementClip::default()
-        });
-        project.normalize();
-
-        let mut engine = AudioEngine::new(project, 48_000);
-        engine.playing = true;
-        engine.trigger_step(0);
-        let voice = engine.voices.iter().find(|voice| voice.active).unwrap();
-        assert_eq!(voice.mixer_lane, 1);
-    }
-
-    #[test]
-    fn master_bus_receives_routed_audio_and_drives_the_output_meter() {
-        let project = Project::default();
-        let master_index = project.lanes.len();
-        let mut engine = AudioEngine::new(project, 48_000);
-        let edge = engine
-            .send_edges
-            .iter_mut()
-            .find(|edge| edge.source == 0 && edge.destination == master_index)
-            .unwrap();
-        edge.delayed = [0.4, -0.3];
-        let (_sender, receiver) = mpsc::channel();
-
-        let output = engine.render_frame(&receiver, &empty_project_updates());
-
-        assert!((output[0] - 0.4).abs() < 0.001);
-        assert!((output[1] + 0.3).abs() < 0.001);
-        assert!(engine.meter_levels[master_index] > 0.39);
-    }
-
-    #[test]
-    fn project_updates_keep_audio_samples_attached_when_clips_move_lanes() {
-        let mut project = Project::default();
-        project.lanes[0].clips.push(ArrangementClip {
-            start_step: 16,
-            length_steps: 16,
-            offset_steps: 0,
-            source: ClipSource::Audio {
-                path: "existing.wav".to_owned(),
-            },
-            ..ArrangementClip::default()
-        });
-        project.normalize();
-        let mut engine = AudioEngine::new(project.clone(), 48_000);
-        let existing_index = project.lanes[0]
-            .clips
-            .iter()
-            .position(
-                |clip| matches!(&clip.source, ClipSource::Audio { path } if path == "existing.wav"),
-            )
-            .unwrap();
-        engine.audio_clips[0][existing_index].sample = Some(Arc::new(SampleData {
-            sample_rate: 48_000,
-            frames: vec![[0.25, 0.25]],
-        }));
-
-        let moved_clip = project.lanes[0].clips.remove(existing_index);
-        project.lanes[1].clips.push(moved_clip);
-        project.lanes[0].clips.push(ArrangementClip {
-            start_step: 0,
-            length_steps: 8,
-            offset_steps: 0,
-            source: ClipSource::Audio {
-                path: "new.wav".to_owned(),
-            },
-            ..ArrangementClip::default()
-        });
-        project.normalize();
-        let (sender, receiver) = mpsc::channel();
-        assert!(
-            sender
-                .send(AudioCommand::SetProject(Box::new(project.clone())))
-                .is_ok()
-        );
-        engine.apply_pending(&receiver, &empty_project_updates());
-
-        let moved_index = project.lanes[1]
-            .clips
-            .iter()
-            .position(
-                |clip| matches!(&clip.source, ClipSource::Audio { path } if path == "existing.wav"),
-            )
-            .unwrap();
-        assert!(engine.audio_clips[1][moved_index].sample.is_some());
-    }
-
-    #[test]
-    fn time_signature_changes_bar_steps_not_step_clock() {
-        let project = Project {
-            time_signature: TimeSignature {
-                numerator: 7,
-                denominator: 8,
-            },
-            ..Project::default()
-        };
-        let engine = AudioEngine::new(project, 48_000);
-        assert!((engine.frames_per_step() - 6000.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn equalizer_is_flat_at_zero_and_changes_tonal_gain() {
-        let mut state = EqState::default();
-        let flat = process_eq([0.25, 0.25], &mut state, eq_gains(0.0, 0.0, 0.0), 0.1, 0.5);
-        assert!((flat[0] - 0.25).abs() < 0.00001);
-
-        let mut state = EqState::default();
-        let boosted = process_eq([1.0, 1.0], &mut state, eq_gains(0.0, 0.0, 12.0), 0.1, 0.5);
-        assert!(boosted[0] > 2.0);
-    }
-
-    #[test]
-    fn invalid_sample_values_are_silenced() {
-        assert_eq!(finite_sample(f32::NAN), 0.0);
-        assert_eq!(finite_sample(f32::INFINITY), 0.0);
-        assert_eq!(finite_sample(2.0), 1.0);
-    }
-}

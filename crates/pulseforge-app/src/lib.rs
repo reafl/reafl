@@ -32,8 +32,8 @@ use pulseforge_profiling::{
 use pulseforge_settings::{cli, settings};
 use pulseforge_tasks as tasks;
 use pulseforge_widgets::{
-    anim, automation_bridge, context_menu, control, effect_parameters, eq_curve, fader,
-    fader_math, icons, knob, lane_slider, meter, mixer_strip, power, presets, shape, theme,
+    anim, automation_bridge, context_menu, control, effect_parameters, eq_curve,
+    icons, knob, lane_slider, mixer_strip, power, presets, theme,
     time_edit, tooltip,
 };
 
