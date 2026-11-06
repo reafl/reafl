@@ -25,6 +25,8 @@
 //! # }
 //! ```
 
+#![warn(missing_docs)]
+
 use eframe::egui;
 use pulseforge_core::project::ParameterTarget;
 

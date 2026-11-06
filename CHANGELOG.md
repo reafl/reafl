@@ -14,9 +14,19 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
   `pulseforge-widgets` (all shared egui drawing), `pulseforge-settings`
   (settings + CLI), `pulseforge-tasks` (background jobs) and `pulseforge-app`
   (the editor). The `pulseforge` binary is now a thin `run()` call.
+- `pulseforge-core` is modularised: `project/` holds `model` (data), `behaviour`
+  (normalising, automation lookup, lane edits) and tests, while `audio/` holds
+  `model` (samples, commands, voices), `engine` (the renderer), `dsp` (free
+  helpers and WAV I/O) and tests.
+- `pulseforge-plugins` built-ins are now one module per processor behind a
+  `BuiltinProcessor` trait: `builtin/{eq,reverb,delay,modulation,waveshaper,params}.rs`,
+  with `BuiltinEffect` only dispatching, so a new effect is one file plus one
+  line in the constructor.
 - `pulseforge-app` no longer holds one giant file: the `PulseForgeApp` methods
   live in `views/{arrangement,automation,mixer,panels,piano,plugins,rack,settings,toolbar}.rs`
-  plus `actions.rs`, with the shared helpers in `geometry`, `labels` and `snap`.
+  plus `actions`, `app_setup`, `automation_actions`, `automation_display`, `clips`,
+  `hosting`, `input`, `instruments`, `project_io`, `samples`, `selection`,
+  `transport`, and the shared helpers in `geometry`, `labels`, `snap`.
 - New `pulseforge_widgets::control::ValueControl`: one control type for sliders,
   knobs, number boxes, toggles and enums, each bound to a `&mut` value with an
   optional `ParameterTarget` (automation ring, live value, lane menu) and an

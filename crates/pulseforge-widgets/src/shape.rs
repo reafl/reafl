@@ -6,6 +6,8 @@
 //! say *where* its points are, and every view gets identical hit testing and
 //! identical markers.
 
+#![warn(missing_docs)]
+
 use eframe::egui;
 use pulseforge_core::project::{AutomationPoint, ThreeBandEq};
 

@@ -14,6 +14,9 @@
 //! - [`control`] is the one control type every window can use, and [`shape`]
 //!   draws the points and curves - lanes, EQ responses and routing cables - that
 //!   those windows share.
+//!
+//! Modules that are fully documented enable `#![warn(missing_docs)]` themselves;
+//! the rest of the crate is documented gradually.
 
 pub mod anim;
 pub mod automation_bridge;
