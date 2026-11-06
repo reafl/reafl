@@ -7,7 +7,10 @@
 
 pub mod arrangement;
 pub mod automation;
+pub mod automation_formula;
 pub mod automation_lane;
+pub mod automation_target;
+pub mod automation_tracks;
 pub mod clip_windows;
 pub mod mixer;
 pub mod panels;
