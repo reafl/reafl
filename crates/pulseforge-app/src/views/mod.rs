@@ -25,6 +25,7 @@ pub mod plugin_instrument;
 pub mod plugin_windows;
 pub mod plugins;
 pub mod rack;
+pub mod sample_browser;
 pub mod settings;
 pub mod timeline;
 pub mod timeline_input;
