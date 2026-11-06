@@ -119,6 +119,14 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ### Fixed
 
+- A lane whose own parameters are driven by a *generated* source now updates in
+  the UI. The preview resolved lane automation through
+  `Project::automated_value`, which only understands drawn curves, so a track
+  peak (or LFO, Perlin, envelope, sample & hold) driving another lane's rate,
+  shape or envelope times was silently ignored by the drawing. Evaluation now
+  goes through one evaluator, `automated_value_at`, that handles every source
+  and recurses through lane-on-lane automation with a depth guard — the drawing,
+  the live values and the engine all use the same rules.
 - Live automation values now match the engine for *every* source, not just
   drawn curves. The UI reproduces the engine's arithmetic (drawn curve replaces
   the value, relative curves offset it, generated sources add a delta from their

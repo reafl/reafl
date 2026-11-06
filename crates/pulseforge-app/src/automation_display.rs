@@ -40,81 +40,11 @@ impl PulseForgeApp {
         position: f64,
         bpm: f32,
     ) -> Option<f32> {
-        let base = self.project.parameter_value(target)?;
-        let base_normalized = target.normalize_value(base);
-        // The arithmetic mirrors the engine's `automated_value`: drawn curves
-        // replace or offset the value, while generated sources contribute a
-        // delta from their own centre. Keeping the two in step is what makes a
-        // knob show what is actually heard for every source kind.
-        let mut curve_total: Option<f32> = None;
-        let mut relative_total = 0.0;
-        let mut additive = 0.0;
-        let mut touched = false;
-        for (track_id, track) in self.project.automation_tracks.iter().enumerate() {
-            if !track.enabled
-                || track.target != target
-                || position < track.start_step as f64
-                || position >= track.start_step.saturating_add(track.length_steps) as f64
-            {
-                continue;
-            }
-            if track.source.edits_points() {
-                if track.points.is_empty() {
-                    continue;
-                }
-                touched = true;
-                let value = Project::evaluate_curve(&track.points, position);
-                if track.source.is_relative() {
-                    relative_total += value;
-                    continue;
-                }
-                match &mut curve_total {
-                    Some(total) => *total += value - track.points[0].value,
-                    None => curve_total = Some(value),
-                }
-                continue;
-            }
-            let multiplier = if track.modulation_points.is_empty() {
-                1.0
-            } else {
-                Project::evaluate_curve(&track.modulation_points, position).clamp(0.0, 1.0)
-            };
-            // The lane's own automation is resolved first, so an LFO whose rate
-            // is driven by a peak lane moves the knob at that rate.
-            let resolved = resolved_lane_source(
-                &self.project,
-                track_id,
-                position,
-                &lane_driven_parameters(&self.project, track_id),
-            )
-            .unwrap_or_else(|| track.source.clone());
-            let centre = resolved.base().unwrap_or(0.0);
-            // Only a peak lane needs the engine's live level; everything else is
-            // derived from the project, so the lock is skipped for them.
-            let peak_level = if matches!(resolved, project::AutomationSource::Peak { .. }) {
-                self.peak_level(track_id)
-            } else {
-                0.0
-            };
-            let raw = automation_source_preview(
-                &resolved,
-                target,
-                &self.project.lanes,
-                &self.project.patterns,
-                bpm,
-                track.start_step,
-                position,
-                peak_level,
-            );
-            additive += centre + (raw - centre) * multiplier - base_normalized;
-            touched = true;
-        }
-        if !touched {
-            return None;
-        }
-        Some(target.denormalize_value(
-            (curve_total.unwrap_or(base_normalized) + relative_total + additive).clamp(0.0, 1.0),
-        ))
+        // The shared evaluator keeps the display in step with the engine, for
+        // every source kind and every nesting of lane automation.
+        automated_value_at(&self.project, target, position, bpm, &|track_id| {
+            self.peak_level(track_id)
+        })
     }
 
     /// Followed level of a peak lane, as published by the audio thread.

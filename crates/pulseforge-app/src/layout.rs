@@ -341,6 +341,108 @@ pub(crate) fn lane_driven_parameters(
     .collect()
 }
 
+/// The value a parameter has at `position`, with every lane applied.
+///
+/// This is the UI's counterpart of the engine's evaluation: drawn curves replace
+/// or offset the value, while every generated source (LFO, Perlin, sample & hold,
+/// MIDI envelope, track peak) contributes a delta from its own centre. It exists
+/// so the drawing and the knobs agree with what is heard for *any* combination of
+/// source and target, including a lane whose rate is driven by a track peak.
+///
+/// # Parameters
+///
+/// - `project`: the project to inspect.
+/// - `target`: the parameter to resolve.
+/// - `position`: transport position in steps.
+/// - `bpm`: tempo for the time-valued settings.
+/// - `peak`: live follower level of a peak lane, indexed by lane.
+///
+/// # Returns
+///
+/// The resolved value, or `None` when the target no longer exists.
+pub(crate) fn automated_value_at(
+    project: &Project,
+    target: ParameterTarget,
+    position: f64,
+    bpm: f32,
+    peak: &dyn Fn(usize) -> f32,
+) -> Option<f32> {
+    automated_value_at_depth(project, target, position, bpm, peak, 0)
+}
+
+/// [`automated_value_at`] with a recursion guard for lane-on-lane automation.
+fn automated_value_at_depth(
+    project: &Project,
+    target: ParameterTarget,
+    position: f64,
+    bpm: f32,
+    peak: &dyn Fn(usize) -> f32,
+    depth: u8,
+) -> Option<f32> {
+    let base = project.parameter_value(target)?;
+    let base_normalized = target.normalize_value(base);
+    let mut curve_total: Option<f32> = None;
+    let mut relative_total = 0.0;
+    let mut additive = 0.0;
+    let mut touched = false;
+    for (track_id, track) in project.automation_tracks.iter().enumerate() {
+        if !track.enabled
+            || track.target != target
+            || position < track.start_step as f64
+            || position >= track.start_step.saturating_add(track.length_steps) as f64
+        {
+            continue;
+        }
+        if track.source.edits_points() {
+            if track.points.is_empty() {
+                continue;
+            }
+            touched = true;
+            let value = Project::evaluate_curve(&track.points, position);
+            if track.source.is_relative() {
+                relative_total += value;
+                continue;
+            }
+            match &mut curve_total {
+                Some(total) => *total += value - track.points[0].value,
+                None => curve_total = Some(value),
+            }
+            continue;
+        }
+        let multiplier = if track.modulation_points.is_empty() {
+            1.0
+        } else {
+            Project::evaluate_curve(&track.modulation_points, position).clamp(0.0, 1.0)
+        };
+        let resolved = resolved_lane_source(project, track_id, position, bpm, peak, depth)
+            .unwrap_or_else(|| track.source.clone());
+        let centre = resolved.base().unwrap_or(0.0);
+        let peak_level = if matches!(resolved, project::AutomationSource::Peak { .. }) {
+            peak(track_id)
+        } else {
+            0.0
+        };
+        let raw = automation_source_preview(
+            &resolved,
+            target,
+            &project.lanes,
+            &project.patterns,
+            bpm,
+            track.start_step,
+            position,
+            peak_level,
+        );
+        additive += centre + (raw - centre) * multiplier - base_normalized;
+        touched = true;
+    }
+    if !touched {
+        return None;
+    }
+    Some(target.denormalize_value(
+        (curve_total.unwrap_or(base_normalized) + relative_total + additive).clamp(0.0, 1.0),
+    ))
+}
+
 /// A copy of a lane's source with its own automation applied at `position`.
 ///
 /// A lane can automate another lane's base, depth, rate, shape, sustain, octave
@@ -353,7 +455,9 @@ pub(crate) fn lane_driven_parameters(
 /// - `project`: the project to inspect.
 /// - `track_id`: the lane whose source is resolved.
 /// - `position`: transport position in steps.
-/// - `driven`: which parameters are automated, from [`lane_driven_parameters`].
+/// - `bpm`: tempo for the time-valued settings.
+/// - `peak`: live follower level of a peak lane, indexed by lane.
+/// - `depth`: recursion depth, so lane-on-lane automation terminates.
 ///
 /// # Returns
 ///
@@ -362,24 +466,31 @@ pub(crate) fn resolved_lane_source(
     project: &Project,
     track_id: usize,
     position: f64,
-    driven: &[project::AutomationLaneParameter],
+    bpm: f32,
+    peak: &dyn Fn(usize) -> f32,
+    depth: u8,
 ) -> Option<project::AutomationSource> {
     use project::{
         AutomationLaneParameter as Parameter, AutomationSource, LfoShape, ParameterTarget,
     };
     let mut source = project.automation_tracks.get(track_id)?.source.clone();
-    if driven.is_empty() {
+    let driven = lane_driven_parameters(project, track_id);
+    if driven.is_empty() || depth >= 3 {
         return Some(source);
     }
     let value = |parameter: Parameter, current: f32| {
-        project.automated_value(
+        automated_value_at_depth(
+            project,
             ParameterTarget::AutomationLane {
                 track_id,
                 parameter,
             },
-            current,
             position,
+            bpm,
+            peak,
+            depth + 1,
         )
+        .unwrap_or(current)
     };
     let drives = |parameter: Parameter| driven.contains(&parameter);
     match &mut source {
@@ -501,6 +612,8 @@ pub(crate) fn resolved_lane_source(
 /// - `track_id`: the lane being drawn.
 /// - `columns`: number of samples to take, inclusive of both ends.
 /// - `step_at`: maps a column index to a transport position in steps.
+/// - `bpm`: tempo for the time-valued settings.
+/// - `peak`: live follower level of a peak lane, indexed by lane.
 ///
 /// # Returns
 ///
@@ -511,9 +624,10 @@ pub(crate) fn lane_source_columns(
     track_id: usize,
     columns: usize,
     step_at: impl Fn(usize) -> f64,
+    bpm: f32,
+    peak: &dyn Fn(usize) -> f32,
 ) -> Option<Vec<project::AutomationSource>> {
-    let driven = lane_driven_parameters(project, track_id);
-    if driven.is_empty() {
+    if lane_driven_parameters(project, track_id).is_empty() {
         return None;
     }
     let mut sources = Vec::with_capacity(columns + 1);
@@ -522,7 +636,9 @@ pub(crate) fn lane_source_columns(
             project,
             track_id,
             step_at(index),
-            &driven,
+            bpm,
+            peak,
+            0,
         )?);
     }
     Some(sources)

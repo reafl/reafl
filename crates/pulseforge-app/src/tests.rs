@@ -278,7 +278,7 @@ fn lane_preview_follows_automation_of_its_own_rate() {
 
     let driven = lane_driven_parameters(&project, 0);
     assert_eq!(driven, vec![AutomationLaneParameter::RateAmount]);
-    let resolved = resolved_lane_source(&project, 0, 0.0, &driven).expect("lane exists");
+    let resolved = resolved_lane_source(&project, 0, 0.0, 120.0, &|_| 0.0, 0).expect("lane exists");
     let AutomationSource::Lfo { rate, .. } = resolved else {
         panic!("source should stay an LFO");
     };
@@ -286,6 +286,68 @@ fn lane_preview_follows_automation_of_its_own_rate() {
         (rate.amount - 0.1).abs() < 1e-3,
         "preview kept the stored rate {} instead of the automated one",
         rate.amount
+    );
+}
+
+#[test]
+fn peak_lane_drives_another_lane_parameter() {
+    use project::{AutomationLaneParameter, AutomationSource, TimeUnit, TimeValue};
+    let mut project = Project::default();
+    project.automation_tracks.push(AutomationTrack {
+        target: ParameterTarget::Instrument {
+            instrument_id: 0,
+            parameter: InstrumentParameter::Gain,
+        },
+        source: AutomationSource::Lfo {
+            shape: project::LfoShape::Sine,
+            rate: TimeValue {
+                amount: 500.0,
+                unit: TimeUnit::Milliseconds,
+            },
+            retrigger: false,
+            base: 0.5,
+            depth: 0.5,
+        },
+        ..AutomationTrack::default()
+    });
+    project.automation_tracks.push(AutomationTrack {
+        target: ParameterTarget::AutomationLane {
+            track_id: 0,
+            parameter: AutomationLaneParameter::RateAmount,
+        },
+        source: AutomationSource::Peak {
+            channel_id: 0,
+            post_fx: true,
+            attack: TimeValue {
+                amount: 5.0,
+                unit: TimeUnit::Milliseconds,
+            },
+            release: TimeValue {
+                amount: 180.0,
+                unit: TimeUnit::Milliseconds,
+            },
+            base: 0.0,
+            depth: 1.0,
+        },
+        ..AutomationTrack::default()
+    });
+    project.normalize();
+
+    // A peak lane writes its follower into lane 0's rate; silent means the
+    // follower sits at the bottom of its range, so the two must differ.
+    let quiet = resolved_lane_source(&project, 0, 0.0, 120.0, &|_| 0.0, 0).expect("lane exists");
+    let loud = resolved_lane_source(&project, 0, 0.0, 120.0, &|_| 1.0, 0).expect("lane exists");
+    let AutomationSource::Lfo { rate: quiet, .. } = quiet else {
+        panic!("source should stay an LFO");
+    };
+    let AutomationSource::Lfo { rate: loud, .. } = loud else {
+        panic!("source should stay an LFO");
+    };
+    assert!(
+        (loud.amount - quiet.amount).abs() > 1.0,
+        "peak level did not reach the LFO rate: {} vs {}",
+        quiet.amount,
+        loud.amount
     );
 }
 

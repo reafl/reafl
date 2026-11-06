@@ -121,10 +121,11 @@ impl PulseForgeApp {
                 self.sync_project();
             }
         }
-        // Nested automation: the lane's own base and depth can be driven by
-        // other lanes, so the envelope is sampled from the driven values and
-        // the clip carries a badge per automated parameter. Both are computed
-        // before the project is borrowed mutably.
+        // Nested automation: another lane can drive this lane's base, depth,
+        // rate, shape or envelope times, so the envelope is sampled from the
+        // resolved values and the clip carries a badge per automated parameter.
+        // Everything here is computed before the project is borrowed mutably;
+        // a peak lane needs the engine's live follower, which the closure reads.
         let clip_left = (grid.grid_left
             + (track_start as f64 - grid.start_step as f64) as f32 * grid.step_width)
             .max(grid.grid_left);
@@ -134,10 +135,18 @@ impl PulseForgeApp {
         let draw_columns = (((clip_right - clip_left) / grid.step_width.max(1.0) / 0.25).ceil()
             as usize)
             .clamp(2, 768);
-        let lane_columns = lane_source_columns(&self.project, track_id, draw_columns, |index| {
-            let x = clip_left + (clip_right - clip_left) * index as f32 / draw_columns as f32;
-            grid.start_step as f64 + f64::from(x - grid.grid_left) / f64::from(grid.step_width)
-        });
+        let lane_bpm = self.project.bpm;
+        let lane_columns = lane_source_columns(
+            &self.project,
+            track_id,
+            draw_columns,
+            |index| {
+                let x = clip_left + (clip_right - clip_left) * index as f32 / draw_columns as f32;
+                grid.start_step as f64 + f64::from(x - grid.grid_left) / f64::from(grid.step_width)
+            },
+            lane_bpm,
+            &|lane_id| self.peak_level(lane_id),
+        );
         let lane_parameters = lane_automated_parameters(&self.project, track_id);
         // Peak lanes are the only source whose value cannot be prerendered, so
         // the engine's follower is read here and drawn as it moves.
