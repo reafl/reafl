@@ -119,6 +119,14 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ### Fixed
 
+- Automating an automation lane's own parameters now shows up where you look:
+  the arrangement preview and the knobs resolve the driven source first, so a
+  lane whose **rate**, **shape**, **attack/decay/release**, **sustain** or
+  **octaves** is automated draws — and reports — what will be heard instead of
+  the stored settings. Previously only `base` and `depth` were folded in, so an
+  LFO kept its old frequency and an envelope its old attack in the drawing even
+  though the engine already applied them. `lane_driven_parameters` lists what is
+  driven and `resolved_lane_source` applies it at a position.
 - Enum controls no longer double as an automation menu: a `ComboBox` owns its own
   popup, so the arpeggiator mode, waveform and LFO shape combos keep their
   dropdown and get a compact "A" button beside them that creates the lane
