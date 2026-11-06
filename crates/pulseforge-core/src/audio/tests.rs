@@ -1,4 +1,4 @@
-//! Tests for the engine and its DSP helpers.
+﻿//! Tests for the engine and its DSP helpers.
 
 use std::{
     f32::consts::TAU,
@@ -16,6 +16,7 @@ use crate::project::{
 use super::dsp::*;
 use super::engine::*;
 use super::model::*;
+use super::sample::*;
 
 #[cfg(test)]
 mod tests {

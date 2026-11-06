@@ -8,9 +8,13 @@
 mod dsp;
 mod engine;
 mod model;
+mod output;
+mod sample;
 
 #[cfg(test)]
 mod tests;
 
 pub use dsp::*;
 pub use model::*;
+pub use output::*;
+pub use sample::*;

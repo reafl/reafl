@@ -1,4 +1,4 @@
-//! Free DSP helpers: oscillators, EQ, sample interpolation and WAV I/O.
+﻿//! Free DSP helpers: oscillators, EQ, sample interpolation and WAV I/O.
 
 use std::{
     f32::consts::TAU,
@@ -19,6 +19,7 @@ use crate::{
 
 use super::engine::*;
 use super::model::*;
+use super::sample::*;
 
 pub(crate) fn update_effect_chain(
     lane: usize,

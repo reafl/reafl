@@ -1,4 +1,4 @@
-//! The render engine: state, rendering and automation.
+﻿//! The render engine: state, rendering and automation.
 //!
 //! [`AudioEngine`] is one struct spread over several files: the module root
 //! keeps construction and the state that the routing is built from, while
@@ -34,6 +34,7 @@ use crate::{
 
 use super::dsp::*;
 use super::model::*;
+use super::sample::*;
 
 pub(crate) struct AudioEngine {
     pub(crate) sample_rate: f32,
