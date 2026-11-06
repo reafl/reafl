@@ -209,4 +209,3 @@ impl PulseForgeApp {
             .decode_sample(path.to_owned(), tasks::SampleUse::Preview);
     }
 }
-

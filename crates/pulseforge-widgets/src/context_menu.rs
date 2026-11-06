@@ -221,10 +221,12 @@ mod tests {
         };
         assert_eq!(menu.items.len(), 3);
         assert!(!PowerIntent::default().any());
-        assert!(PowerIntent {
-            solo: true,
-            ..PowerIntent::default()
-        }
-        .any());
+        assert!(
+            PowerIntent {
+                solo: true,
+                ..PowerIntent::default()
+            }
+            .any()
+        );
     }
 }

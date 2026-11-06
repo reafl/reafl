@@ -153,10 +153,7 @@ impl AudioEngine {
                             | AutomationSource::SampleAndHold { rate, .. },
                             AutomationLaneParameter::RateAmount,
                         ) => rate.amount = finite_clamp(value, 0.1, 64.0, rate.amount),
-                        (
-                            AutomationSource::Lfo { shape, .. },
-                            AutomationLaneParameter::Shape,
-                        ) => {
+                        (AutomationSource::Lfo { shape, .. }, AutomationLaneParameter::Shape) => {
                             *shape = LfoShape::from_index(value.max(0.0) as u32);
                         }
                         _ => {}
@@ -175,7 +172,8 @@ impl AudioEngine {
                         | InstrumentParameter::ArpOctaves
                         | InstrumentParameter::ArpRate
                         | InstrumentParameter::SynthNote
-                ) => {
+                ) =>
+                {
                     let Some(base) = self.project.parameter_value(target) else {
                         continue;
                     };
@@ -202,8 +200,7 @@ impl AudioEngine {
                             instrument.arpeggio.gate = finite_clamp(value, 0.01, 1.0, 0.6)
                         }
                         InstrumentParameter::ArpOctaves => {
-                            instrument.arpeggio.octaves =
-                                finite_clamp(value, 1.0, 8.0, 1.0) as u8
+                            instrument.arpeggio.octaves = finite_clamp(value, 1.0, 8.0, 1.0) as u8
                         }
                         InstrumentParameter::ArpRate => {
                             instrument.arpeggio.rate.amount = finite_clamp(value, 0.1, 64.0, 1.0)
@@ -228,7 +225,12 @@ impl AudioEngine {
         move |current: f32, target: f32| current + (target - current) * amount
     }
 
-    pub(crate) fn automated_value(&self, target: ParameterTarget, base_value: f32, position: f64) -> f32 {
+    pub(crate) fn automated_value(
+        &self,
+        target: ParameterTarget,
+        base_value: f32,
+        position: f64,
+    ) -> f32 {
         let Some(lane_ids) = self.automation_index.get(&target) else {
             return base_value;
         };
@@ -352,7 +354,13 @@ impl AudioEngine {
         target.denormalize_value(normalized.clamp(0.0, 1.0))
     }
 
-    pub(crate) fn lfo_phase(&self, track_id: usize, rate: TimeValue, retrigger: bool, position: f64) -> f32 {
+    pub(crate) fn lfo_phase(
+        &self,
+        track_id: usize,
+        rate: TimeValue,
+        retrigger: bool,
+        position: f64,
+    ) -> f32 {
         let elapsed = if retrigger {
             let start = self
                 .automation_runtime
@@ -481,4 +489,3 @@ impl AudioEngine {
         }
     }
 }
-

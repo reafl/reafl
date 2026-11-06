@@ -202,15 +202,18 @@ impl PulseForgeApp {
                     .floor()
                     .max(0.0) as u64;
             let tick = piano_snap_tick(raw_tick, self.project.snap_ticks, alt);
-            let cut_x = grid_rect.left()
-                + (tick as f32 / 16.0 - self.piano_pan_steps as f32) * step_width;
+            let cut_x =
+                grid_rect.left() + (tick as f32 / 16.0 - self.piano_pan_steps as f32) * step_width;
             if cut_x >= grid_rect.left() && cut_x <= grid_rect.right() {
                 let stroke = egui::Stroke::new(1.4_f32, egui::Color32::from_rgb(232, 96, 88));
                 let painter = ui.painter();
                 let mut y = grid_rect.top();
                 while y < grid_rect.bottom() {
                     painter.line_segment(
-                        [egui::pos2(cut_x, y), egui::pos2(cut_x, (y + 5.0).min(grid_rect.bottom()))],
+                        [
+                            egui::pos2(cut_x, y),
+                            egui::pos2(cut_x, (y + 5.0).min(grid_rect.bottom())),
+                        ],
                         stroke,
                     );
                     y += 10.0;
@@ -220,4 +223,3 @@ impl PulseForgeApp {
         paint_svg_cursor(ui, cursor_kind, pointer);
     }
 }
-

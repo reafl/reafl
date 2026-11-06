@@ -8,16 +8,14 @@ use std::{
     },
 };
 
-
 use crate::project::{
-        ClipSource, DefaultSample, InstrumentParameter, LfoShape, ParameterTarget, PianoNote,
-        Project, SignalWaveform, SynthKind,
-    };
+    ClipSource, DefaultSample, InstrumentParameter, LfoShape, ParameterTarget, PianoNote, Project,
+    SignalWaveform, SynthKind,
+};
 
-
-use super::model::*;
-use super::engine::*;
 use super::dsp::*;
+use super::engine::*;
+use super::model::*;
 
 #[cfg(test)]
 mod tests {

@@ -11,7 +11,6 @@ mod effects;
 mod render;
 mod voices;
 
-
 use std::{
     collections::HashMap,
     f32::consts::TAU,
@@ -21,20 +20,19 @@ use std::{
     },
 };
 
-
 use crate::{
     hosted::{HostedSlot, instrument_host_id},
     plugins::EffectParameters,
     project::{
-        AutomationLaneParameter, AutomationSource, ClipSource, EffectParameter, InstrumentParameter, LfoShape, MixerParameter, ParameterTarget, PianoNote,
-        Project, SignalWaveform, SynthKind, TimeUnit, TimeValue, finite_clamp, normalize_sends,
+        AutomationLaneParameter, AutomationSource, ClipSource, EffectParameter,
+        InstrumentParameter, LfoShape, MixerParameter, ParameterTarget, PianoNote, Project,
+        SignalWaveform, SynthKind, TimeUnit, TimeValue, finite_clamp, normalize_sends,
     },
     smooth::SmoothedValue,
 };
 
-
-use super::model::*;
 use super::dsp::*;
+use super::model::*;
 
 pub(crate) struct AudioEngine {
     pub(crate) sample_rate: f32,
@@ -484,8 +482,4 @@ impl AudioEngine {
             }
         }
     }
-
-
-
-
 }

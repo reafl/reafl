@@ -1,4 +1,4 @@
-﻿//! Painting the timeline ruler and the bar/beat grid.
+//! Painting the timeline ruler and the bar/beat grid.
 
 use crate::*;
 
@@ -42,15 +42,16 @@ impl PulseForgeApp {
             );
         }
         if let Some((loop_start, loop_end)) = self.arrangement_loop {
-            let x_start = geo.left + (loop_start as f64 - geo.start_step as f64) as f32 * geo.step_width;
-            let x_end = geo.left + (loop_end as f64 - geo.start_step as f64) as f32 * geo.step_width;
+            let x_start =
+                geo.left + (loop_start as f64 - geo.start_step as f64) as f32 * geo.step_width;
+            let x_end =
+                geo.left + (loop_end as f64 - geo.start_step as f64) as f32 * geo.step_width;
             let loop_rect = egui::Rect::from_min_max(
                 egui::pos2(x_start, geo.rect.top() + 2.0),
                 egui::pos2(x_end.max(x_start + 3.0), geo.rect.top() + 7.0),
             );
             painter.rect_filled(loop_rect, 2.0, egui::Color32::from_rgb(112, 208, 190));
         }
-
     }
 
     /// Draws the bar and beat lines, the row separators, the playhead and the
@@ -142,7 +143,5 @@ impl PulseForgeApp {
                 egui::Color32::from_gray(22),
             );
         }
-
     }
 }
-

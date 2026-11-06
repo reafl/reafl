@@ -46,11 +46,7 @@ pub fn edit_time_value_automated(
                 .speed(1.0),
         );
         if let Some(target) = target {
-            automation_context_menu(
-                &amount,
-                &format!("{label} · {:.2}", value.amount),
-                target,
-            );
+            automation_context_menu(&amount, &format!("{label} · {:.2}", value.amount), target);
         }
         changed |= amount.changed();
         egui::ComboBox::from_id_salt(("time_unit", track_id, label))
@@ -69,4 +65,3 @@ pub fn edit_time_value_automated(
     });
     changed
 }
-

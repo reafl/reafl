@@ -47,7 +47,8 @@ pub(crate) struct PulseForgeApp {
     /// bundles with hundreds of parameters.
     pub(crate) hosted_meta: std::collections::HashMap<u64, HostedMeta>,
     /// Native child windows holding each hosted plug-in's editor.
-    pub(crate) editor_windows: std::collections::HashMap<u64, pulseforge_hosting::editor::EditorWindow>,
+    pub(crate) editor_windows:
+        std::collections::HashMap<u64, pulseforge_hosting::editor::EditorWindow>,
     /// Last hosting error per slot, shown instead of a dead editor surface.
     pub(crate) hosted_errors: std::collections::HashMap<u64, String>,
     /// Editor currently attached, so it can be detached before its window dies.

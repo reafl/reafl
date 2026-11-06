@@ -71,4 +71,3 @@ impl PulseForgeApp {
         self.sync_project();
     }
 }
-

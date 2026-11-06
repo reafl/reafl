@@ -82,4 +82,3 @@ pub fn fader(
     }
     changed
 }
-

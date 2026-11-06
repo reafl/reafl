@@ -37,11 +37,10 @@ pub struct Cli {
 impl Cli {
     /// Path used for `Settings::load`/`save`.
     pub fn settings_path(&self) -> String {
-        self.settings
-            .as_ref()
-            .map_or_else(|| crate::settings::SETTINGS_FILE.to_owned(), |path| {
-                path.to_string_lossy().into_owned()
-            })
+        self.settings.as_ref().map_or_else(
+            || crate::settings::SETTINGS_FILE.to_owned(),
+            |path| path.to_string_lossy().into_owned(),
+        )
     }
 
     /// Project file to load once the window exists, if one was given.

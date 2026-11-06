@@ -71,4 +71,3 @@ pub(crate) fn tool_cursor_kind(tool: PianoTool, hovering_edge: bool) -> &'static
         (PianoTool::Cut, false) => "cut",
     }
 }
-

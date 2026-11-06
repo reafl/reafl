@@ -84,7 +84,12 @@ impl AudioEngine {
 
     /// Runs one insert slot. Hosted inserts render through their block-buffered
     /// slot, built-in ones run their own DSP.
-    pub(crate) fn run_insert(&mut self, lane_id: usize, slot_id: usize, parameters: EffectParameters) {
+    pub(crate) fn run_insert(
+        &mut self,
+        lane_id: usize,
+        slot_id: usize,
+        parameters: EffectParameters,
+    ) {
         let Some(processor) = self
             .effect_processors
             .get_mut(lane_id)
@@ -135,4 +140,3 @@ impl AudioEngine {
         }
     }
 }
-

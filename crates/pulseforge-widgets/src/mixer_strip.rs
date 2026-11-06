@@ -4,9 +4,9 @@ use eframe::egui;
 use pulseforge_core::project::ParameterTarget;
 
 use crate::context_menu::{ContextAction, ContextMenu, MenuItem};
+use crate::control::ValueControl;
 use crate::fader::fader;
 use crate::icons::{Icon, paint_icon};
-use crate::control::ValueControl;
 use crate::meter::render_meter_sized;
 use crate::power::PowerSwitch;
 use crate::theme::lane_color;
@@ -318,13 +318,7 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                         };
                         ui.horizontal(|ui| {
                             ui.add_space(pad);
-                            if fader(
-                                ui,
-                                strip.gain,
-                                fader_width,
-                                fader_height,
-                                Some(gain_target),
-                            ) {
+                            if fader(ui, strip.gain, fader_width, fader_height, Some(gain_target)) {
                                 result.changed = true;
                             }
                             render_meter_sized(ui, strip.meter, 13.0, fader_height);
@@ -387,9 +381,10 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                                 // whether or not it carries inserts.
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| {
-                            for (index, label, enabled, solo, locked) in rows {
-                                let open = strip.open_inserts.contains(&(strip.channel_id, index));
-                                ui.horizontal(|ui| {
+                                    for (index, label, enabled, solo, locked) in rows {
+                                        let open =
+                                            strip.open_inserts.contains(&(strip.channel_id, index));
+                                        ui.horizontal(|ui| {
                                     let intent = power_switch(
                                         ui,
                                         PowerSwitch {
@@ -475,7 +470,7 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                                         }
                                     });
                                 });
-                            }
+                                    }
                                 });
                             ui.label(
                                 egui::RichText::new("Middle click changes an insert")
@@ -489,18 +484,21 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                             ui.label(egui::RichText::new("3-BAND EQ").strong());
                             draw_eq_curve(ui, *strip.eq);
                             ui.horizontal(|ui| {
-                                result.changed |= ValueControl::knob("LOW", &mut strip.eq.low_db, -12.0..=12.0)
-                                    .with_suffix(" dB")
-                                    .show(ui)
-                                    .changed;
-                                result.changed |= ValueControl::knob("MID", &mut strip.eq.mid_db, -12.0..=12.0)
-                                    .with_suffix(" dB")
-                                    .show(ui)
-                                    .changed;
-                                result.changed |= ValueControl::knob("HIGH", &mut strip.eq.high_db, -12.0..=12.0)
-                                    .with_suffix(" dB")
-                                    .show(ui)
-                                    .changed;
+                                result.changed |=
+                                    ValueControl::knob("LOW", &mut strip.eq.low_db, -12.0..=12.0)
+                                        .with_suffix(" dB")
+                                        .show(ui)
+                                        .changed;
+                                result.changed |=
+                                    ValueControl::knob("MID", &mut strip.eq.mid_db, -12.0..=12.0)
+                                        .with_suffix(" dB")
+                                        .show(ui)
+                                        .changed;
+                                result.changed |=
+                                    ValueControl::knob("HIGH", &mut strip.eq.high_db, -12.0..=12.0)
+                                        .with_suffix(" dB")
+                                        .show(ui)
+                                        .changed;
                             });
                         }
                         if strip.pinned.as_deref().copied().unwrap_or(false) {
@@ -513,4 +511,3 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
     ui.data_mut(|data| data.insert_temp(bg_rect_id, frame.rect));
     result
 }
-

@@ -174,8 +174,7 @@ impl PulseForgeApp {
                         }
                     }
                     self.project.automation_tracks.retain_mut(|track| {
-                        if let ParameterTarget::Instrument { instrument_id, .. } =
-                            &mut track.target
+                        if let ParameterTarget::Instrument { instrument_id, .. } = &mut track.target
                         {
                             if *instrument_id == instrument {
                                 return false;
@@ -356,4 +355,3 @@ impl PulseForgeApp {
         self.status = "Made this clip's pattern unique.".to_owned();
     }
 }
-

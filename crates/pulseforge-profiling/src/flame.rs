@@ -81,7 +81,10 @@ pub(crate) fn build(spans: &[RawSpan], window_seconds: f32, dropped: u64) -> Sna
     // time-ordered span list.
     let mut groups: HashMap<(Channel, u16), Vec<&RawSpan>> = HashMap::new();
     for span in spans {
-        groups.entry((span.channel, span.thread)).or_default().push(span);
+        groups
+            .entry((span.channel, span.thread))
+            .or_default()
+            .push(span);
     }
 
     let mut per_channel: HashMap<Channel, Vec<FlameNode>> = HashMap::new();

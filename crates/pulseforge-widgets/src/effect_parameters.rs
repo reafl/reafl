@@ -186,4 +186,3 @@ pub fn render_effect_parameters(
     }
     changed
 }
-

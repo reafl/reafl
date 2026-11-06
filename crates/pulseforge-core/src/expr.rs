@@ -247,11 +247,7 @@ impl Parser {
             self.index += 1;
             // Right associative, and the exponent may be negative.
             let exponent = self.unary()?;
-            return Ok(Node::Binary(
-                BinOp::Pow,
-                Box::new(base),
-                Box::new(exponent),
-            ));
+            return Ok(Node::Binary(BinOp::Pow, Box::new(base), Box::new(exponent)));
         }
         Ok(base)
     }
@@ -275,7 +271,10 @@ impl Parser {
         if current.is_alphabetic() {
             let start = self.index;
             let mut name = String::new();
-            while self.peek().is_some_and(|c| c.is_ascii_alphanumeric() || c == '_') {
+            while self
+                .peek()
+                .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
                 name.push(self.chars[self.index]);
                 self.index += 1;
             }

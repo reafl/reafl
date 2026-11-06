@@ -18,12 +18,8 @@ use pulseforge_profiling::{Channel, SlotCounters, profile_scope, set_thread_chan
 
 use crate::{
     plugins::BuiltinEffect,
-    project::{
-        DefaultSample, PianoNote,
-        Project,
-    },
+    project::{DefaultSample, PianoNote, Project},
 };
-
 
 pub(crate) const VOICE_COUNT: usize = 64;
 
@@ -470,4 +466,3 @@ pub(crate) struct SendEdge {
     pub(crate) gain: f32,
     pub(crate) delayed: [f32; 2],
 }
-

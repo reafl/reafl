@@ -1,4 +1,4 @@
-﻿//! The offline export window and the audio sample-clip window.
+//! The offline export window and the audio sample-clip window.
 
 use crate::*;
 
@@ -28,7 +28,12 @@ impl PulseForgeApp {
 
     /// Sample clip window: file identity, waveform and both the project-wide
     /// and per-clip playback controls, shown side by side.
-    pub(crate) fn render_sample_clip_window(&mut self, ui: &mut egui::Ui, lane: usize, clip: usize) {
+    pub(crate) fn render_sample_clip_window(
+        &mut self,
+        ui: &mut egui::Ui,
+        lane: usize,
+        clip: usize,
+    ) {
         let Some(source_path) = self
             .project
             .lanes
@@ -140,4 +145,3 @@ impl PulseForgeApp {
         }
     }
 }
-

@@ -25,8 +25,7 @@ impl PulseForgeApp {
     /// note, so shortening a pattern never hides notes that sit beyond it.
     pub(crate) fn piano_visible_steps(&self) -> u64 {
         let pattern = self.project.patterns.get(self.selected_pattern);
-        let pattern_length =
-            pattern.map_or(VISIBLE_PIANO_STEPS, |pattern| pattern.length_steps);
+        let pattern_length = pattern.map_or(VISIBLE_PIANO_STEPS, |pattern| pattern.length_steps);
         let note_end = pattern.map_or(0, |pattern| {
             pattern
                 .notes
@@ -290,7 +289,11 @@ impl PulseForgeApp {
     /// Returning the entries rather than indices matters because the kinds have
     /// separate orderings (notes, clips, channels); an index taken from one list
     /// would address a different item in another.
-    pub(crate) fn selection_between(&self, from: Selection, to: Selection) -> Option<Vec<Selection>> {
+    pub(crate) fn selection_between(
+        &self,
+        from: Selection,
+        to: Selection,
+    ) -> Option<Vec<Selection>> {
         let list = match (from, to) {
             (Selection::Note { .. }, Selection::Note { .. }) => self.note_order(),
             (Selection::Clip { .. }, Selection::Clip { .. }) => self.clip_order(),
@@ -332,4 +335,3 @@ impl PulseForgeApp {
         self.select_item(Selection::MixerChannel(channel), shift, ctrl);
     }
 }
-

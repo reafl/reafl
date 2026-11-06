@@ -152,7 +152,12 @@ impl AudioEngine {
 
     /// Expands a played note into arpeggiator events. Returns true when the
     /// instrument has an arpeggiator, so the original note must not sound.
-    pub(crate) fn schedule_arpeggio(&mut self, note: &PianoNote, lane_id: usize, tick: u64) -> bool {
+    pub(crate) fn schedule_arpeggio(
+        &mut self,
+        note: &PianoNote,
+        lane_id: usize,
+        tick: u64,
+    ) -> bool {
         let Some(instrument) = self.project.instruments.get(note.instrument_id) else {
             return false;
         };
@@ -457,7 +462,13 @@ impl AudioEngine {
         }
     }
 
-    pub(crate) fn handle_midi_note(&mut self, instrument_id: usize, note: u8, velocity: u8, on: bool) {
+    pub(crate) fn handle_midi_note(
+        &mut self,
+        instrument_id: usize,
+        note: u8,
+        velocity: u8,
+        on: bool,
+    ) {
         if instrument_id >= self.project.instruments.len() {
             return;
         }
@@ -482,4 +493,3 @@ impl AudioEngine {
         }
     }
 }
-

@@ -1,7 +1,7 @@
 //! Modulation effects: a chorus with a modulated delay and a phaser ladder.
 
-use super::params::EffectParameters;
 use super::BuiltinProcessor;
+use super::params::EffectParameters;
 
 /// A short modulated delay with an LFO-driven read position.
 pub struct Chorus {

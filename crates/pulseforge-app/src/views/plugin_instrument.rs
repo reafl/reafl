@@ -143,27 +143,24 @@ impl PulseForgeApp {
                             instrument.synth_note = note.round().clamp(0.0, 127.0) as u8;
                         }
                         ui.horizontal(|ui| {
-                            egui::ComboBox::from_id_salt((
-                                "signal_waveform_editor",
-                                instrument_id,
-                            ))
-                            .selected_text(waveform_label(instrument.signal_waveform))
-                            .show_ui(ui, |ui| {
-                                for (waveform, label) in [
-                                    (SignalWaveform::Sine, "Sine"),
-                                    (SignalWaveform::Triangle, "Triangle"),
-                                    (SignalWaveform::Saw, "Saw"),
-                                    (SignalWaveform::Square, "Square"),
-                                ] {
-                                    changed |= ui
-                                        .selectable_value(
-                                            &mut instrument.signal_waveform,
-                                            waveform,
-                                            label,
-                                        )
-                                        .changed();
-                                }
-                            });
+                            egui::ComboBox::from_id_salt(("signal_waveform_editor", instrument_id))
+                                .selected_text(waveform_label(instrument.signal_waveform))
+                                .show_ui(ui, |ui| {
+                                    for (waveform, label) in [
+                                        (SignalWaveform::Sine, "Sine"),
+                                        (SignalWaveform::Triangle, "Triangle"),
+                                        (SignalWaveform::Saw, "Saw"),
+                                        (SignalWaveform::Square, "Square"),
+                                    ] {
+                                        changed |= ui
+                                            .selectable_value(
+                                                &mut instrument.signal_waveform,
+                                                waveform,
+                                                label,
+                                            )
+                                            .changed();
+                                    }
+                                });
                             // The waveform is an enum, automated as a plain integer.
                             automation_lane_button(
                                 ui,
@@ -315,4 +312,3 @@ impl PulseForgeApp {
         }
     }
 }
-

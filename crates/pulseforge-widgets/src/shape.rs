@@ -183,7 +183,11 @@ impl ScreenCurve {
             polygon.push(egui::pos2(last.x, floor_y));
             polygon.push(egui::pos2(first.x, floor_y));
         }
-        painter.add(egui::Shape::convex_polygon(polygon, color, egui::Stroke::NONE));
+        painter.add(egui::Shape::convex_polygon(
+            polygon,
+            color,
+            egui::Stroke::NONE,
+        ));
     }
 
     /// Paints a cable: a curve that bows away from the straight line.
@@ -195,10 +199,7 @@ impl ScreenCurve {
     /// - `bow`: how far the middle of the cable is pulled sideways, in points.
     pub fn paint_cable(&self, painter: &egui::Painter, stroke: egui::Stroke, bow: f32) {
         if let (Some(first), Some(last)) = (self.points.first(), self.points.last()) {
-            let middle = egui::pos2(
-                (first.x + last.x) * 0.5 + bow,
-                (first.y + last.y) * 0.5,
-            );
+            let middle = egui::pos2((first.x + last.x) * 0.5 + bow, (first.y + last.y) * 0.5);
             painter.add(egui::epaint::CubicBezierShape::from_points_stroke(
                 [*first, middle, middle, *last],
                 false,
@@ -314,12 +315,7 @@ pub fn value_at(points: &[DrawPoint], step: f64) -> f32 {
 /// # Returns
 ///
 /// A [`ScreenCurve`] across the display, with 0 dB on its centre line.
-pub fn eq_response_curve(
-    eq: &ThreeBandEq,
-    width: f32,
-    height: f32,
-    samples: usize,
-) -> ScreenCurve {
+pub fn eq_response_curve(eq: &ThreeBandEq, width: f32, height: f32, samples: usize) -> ScreenCurve {
     let mut curve = ScreenCurve::new();
     let samples = samples.max(2);
     let centre = height * 0.5;
@@ -341,10 +337,7 @@ mod tests {
 
     #[test]
     fn value_at_interpolates_and_clamps() {
-        let points = [
-            DrawPoint::new(0.0, 0.0),
-            DrawPoint::new(10.0, 1.0),
-        ];
+        let points = [DrawPoint::new(0.0, 0.0), DrawPoint::new(10.0, 1.0)];
         assert_eq!(value_at(&points, -5.0), 0.0);
         assert!((value_at(&points, 5.0) - 0.5).abs() < 1e-6);
         assert_eq!(value_at(&points, 50.0), 1.0);

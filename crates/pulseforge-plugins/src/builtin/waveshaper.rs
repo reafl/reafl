@@ -1,7 +1,7 @@
 //! A stateless hyperbolic-tangent waveshaper.
 
-use super::params::EffectParameters;
 use super::BuiltinProcessor;
+use super::params::EffectParameters;
 
 /// Saturates the signal, normalised so full drive stays at unity peak.
 pub struct Waveshaper;

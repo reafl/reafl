@@ -140,7 +140,13 @@ impl GpuHistogram {
     /// Dispatches the reduction for this frame. Call once per frame with the
     /// rect that holds the graph; egui runs the callback during painting, and
     /// the read-back columns are visible on the next frame.
-    pub fn paint(&self, painter: &egui::Painter, rect: egui::Rect, samples: &[f32], columns: usize) {
+    pub fn paint(
+        &self,
+        painter: &egui::Painter,
+        rect: egui::Rect,
+        samples: &[f32],
+        columns: usize,
+    ) {
         if samples.len() < 2 || columns == 0 {
             return;
         }
@@ -227,24 +233,13 @@ fn dispatch(
 
         let sample_count = samples.len();
         let sample_bytes = sample_count * 4;
-        let sample_slice = std::slice::from_raw_parts(
-            samples.as_ptr().cast::<u8>(),
-            sample_bytes,
-        );
+        let sample_slice = std::slice::from_raw_parts(samples.as_ptr().cast::<u8>(), sample_bytes);
         gl.bind_buffer(glow::SHADER_STORAGE_BUFFER, state.samples);
         if state.samples_bytes < sample_bytes {
-            gl.buffer_data_u8_slice(
-                glow::SHADER_STORAGE_BUFFER,
-                sample_slice,
-                glow::STREAM_DRAW,
-            );
+            gl.buffer_data_u8_slice(glow::SHADER_STORAGE_BUFFER, sample_slice, glow::STREAM_DRAW);
             state.samples_bytes = sample_bytes;
         } else {
-            gl.buffer_sub_data_u8_slice(
-                glow::SHADER_STORAGE_BUFFER,
-                0,
-                sample_slice,
-            );
+            gl.buffer_sub_data_u8_slice(glow::SHADER_STORAGE_BUFFER, 0, sample_slice);
         }
 
         let program = state.program.ok_or("compute program missing")?;

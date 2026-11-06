@@ -56,7 +56,11 @@ impl PulseForgeApp {
                     .map(|point| {
                         // Relative lanes are drawn around zero, so their points
                         // can sit below the centre line.
-                        let floor = if track.source.is_relative() { -1.0 } else { 0.0 };
+                        let floor = if track.source.is_relative() {
+                            -1.0
+                        } else {
+                            0.0
+                        };
                         egui::pos2(
                             grid.grid_left
                                 + (point.step as f64 - grid.start_step as f64) as f32
@@ -199,7 +203,11 @@ impl PulseForgeApp {
         let curve_source = track.source.edits_points();
         // Relative lanes travel from -1 to 1 around the centre line; absolute
         // lanes use the usual 0 to 1 band.
-        let value_floor = if track.source.is_relative() { -1.0 } else { 0.0 };
+        let value_floor = if track.source.is_relative() {
+            -1.0
+        } else {
+            0.0
+        };
         let value_y = |value: f32| {
             row.bottom()
                 - 6.0
@@ -207,8 +215,7 @@ impl PulseForgeApp {
                     * (row.height() - 12.0)
         };
         let value_at = |y: f32| {
-            let fraction =
-                (1.0 - (y - row.top() - 6.0) / (row.height() - 12.0)).clamp(0.0, 1.0);
+            let fraction = (1.0 - (y - row.top() - 6.0) / (row.height() - 12.0)).clamp(0.0, 1.0);
             value_floor + fraction * (1.0 - value_floor)
         };
         let points = if curve_source {
@@ -229,10 +236,7 @@ impl PulseForgeApp {
             if value_floor < 0.0 {
                 let zero_y = value_y(0.0);
                 painter.line_segment(
-                    [
-                        egui::pos2(clip_start, zero_y),
-                        egui::pos2(clip_end, zero_y),
-                    ],
+                    [egui::pos2(clip_start, zero_y), egui::pos2(clip_end, zero_y)],
                     egui::Stroke::new(1.0_f32, egui::Color32::from_gray(78)),
                 );
             }
@@ -453,7 +457,11 @@ impl PulseForgeApp {
                     project::AutomationCurve::Steps,
                 ] {
                     if ui
-                        .selectable_value(&mut lane_points[index].curve, curve, format!("{curve:?}"))
+                        .selectable_value(
+                            &mut lane_points[index].curve,
+                            curve,
+                            format!("{curve:?}"),
+                        )
                         .changed()
                     {
                         changed = true;
@@ -542,4 +550,3 @@ impl PulseForgeApp {
         changed
     }
 }
-

@@ -1,4 +1,4 @@
-﻿//! The editable list of automation lanes.
+//! The editable list of automation lanes.
 
 use crate::*;
 
@@ -54,10 +54,7 @@ impl PulseForgeApp {
                         }
                         if ui
                             .selectable_label(
-                                matches!(
-                                    track.source,
-                                    project::AutomationSource::RelativeCurve
-                                ),
+                                matches!(track.source, project::AutomationSource::RelativeCurve),
                                 "Relative curve",
                             )
                             .clicked()
@@ -198,7 +195,8 @@ impl PulseForgeApp {
                     }
                 });
                 match &mut track.source {
-                    project::AutomationSource::Curve | project::AutomationSource::RelativeCurve => {}
+                    project::AutomationSource::Curve | project::AutomationSource::RelativeCurve => {
+                    }
                     project::AutomationSource::MidiEnvelope {
                         instrument_id,
                         attack,
@@ -455,4 +453,3 @@ impl PulseForgeApp {
         }
     }
 }
-

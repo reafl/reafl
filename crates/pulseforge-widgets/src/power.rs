@@ -105,7 +105,11 @@ pub fn power_switch_at(
 /// Power switch laid out by the caller's `ui`, returning the requested intent.
 pub fn power_switch(ui: &mut egui::Ui, switch: PowerSwitch<'_>) -> PowerIntent {
     let (rect, _) = ui.allocate_exact_size(switch.size, egui::Sense::hover());
-    let id = ui.id().with(("power_switch", switch.name, rect.left() as i32, rect.top() as i32));
+    let id = ui.id().with((
+        "power_switch",
+        switch.name,
+        rect.left() as i32,
+        rect.top() as i32,
+    ));
     power_switch_at(ui, rect, id, &switch)
 }
-

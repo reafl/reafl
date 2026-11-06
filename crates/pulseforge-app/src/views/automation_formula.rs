@@ -1,4 +1,4 @@
-﻿//! The formula tool of the automation window.
+//! The formula tool of the automation window.
 
 use crate::*;
 
@@ -48,7 +48,10 @@ impl PulseForgeApp {
 impl PulseForgeApp {
     /// Samples a parsed formula into a curve lane on the current automation
     /// target, so a formula behaves like any hand-drawn lane afterwards.
-    pub(crate) fn add_formula_automation(&mut self, expression: &pulseforge_core::expr::Expression) {
+    pub(crate) fn add_formula_automation(
+        &mut self,
+        expression: &pulseforge_core::expr::Expression,
+    ) {
         const LENGTH_STEPS: u64 = 64;
         const POINT_COUNT: u64 = 32;
         let target = if self.automation_effect_mode {
@@ -88,4 +91,3 @@ impl PulseForgeApp {
         self.status = "Formula sampled into a new automation lane.".to_owned();
     }
 }
-

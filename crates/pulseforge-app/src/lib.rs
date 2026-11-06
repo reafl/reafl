@@ -22,7 +22,8 @@ use pulseforge_core::{
     project::{
         ArrangementClip, AutomationCurve, AutomationPoint, AutomationTrack, ClipSource,
         DefaultSample, EffectParameter, InsertFxSlot, Instrument, InstrumentParameter,
-        MIDI_CHANNEL_COUNT, ParameterTarget, PianoNote, Project, SignalWaveform, SynthKind, TimeSignature, disconnect_channel,
+        MIDI_CHANNEL_COUNT, ParameterTarget, PianoNote, Project, SignalWaveform, SynthKind,
+        TimeSignature, disconnect_channel,
     },
 };
 use pulseforge_profiling::{
@@ -32,9 +33,8 @@ use pulseforge_profiling::{
 use pulseforge_settings::{cli, settings};
 use pulseforge_tasks as tasks;
 use pulseforge_widgets::{
-    anim, automation_bridge, context_menu, control, effect_parameters, eq_curve,
-    icons, knob, lane_slider, mixer_strip, power, presets, theme,
-    time_edit, tooltip,
+    anim, automation_bridge, context_menu, control, effect_parameters, eq_curve, icons, knob,
+    lane_slider, mixer_strip, power, presets, theme, time_edit, tooltip,
 };
 
 use anim::Animated;
@@ -112,9 +112,7 @@ pub fn run() -> eframe::Result<()> {
     eframe::run_native(
         "PulseForge",
         options,
-        Box::new(move |creation_context| {
-            Ok(Box::new(PulseForgeApp::new(creation_context, &cli)))
-        }),
+        Box::new(move |creation_context| Ok(Box::new(PulseForgeApp::new(creation_context, &cli)))),
     )
 }
 
@@ -149,16 +147,6 @@ const AUTOMATED_TARGETS_KEY: &str = "pulseforge.automated_targets";
 const AUTOMATED_VALUES_KEY: &str = "pulseforge.automated_values";
 
 impl PulseForgeApp {
-
-
-
-
-
-
-
-
-
-
     /// Moves the global snap one entry up or down the fixed step list.
     fn step_snap(&mut self, direction: i32) {
         let current = self
@@ -285,16 +273,6 @@ impl PulseForgeApp {
         self.status = format!("{name} tool.");
     }
 
-
-
-
-
-
-
-
-
-
-
     fn effect_slot_name(&self, channel: usize, slot: usize) -> Option<String> {
         let slots = if channel == self.project.lanes.len() {
             &self.project.master.inserts
@@ -313,14 +291,9 @@ impl PulseForgeApp {
         };
         slots.get_mut(slot)
     }
-
-
-
-
 }
 
-impl PulseForgeApp {
-}
+impl PulseForgeApp {}
 
 impl PulseForgeApp {
     /// Draws the debug/profiler window and hands it the live engine numbers.
@@ -441,8 +414,7 @@ impl PulseForgeApp {
     }
 }
 
-impl PulseForgeApp {
-}
+impl PulseForgeApp {}
 
 /// Static data cached per hosted plug-in, so the wrapper does not re-query the
 /// bundle every frame.

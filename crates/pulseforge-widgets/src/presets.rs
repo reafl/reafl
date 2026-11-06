@@ -1,6 +1,5 @@
-//! Mixer chain presets stored on disk. 
-
-
+//! Mixer chain presets stored on disk.
+
 use pulseforge_core::project::InsertFxSlot;
 
 /// Folder that holds saved mixer-chain presets, one JSON file per preset.
@@ -67,4 +66,3 @@ pub fn load_chain_preset(name: &str) -> Result<Vec<InsertFxSlot>, String> {
     serde_json::from_str::<Vec<InsertFxSlot>>(&text)
         .map_err(|error| format!("Invalid preset {path}: {error}"))
 }
-

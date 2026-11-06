@@ -137,10 +137,7 @@ pub(crate) fn parameter_target_label(project: &Project, target: ParameterTarget)
         ParameterTarget::AutomationLane {
             track_id,
             parameter,
-        } => format!(
-            "Auto {track_id:02} · {}",
-            parameter.label()
-        ),
+        } => format!("Auto {track_id:02} · {}", parameter.label()),
         ParameterTarget::InsertEffect {
             channel_id,
             slot_id,

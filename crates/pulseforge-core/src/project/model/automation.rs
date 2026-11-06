@@ -6,7 +6,6 @@
 
 use serde::{Deserialize, Serialize};
 
-
 use super::params::*;
 use super::targets::*;
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
@@ -146,4 +145,3 @@ impl InsertFxSlot {
         !self.plugin_path.trim().is_empty()
     }
 }
-

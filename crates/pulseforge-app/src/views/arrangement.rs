@@ -30,7 +30,4 @@ impl PulseForgeApp {
         ui.separator();
         self.render_timeline(ui, context);
     }
-
-
 }
-

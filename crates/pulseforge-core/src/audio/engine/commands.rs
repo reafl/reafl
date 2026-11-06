@@ -102,12 +102,8 @@ impl AudioEngine {
                     instrument,
                     counters,
                 } => {
-                    let slot = HostedSlot::new(
-                        *audio,
-                        instrument,
-                        f64::from(self.sample_rate),
-                        counters,
-                    );
+                    let slot =
+                        HostedSlot::new(*audio, instrument, f64::from(self.sample_rate), counters);
                     if instrument {
                         let instrument_id = id as usize;
                         if !self.hosted_instruments.contains(&instrument_id) {
@@ -275,4 +271,3 @@ impl AudioEngine {
         self.retired_project = Some(Box::new(old_project));
     }
 }
-

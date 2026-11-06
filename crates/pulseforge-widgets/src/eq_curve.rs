@@ -32,4 +32,3 @@ pub fn draw_eq_curve(ui: &mut egui::Ui, eq: pulseforge_core::project::ThreeBandE
         egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(112, 208, 190)),
     ));
 }
-

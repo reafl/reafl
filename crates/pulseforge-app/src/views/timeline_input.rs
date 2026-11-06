@@ -1,4 +1,4 @@
-﻿//! Pointer and wheel interaction of the arrangement timeline.
+//! Pointer and wheel interaction of the arrangement timeline.
 
 use crate::*;
 
@@ -119,8 +119,9 @@ impl PulseForgeApp {
             let ghost = self.drag_ghost.value();
             if ghost > 0.01 {
                 let lane = geo.first_lane + arrangement_row_at(rows, position.y - geo.grid_top);
-                let step = geo.start_step
-                    .saturating_add(((position.x - geo.left) / geo.step_width).floor().max(0.0) as u64);
+                let step = geo.start_step.saturating_add(
+                    ((position.x - geo.left) / geo.step_width).floor().max(0.0) as u64,
+                );
                 let ghost_rect = egui::Rect::from_min_size(
                     egui::pos2(position.x + 6.0, position.y - 14.0),
                     egui::vec2(120.0, 28.0),
@@ -150,8 +151,9 @@ impl PulseForgeApp {
             && position.x >= geo.left
         {
             let step = snap_arrangement_step(
-                geo.start_step
-                    .saturating_add(((position.x - geo.left) / geo.step_width).floor().max(0.0) as u64),
+                geo.start_step.saturating_add(
+                    ((position.x - geo.left) / geo.step_width).floor().max(0.0) as u64,
+                ),
                 arrangement_snap,
             );
             if primary_pressed && self.mod_ctrl {
@@ -185,12 +187,15 @@ impl PulseForgeApp {
             }
         }
         if let Some(position) = pointer_in_timeline {
-            let display_row = geo.first_lane.saturating_add(arrangement_row_at(rows, position.y - geo.grid_top));
+            let display_row = geo
+                .first_lane
+                .saturating_add(arrangement_row_at(rows, position.y - geo.grid_top));
             let lane = match rows.get(display_row).map(|span| span.row) {
                 Some(ArrangementRow::Lane(lane)) => Some(lane),
                 _ => None,
             };
-            let step = geo.start_step
+            let step = geo
+                .start_step
                 .saturating_add(((position.x - geo.left) / geo.step_width).floor().max(0.0) as u64);
             let mut on_edge = false;
             if let Some(clip) =
@@ -202,13 +207,14 @@ impl PulseForgeApp {
                         })
                     })
             {
-                let clip_start_x =
-                    geo.left + clip.start_step.saturating_sub(geo.start_step) as f32 * geo.step_width;
+                let clip_start_x = geo.left
+                    + clip.start_step.saturating_sub(geo.start_step) as f32 * geo.step_width;
                 let clip_end_x = geo.left
                     + (clip.start_step.saturating_add(clip.length_steps) - geo.start_step) as f32
                         * geo.step_width;
                 on_edge = (position.x - clip_end_x).abs() <= 8.0
-                    || (clip.start_step >= geo.start_step && (position.x - clip_start_x).abs() <= 8.0);
+                    || (clip.start_step >= geo.start_step
+                        && (position.x - clip_start_x).abs() <= 8.0);
             }
             if position.x >= geo.left && position.y >= geo.grid_top {
                 let kind = tool_cursor_kind(self.arrangement_tool, on_edge);
@@ -224,13 +230,18 @@ impl PulseForgeApp {
                 // The cut tool shows the exact split point, matching the piano
                 // roll's preview.
                 if self.arrangement_tool == PianoTool::Cut {
-                    let cut_x = geo.left + step.saturating_sub(geo.start_step) as f32 * geo.step_width;
+                    let cut_x =
+                        geo.left + step.saturating_sub(geo.start_step) as f32 * geo.step_width;
                     if cut_x >= geo.left && cut_x <= geo.rect.right() {
-                        let stroke = egui::Stroke::new(1.4_f32, egui::Color32::from_rgb(232, 96, 88));
+                        let stroke =
+                            egui::Stroke::new(1.4_f32, egui::Color32::from_rgb(232, 96, 88));
                         let mut y = geo.grid_top;
                         while y < geo.rect.bottom() {
                             painter.line_segment(
-                                [egui::pos2(cut_x, y), egui::pos2(cut_x, (y + 5.0).min(geo.rect.bottom()))],
+                                [
+                                    egui::pos2(cut_x, y),
+                                    egui::pos2(cut_x, (y + 5.0).min(geo.rect.bottom())),
+                                ],
                                 stroke,
                             );
                             y += 10.0;
@@ -243,12 +254,15 @@ impl PulseForgeApp {
             && let Some(position) = pointer_in_timeline
             && position.x >= geo.left
         {
-            let display_row = geo.first_lane.saturating_add(arrangement_row_at(rows, position.y - geo.grid_top));
+            let display_row = geo
+                .first_lane
+                .saturating_add(arrangement_row_at(rows, position.y - geo.grid_top));
             let lane = match rows.get(display_row).map(|span| span.row) {
                 Some(ArrangementRow::Lane(lane)) => Some(lane),
                 _ => None,
             };
-            let step = geo.start_step
+            let step = geo
+                .start_step
                 .saturating_add(((position.x - geo.left) / geo.step_width).floor().max(0.0) as u64);
             let lane = lane.filter(|lane| *lane < self.project.lanes.len());
             let hit_clip = lane.and_then(|lane| {
@@ -332,8 +346,8 @@ impl PulseForgeApp {
                     );
                 }
                 let clip_end = clip.start_step.saturating_add(clip.length_steps);
-                let clip_start_x =
-                    geo.left + clip.start_step.saturating_sub(geo.start_step) as f32 * geo.step_width;
+                let clip_start_x = geo.left
+                    + clip.start_step.saturating_sub(geo.start_step) as f32 * geo.step_width;
                 let resizing_start =
                     clip.start_step >= geo.start_step && (position.x - clip_start_x).abs() <= 8.0;
                 self.arrangement_gesture = Some(ArrangementGesture {
@@ -364,12 +378,15 @@ impl PulseForgeApp {
         if response.dragged_by(egui::PointerButton::Secondary)
             && let Some(position) = pointer_in_timeline
         {
-            let display_row = geo.first_lane.saturating_add(arrangement_row_at(rows, position.y - geo.grid_top));
+            let display_row = geo
+                .first_lane
+                .saturating_add(arrangement_row_at(rows, position.y - geo.grid_top));
             let lane = match rows.get(display_row).map(|span| span.row) {
                 Some(ArrangementRow::Lane(lane)) => Some(lane),
                 _ => None,
             };
-            let step = geo.start_step
+            let step = geo
+                .start_step
                 .saturating_add(((position.x - geo.left) / geo.step_width).floor().max(0.0) as u64);
             if let Some(lane) = lane.filter(|lane| *lane < self.project.lanes.len())
                 && let Some(index) = self.project.lanes[lane].clips.iter().position(|clip| {
@@ -404,8 +421,9 @@ impl PulseForgeApp {
                 );
                 for (lane, lane_data) in self.project.lanes.iter().enumerate() {
                     for (clip_index, clip) in lane_data.clips.iter().enumerate() {
-                        let start_x =
-                            geo.left + (clip.start_step as f64 - geo.start_step as f64) as f32 * geo.step_width;
+                        let start_x = geo.left
+                            + (clip.start_step as f64 - geo.start_step as f64) as f32
+                                * geo.step_width;
                         let end_x = geo.left
                             + (clip.start_step.saturating_add(clip.length_steps) as f64
                                 - geo.start_step as f64) as f32
@@ -445,14 +463,17 @@ impl PulseForgeApp {
             && position.x >= geo.left
             && position.y >= geo.grid_top
         {
-            let display_row = geo.first_lane.saturating_add(arrangement_row_at(rows, position.y - geo.grid_top));
+            let display_row = geo
+                .first_lane
+                .saturating_add(arrangement_row_at(rows, position.y - geo.grid_top));
             let lane = match rows.get(display_row).map(|span| span.row) {
                 Some(ArrangementRow::Lane(lane)) => lane,
                 _ => usize::MAX,
             };
             let step = snap_arrangement_step(
-                geo.start_step
-                    .saturating_add(((position.x - geo.left) / geo.step_width).floor().max(0.0) as u64),
+                geo.start_step.saturating_add(
+                    ((position.x - geo.left) / geo.step_width).floor().max(0.0) as u64,
+                ),
                 arrangement_snap,
             );
             if lane < self.project.lanes.len()
@@ -476,14 +497,17 @@ impl PulseForgeApp {
                 (self.arrangement_gesture.clone(), pointer_in_timeline)
             && position.x >= geo.left
         {
-            let target_display_row = geo.first_lane.saturating_add(arrangement_row_at(rows, position.y - geo.grid_top));
+            let target_display_row = geo
+                .first_lane
+                .saturating_add(arrangement_row_at(rows, position.y - geo.grid_top));
             let target_lane = match rows.get(target_display_row).map(|span| span.row) {
                 Some(ArrangementRow::Lane(lane)) => lane,
                 _ => usize::MAX,
             };
             let pointer_step = snap_arrangement_step(
-                geo.start_step
-                    .saturating_add(((position.x - geo.left) / geo.step_width).floor().max(0.0) as u64),
+                geo.start_step.saturating_add(
+                    ((position.x - geo.left) / geo.step_width).floor().max(0.0) as u64,
+                ),
                 arrangement_snap,
             );
             if target_lane == gesture.lane && gesture.resizing {
@@ -582,10 +606,14 @@ impl PulseForgeApp {
             && let (Some(source), Some(position)) = (self.pattern_drag.take(), pointer_in_timeline)
             && position.x >= geo.left
         {
-            let lane = geo.first_lane.saturating_add(arrangement_row_at(rows, position.y - geo.grid_top));
+            let lane = geo
+                .first_lane
+                .saturating_add(arrangement_row_at(rows, position.y - geo.grid_top));
             let visible_step = ((position.x - geo.left) / geo.step_width).floor().max(0.0) as u64;
-            let start_step =
-                snap_arrangement_step(geo.start_step.saturating_add(visible_step), arrangement_snap);
+            let start_step = snap_arrangement_step(
+                geo.start_step.saturating_add(visible_step),
+                arrangement_snap,
+            );
             if lane < self.project.lanes.len() {
                 self.push_history();
                 self.arrangement_source = Some(source.clone());

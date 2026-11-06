@@ -92,9 +92,9 @@ impl PulseForgeApp {
             return None;
         }
         Some(
-            target
-                .denormalize_value((normalized.unwrap_or(base_normalized) + relative).clamp(0.0, 1.0)),
+            target.denormalize_value(
+                (normalized.unwrap_or(base_normalized) + relative).clamp(0.0, 1.0),
+            ),
         )
     }
 }
-

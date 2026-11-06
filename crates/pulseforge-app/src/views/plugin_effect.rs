@@ -3,7 +3,12 @@
 use crate::*;
 
 impl PulseForgeApp {
-    pub(crate) fn render_effect_plugin(&mut self, channel: usize, slot_id: usize, ui: &mut egui::Ui) {
+    pub(crate) fn render_effect_plugin(
+        &mut self,
+        channel: usize,
+        slot_id: usize,
+        ui: &mut egui::Ui,
+    ) {
         let title = self
             .effect_slot_name(channel, slot_id)
             .unwrap_or_else(|| "Empty insert".to_owned());
@@ -25,11 +30,7 @@ impl PulseForgeApp {
                 };
                 let mut mix = target_live_value(ui, mix_target).unwrap_or(effect.mix);
                 let mix_response = ui.add(egui::Slider::new(&mut mix, 0.0..=1.0).text("Mix"));
-                automation_context_menu(
-                    &mix_response,
-                    &format!("Mix · {mix:.2}"),
-                    mix_target,
-                );
+                automation_context_menu(&mix_response, &format!("Mix · {mix:.2}"), mix_target);
                 if mix_response.changed() {
                     effect.mix = mix;
                 }
@@ -261,4 +262,3 @@ impl PulseForgeApp {
         }
     }
 }
-

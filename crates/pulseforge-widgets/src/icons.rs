@@ -1,4 +1,4 @@
-//! Vector glyphs and the icon buttons built from them. 
+//! Vector glyphs and the icon buttons built from them.
 use eframe::egui;
 
 use crate::tooltip::tooltip;
@@ -271,4 +271,3 @@ pub fn icon_button_toggle(
 pub fn power_word(enabled: bool) -> &'static str {
     if enabled { "enabled" } else { "disabled" }
 }
-

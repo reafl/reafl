@@ -322,7 +322,10 @@ impl PulseForgeApp {
                 .text("Animation speed"),
         );
         ui.separator();
-        ui.add(egui::Slider::new(&mut self.settings.zoom, MIN_ZOOM..=MAX_ZOOM).text("Arrangement zoom"));
+        ui.add(
+            egui::Slider::new(&mut self.settings.zoom, MIN_ZOOM..=MAX_ZOOM)
+                .text("Arrangement zoom"),
+        );
         ui.add(
             egui::Slider::new(&mut self.settings.wheel_step_ticks, 1..=32)
                 .text("Alt+wheel step (ticks)"),
@@ -333,7 +336,9 @@ impl PulseForgeApp {
                 .suffix(" x"),
         );
         ui.label("Ctrl+wheel zooms the arrangement and editors; Alt+wheel changes the step size.");
-        ui.label("Ctrl+click the ruler to reset the zoom; the interface scale works like a DPI setting.");
+        ui.label(
+            "Ctrl+click the ruler to reset the zoom; the interface scale works like a DPI setting.",
+        );
         ui.separator();
         ui.label("Tooltips");
         for mode in settings::TooltipMode::ALL {
@@ -553,4 +558,3 @@ impl PulseForgeApp {
         self.load_instrument_sample(instrument_id);
     }
 }
-

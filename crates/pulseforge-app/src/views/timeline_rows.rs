@@ -1,4 +1,4 @@
-﻿//! Painting the arrangement rows: track headers, power switches and clips.
+//! Painting the arrangement rows: track headers, power switches and clips.
 
 use crate::*;
 
@@ -264,16 +264,18 @@ impl PulseForgeApp {
                 let clip_end = clip.start_step.saturating_add(clip.length_steps);
                 if clip_end <= geo.start_step
                     || clip.start_step
-                        >= geo.start_step.saturating_add(geo.bars_visible.saturating_mul(geo.steps_per_bar))
+                        >= geo
+                            .start_step
+                            .saturating_add(geo.bars_visible.saturating_mul(geo.steps_per_bar))
                 {
                     continue;
                 }
                 let clip_visible_start = clip.start_step.max(geo.start_step);
                 let clip_visible_end = clip_end.min(geo.view_end_step);
-                let visible_left =
-                    geo.left + (clip_visible_start.saturating_sub(geo.start_step) as f32) * geo.step_width;
-                let visible_right =
-                    geo.left + (clip_visible_end.saturating_sub(geo.start_step) as f32) * geo.step_width;
+                let visible_left = geo.left
+                    + (clip_visible_start.saturating_sub(geo.start_step) as f32) * geo.step_width;
+                let visible_right = geo.left
+                    + (clip_visible_end.saturating_sub(geo.start_step) as f32) * geo.step_width;
                 if visible_right <= visible_left {
                     continue;
                 }
@@ -356,7 +358,11 @@ impl PulseForgeApp {
                     lane: lane_id,
                     clip: clip_index,
                 });
-                let lift = if selected { self.clip_lift.value() } else { 0.0 };
+                let lift = if selected {
+                    self.clip_lift.value()
+                } else {
+                    0.0
+                };
                 let clip_rect = clip_rect.translate(egui::vec2(0.0, -lift * 2.0));
                 painter.rect_filled(clip_rect, 5.0, color.gamma_multiply(0.72 + lift * 0.12));
                 draw_clip_contents(
@@ -413,7 +419,5 @@ impl PulseForgeApp {
         if automation_changed {
             self.sync_project();
         }
-
     }
 }
-

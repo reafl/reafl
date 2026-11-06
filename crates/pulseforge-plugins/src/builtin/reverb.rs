@@ -1,7 +1,7 @@
 //! Feedback reverb, in two voicings: a hall and a shorter plate.
 
-use super::params::EffectParameters;
 use super::BuiltinProcessor;
+use super::params::EffectParameters;
 
 /// A single stereo feedback delay line used as a reverb.
 pub struct Reverb {

@@ -107,11 +107,7 @@ impl Knob {
     /// # Returns
     ///
     /// Whether the value changed, and the response of the dial.
-    pub fn show_response(
-        self,
-        ui: &mut egui::Ui,
-        value: &mut f32,
-    ) -> (bool, egui::Response) {
+    pub fn show_response(self, ui: &mut egui::Ui, value: &mut f32) -> (bool, egui::Response) {
         let compact = self.size < 40.0;
         let height = if compact { 40.0 } else { 76.0 };
         let (rect, response) =
@@ -175,8 +171,8 @@ impl Knob {
             );
         }
 
-        let normalized = ((live_value.unwrap_or(*value) - self.min) / (self.max - self.min))
-            .clamp(0.0, 1.0);
+        let normalized =
+            ((live_value.unwrap_or(*value) - self.min) / (self.max - self.min)).clamp(0.0, 1.0);
         let angle = (-135.0 + normalized * 270.0).to_radians();
         let indicator = center + egui::vec2(angle.sin(), -angle.cos()) * (radius - 3.0);
         painter.line_segment(
@@ -290,4 +286,3 @@ impl Knob {
         (changed, response)
     }
 }
-

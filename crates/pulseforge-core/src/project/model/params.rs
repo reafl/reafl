@@ -6,7 +6,6 @@
 
 use serde::{Deserialize, Serialize};
 
-
 pub const INITIAL_LANES: usize = 4;
 pub const INITIAL_PATTERN_STEPS: u64 = 64;
 pub const MIDI_CHANNEL_COUNT: usize = 16;
@@ -123,4 +122,3 @@ impl LfoShape {
             .unwrap_or(0) as u32
     }
 }
-

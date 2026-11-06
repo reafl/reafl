@@ -8,20 +8,17 @@ use std::{
     },
 };
 
-
 use crate::{
     hosted::effect_host_id,
     plugins::BuiltinEffect,
     project::{
-        ClipSource,
-        Instrument, LfoShape, PianoNote,
-        Project, SignalWaveform, SynthKind, TimeUnit, TimeValue,
+        ClipSource, Instrument, LfoShape, PianoNote, Project, SignalWaveform, SynthKind, TimeUnit,
+        TimeValue,
     },
 };
 
-
-use super::model::*;
 use super::engine::*;
+use super::model::*;
 
 pub(crate) fn update_effect_chain(
     lane: usize,
@@ -313,4 +310,3 @@ pub fn render_project_to_wav(project: &Project, path: &str) -> Result<u64, Strin
     writer.finalize().map_err(|error| error.to_string())?;
     Ok(render_frames as u64)
 }
-

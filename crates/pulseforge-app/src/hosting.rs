@@ -32,9 +32,10 @@ impl PulseForgeApp {
         // without any locking on the audio path.
         let counters = self.plugin_debug.register(
             id,
-            std::path::Path::new(path)
-                .file_stem()
-                .map_or_else(|| path.to_owned(), |stem| stem.to_string_lossy().into_owned()),
+            std::path::Path::new(path).file_stem().map_or_else(
+                || path.to_owned(),
+                |stem| stem.to_string_lossy().into_owned(),
+            ),
             path,
             if instrument {
                 pulseforge_profiling::PluginKind::Instrument
@@ -284,4 +285,3 @@ impl PulseForgeApp {
         (!path.is_empty()).then(|| path.clone())
     }
 }
-

@@ -6,7 +6,6 @@
 
 use serde::{Deserialize, Serialize};
 
-
 use super::params::*;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -202,10 +201,7 @@ impl ArpMode {
     }
 
     pub fn index(self) -> u32 {
-        Self::ALL
-            .iter()
-            .position(|mode| *mode == self)
-            .unwrap_or(0) as u32
+        Self::ALL.iter().position(|mode| *mode == self).unwrap_or(0) as u32
     }
 
     /// Reorders `pitches` (already sorted low to high) for this mode.
@@ -625,4 +621,3 @@ impl EffectParameter {
         }
     }
 }
-

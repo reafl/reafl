@@ -1,7 +1,7 @@
 //! The three-band equaliser: two one-pole crossovers and three shelf gains.
 
-use super::params::{EffectParameters, db_gain};
 use super::BuiltinProcessor;
+use super::params::{EffectParameters, db_gain};
 
 /// Two crossover filters split the signal into low, mid and high bands.
 pub struct Equalizer {

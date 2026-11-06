@@ -376,16 +376,16 @@ impl PulseForgeApp {
             // hang.
             let running = self.tasks.running();
             if running > 0 {
-             
-            // Live machine/engine numbers while the debug panel is open.
-            if !self.debug_summary.is_empty() {
-                ui.separator();
-                ui.label(
-                    egui::RichText::new(self.debug_summary.clone())
-                        .small()
-                        .weak(),
-                );
-            }   ui.label(format!("{running} background job(s)"));
+                // Live machine/engine numbers while the debug panel is open.
+                if !self.debug_summary.is_empty() {
+                    ui.separator();
+                    ui.label(
+                        egui::RichText::new(self.debug_summary.clone())
+                            .small()
+                            .weak(),
+                    );
+                }
+                ui.label(format!("{running} background job(s)"));
             }
             ui.separator();
             // Hovered control details: name, value and unit (tooltip replacement).
@@ -468,4 +468,3 @@ impl PulseForgeApp {
         }
     }
 }
-

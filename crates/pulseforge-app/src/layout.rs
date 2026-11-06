@@ -112,8 +112,7 @@ pub(crate) fn draw_clip_contents(
                 // Step-only patterns get one tick per active step.
                 for hit in &pattern.step_hits {
                     // A sliced clip can start part-way into its pattern.
-                    let offset = (hit.step + pattern_length
-                        - clip.offset_steps % pattern_length)
+                    let offset = (hit.step + pattern_length - clip.offset_steps % pattern_length)
                         % pattern_length;
                     let step = clip.start_step + offset;
                     if step < visible_start || step >= visible_end {

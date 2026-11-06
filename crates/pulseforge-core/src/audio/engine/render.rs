@@ -305,7 +305,6 @@ impl AudioEngine {
         output
     }
 
-
     pub(crate) fn frames_per_step(&self) -> f64 {
         self.sample_rate as f64 * 60.0 / f64::from(self.project.bpm) / 4.0
     }
@@ -315,5 +314,4 @@ impl AudioEngine {
     pub(crate) fn playhead_position(&self) -> f64 {
         self.position_steps as f64 + self.frames_into_step / self.frames_per_step().max(1.0)
     }
-
 }

@@ -209,7 +209,11 @@ impl DebugPanel {
                 "FPS",
                 format!(
                     "{:.0}",
-                    if frame_ms > 0.0 { 1000.0 / frame_ms } else { 0.0 }
+                    if frame_ms > 0.0 {
+                        1000.0 / frame_ms
+                    } else {
+                        0.0
+                    }
                 ),
             ),
             ("Worst frame", format!("{worst_ms:.1} ms")),
@@ -281,9 +285,23 @@ impl DebugPanel {
         let gpu = None;
 
         ui.label(RichText::new("UI frame time (ms)").small().weak());
-        strip(ui, &frames, 33.0, 54.0, Color32::from_rgb(112, 208, 190), gpu);
+        strip(
+            ui,
+            &frames,
+            33.0,
+            54.0,
+            Color32::from_rgb(112, 208, 190),
+            gpu,
+        );
         ui.label(RichText::new("Audio DSP load (%)").small().weak());
-        strip(ui, &loads, 100.0, 54.0, Color32::from_rgb(226, 168, 82), gpu);
+        strip(
+            ui,
+            &loads,
+            100.0,
+            54.0,
+            Color32::from_rgb(226, 168, 82),
+            gpu,
+        );
     }
 
     fn flame(&mut self, ui: &mut egui::Ui, world: &mut DebugWorld<'_>) {
@@ -543,8 +561,11 @@ fn plugin_table(ui: &mut egui::Ui, plugins: &[PluginSample]) {
             }
             ui.end_row();
             for plugin in plugins {
-                ui.label(plugin.name.clone())
-                    .on_hover_text(format!("{} ({})", plugin.path, plugin.kind.label()));
+                ui.label(plugin.name.clone()).on_hover_text(format!(
+                    "{} ({})",
+                    plugin.path,
+                    plugin.kind.label()
+                ));
                 ui.label(plugin.kind.label());
                 ui.label(format!("{:.1} %", plugin.cpu_percent));
                 ui.label(format!("{:.0} µs", plugin.mean_micros));

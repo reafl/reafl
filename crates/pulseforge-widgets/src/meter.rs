@@ -39,4 +39,3 @@ pub fn render_meter_sized(ui: &mut egui::Ui, level: f32, width: f32, height: f32
         );
     }
 }
-

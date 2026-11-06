@@ -1,4 +1,4 @@
-//! Colour tokens, theme application and colour maths. 
+//! Colour tokens, theme application and colour maths.
 use eframe::egui;
 
 use pulseforge_settings::settings;
@@ -125,4 +125,3 @@ pub fn point_segment_distance(point: egui::Pos2, start: egui::Pos2, end: egui::P
     let amount = ((point - start).dot(segment) / length_squared).clamp(0.0, 1.0);
     point.distance(start + segment * amount)
 }
-

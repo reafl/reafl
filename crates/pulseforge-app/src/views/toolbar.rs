@@ -81,7 +81,8 @@ impl PulseForgeApp {
             // Stateful transport switches show their state through the button
             // fill, so whether the loop, metronome or pattern preview is on is
             // visible without reading the status bar.
-            if icon_button_toggle(ui, Icon::Loop, "Loop selection (L)", self.loop_enabled).clicked() {
+            if icon_button_toggle(ui, Icon::Loop, "Loop selection (L)", self.loop_enabled).clicked()
+            {
                 self.perform(ShortcutAction::ToggleLoop);
             }
             if icon_button_toggle(ui, Icon::Metronome, "Metronome (Ctrl+M)", self.metronome)
@@ -253,4 +254,3 @@ impl PulseForgeApp {
         }
     }
 }
-

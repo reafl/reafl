@@ -6,7 +6,6 @@
 
 use serde::{Deserialize, Serialize};
 
-
 use super::automation::*;
 use super::params::*;
 use super::targets::*;
@@ -337,4 +336,3 @@ impl Default for Project {
         project
     }
 }
-

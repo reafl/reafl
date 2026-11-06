@@ -1,4 +1,4 @@
-﻿//! Picking the parameter that the automation window edits.
+//! Picking the parameter that the automation window edits.
 
 use crate::*;
 
@@ -28,7 +28,10 @@ impl PulseForgeApp {
     ///
     /// The selected [`ParameterTarget`], or `None` when the project has
     /// nothing that could be automated yet.
-    pub(crate) fn automation_target_selector(&mut self, ui: &mut egui::Ui) -> Option<ParameterTarget> {
+    pub(crate) fn automation_target_selector(
+        &mut self,
+        ui: &mut egui::Ui,
+    ) -> Option<ParameterTarget> {
         let target = if self.automation_effect_mode {
             let master_id = self.project.lanes.len();
             self.automation_channel_id = self.automation_channel_id.min(master_id);
@@ -156,7 +159,11 @@ impl PulseForgeApp {
     ///
     /// - `ui`: the parent UI.
     /// - `target`: the parameter the new lane should automate.
-    pub(crate) fn automation_add_lane_button(&mut self, ui: &mut egui::Ui, target: ParameterTarget) {
+    pub(crate) fn automation_add_lane_button(
+        &mut self,
+        ui: &mut egui::Ui,
+        target: ParameterTarget,
+    ) {
         let target_label = parameter_target_label(&self.project, target);
         if ui.button("Add automation lane").clicked()
             && let Some(base_value) = self.project.parameter_value(target)
@@ -187,4 +194,3 @@ impl PulseForgeApp {
         }
     }
 }
-

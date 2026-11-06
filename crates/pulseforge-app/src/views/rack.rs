@@ -360,7 +360,8 @@ impl PulseForgeApp {
             // The wheel scrolls across steps as well, which is what the rack was
             // missing: only middle-drag used to pan.
             let scroll = input.raw_scroll_delta.y;
-            if scroll.abs() > 0.01 && rect.contains(input.pointer.interact_pos().unwrap_or_default())
+            if scroll.abs() > 0.01
+                && rect.contains(input.pointer.interact_pos().unwrap_or_default())
             {
                 let direction = if scroll > 0.0 { -2 } else { 2 };
                 self.pattern_pan_steps = self.pattern_pan_steps.saturating_add_signed(direction);
@@ -414,4 +415,3 @@ impl PulseForgeApp {
         }
     }
 }
-

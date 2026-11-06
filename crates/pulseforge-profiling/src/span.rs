@@ -200,11 +200,8 @@ impl Profiler {
                         .position(|span| span.start_ns + span.duration_ns >= cutoff)
                         .unwrap_or(window.len());
                     window.drain(..keep_from);
-                    let snapshot = crate::flame::build(
-                        &window,
-                        window_ms as f32 / 1000.0,
-                        profiler.dropped(),
-                    );
+                    let snapshot =
+                        crate::flame::build(&window, window_ms as f32 / 1000.0, profiler.dropped());
                     if let Ok(mut published) = profiler.published.lock() {
                         *published = Arc::new(snapshot);
                     }

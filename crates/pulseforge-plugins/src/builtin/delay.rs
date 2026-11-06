@@ -1,7 +1,7 @@
 //! Delay lines: a clean digital delay and a tape-style echo with a low pass.
 
-use super::params::EffectParameters;
 use super::BuiltinProcessor;
+use super::params::EffectParameters;
 
 /// A stereo delay line, optionally rolled off like tape.
 pub struct Delay {
@@ -48,7 +48,8 @@ impl BuiltinProcessor for Delay {
         let mut output = [0.0; 2];
         for channel in 0..2 {
             if self.tape {
-                self.low_pass[channel] += 0.28 * (self.buffer[channel][read] - self.low_pass[channel]);
+                self.low_pass[channel] +=
+                    0.28 * (self.buffer[channel][read] - self.low_pass[channel]);
                 output[channel] = self.low_pass[channel] * parameters.amount;
                 self.buffer[channel][self.cursor] =
                     (input[channel] + self.low_pass[channel] * parameters.feedback).tanh();

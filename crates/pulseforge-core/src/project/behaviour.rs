@@ -95,7 +95,8 @@ impl Project {
             lane.pan = finite_clamp(lane.pan, -1.0, 1.0, 0.0);
             lane.width = finite_clamp(lane.width, 0.0, 2.0, 1.0);
             Self::normalize_eq(&mut lane.eq);
-            lane.inserts.resize_with(INSERT_SLOTS, InsertFxSlot::default);
+            lane.inserts
+                .resize_with(INSERT_SLOTS, InsertFxSlot::default);
             lane.inserts.truncate(INSERT_SLOTS);
             Self::normalize_inserts(&mut lane.inserts);
             lane.clips.retain_mut(|clip| {
@@ -127,7 +128,9 @@ impl Project {
         self.master.gain = finite_clamp(self.master.gain, 0.0, 1.0, 1.0);
         self.master.pan = finite_clamp(self.master.pan, -1.0, 1.0, 0.0);
         Self::normalize_eq(&mut self.master.eq);
-        self.master.inserts.resize_with(INSERT_SLOTS, InsertFxSlot::default);
+        self.master
+            .inserts
+            .resize_with(INSERT_SLOTS, InsertFxSlot::default);
         self.master.inserts.truncate(INSERT_SLOTS);
         Self::normalize_inserts(&mut self.master.inserts);
         let totals: Vec<f32> = (0..channel_count)
@@ -146,7 +149,8 @@ impl Project {
         // Lane-to-lane automation may only point at lanes that exist.
         let track_count = self.automation_tracks.len();
         self.automation_tracks.retain_mut(|track| {
-            track.length_steps = track.length_steps.max(1);            let target_is_valid = match track.target {
+            track.length_steps = track.length_steps.max(1);
+            let target_is_valid = match track.target {
                 ParameterTarget::Instrument { instrument_id, .. } => {
                     instrument_id < self.instruments.len()
                 }
@@ -378,10 +382,9 @@ impl Project {
                         | AutomationSource::SampleAndHold { rate, .. } => rate.amount,
                         AutomationSource::Curve | AutomationSource::RelativeCurve => return None,
                     }),
-                    (
-                        AutomationSource::Lfo { shape, .. },
-                        AutomationLaneParameter::Shape,
-                    ) => Some(shape.index() as f32),
+                    (AutomationSource::Lfo { shape, .. }, AutomationLaneParameter::Shape) => {
+                        Some(shape.index() as f32)
+                    }
                     (
                         AutomationSource::MidiEnvelope { sustain, .. },
                         AutomationLaneParameter::Sustain,
@@ -693,4 +696,3 @@ pub fn disconnect_channel(sends: &mut [Vec<f32>], channel: usize) {
         row.fill(0.0);
     }
 }
-

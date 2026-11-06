@@ -42,9 +42,7 @@ pub fn target_live_value(ui: &egui::Ui, target: ParameterTarget) -> Option<f32> 
 /// Asks for an automation lane on `target`; the request is picked up by the next
 /// frame's update pass, which creates the lane.
 pub fn request_automation_lane(context: &egui::Context, target: ParameterTarget) {
-    context.data_mut(|data| {
-        data.insert_temp(egui::Id::new("knob_add_automation"), target)
-    });
+    context.data_mut(|data| data.insert_temp(egui::Id::new("knob_add_automation"), target));
 }
 
 /// Adds the shared "Add automation lane" entry to a control's right-click menu,
@@ -74,4 +72,3 @@ pub fn automation_lane_button(ui: &mut egui::Ui, label: &str, target: ParameterT
     automation_context_menu(&response, label, target);
     false
 }
-

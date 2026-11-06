@@ -190,10 +190,7 @@ impl PulseForgeApp {
                     .inner;
                 let (velocity_rect, velocity_response) = ui
                     .horizontal(|ui| {
-                        ui.allocate_exact_size(
-                            egui::vec2(54.0, lane_height),
-                            egui::Sense::hover(),
-                        );
+                        ui.allocate_exact_size(egui::vec2(54.0, lane_height), egui::Sense::hover());
                         ui.allocate_exact_size(
                             egui::vec2(width, lane_height),
                             egui::Sense::click_and_drag(),
@@ -369,7 +366,10 @@ impl PulseForgeApp {
                         + (repeat_tick as f32 / 16.0 - absolute_start as f32) * step_width;
                     if marker_x > rect.left() + 1.0 && marker_x < rect.right() - 1.0 {
                         painter.line_segment(
-                            [egui::pos2(marker_x, rect.top() + 2.0), egui::pos2(marker_x, rect.bottom() - 2.0)],
+                            [
+                                egui::pos2(marker_x, rect.top() + 2.0),
+                                egui::pos2(marker_x, rect.bottom() - 2.0),
+                            ],
                             marker,
                         );
                     }
@@ -459,8 +459,8 @@ impl PulseForgeApp {
                     .min((PIANO_ROWS - 1) as u8);
                 (PIANO_ROWS - 1 - usize::from(offset)) as f32
             };
-            let x0 = grid_rect.left()
-                + (origin_tick as f32 / 16.0 - absolute_start as f32) * step_width;
+            let x0 =
+                grid_rect.left() + (origin_tick as f32 / 16.0 - absolute_start as f32) * step_width;
             let y0 = grid_rect.top() + row_of(origin_pitch) * row_height;
             let pointer_row = ((pointer.y - grid_rect.top()) / row_height)
                 .floor()
@@ -468,10 +468,7 @@ impl PulseForgeApp {
             let y1 = grid_rect.top() + (pointer_row + 1.0) * row_height;
             let band = egui::Rect::from_two_pos(
                 egui::pos2(x0, y0),
-                egui::pos2(
-                    pointer.x.clamp(grid_rect.left(), grid_rect.right()),
-                    y1,
-                ),
+                egui::pos2(pointer.x.clamp(grid_rect.left(), grid_rect.right()), y1),
             );
             if band.width() > 2.0 || band.height() > 2.0 {
                 painter.rect_filled(
@@ -485,7 +482,13 @@ impl PulseForgeApp {
     }
 
     /// Selects every note whose start lies inside the rubber band.
-    pub(crate) fn select_notes_in_box(&mut self, from_tick: u64, to_tick: u64, from_pitch: u8, to_pitch: u8) {
+    pub(crate) fn select_notes_in_box(
+        &mut self,
+        from_tick: u64,
+        to_tick: u64,
+        from_pitch: u8,
+        to_pitch: u8,
+    ) {
         let (low_tick, high_tick) = (from_tick.min(to_tick), from_tick.max(to_tick));
         let (low_pitch, high_pitch) = (from_pitch.min(to_pitch), from_pitch.max(to_pitch));
         let instrument = self.selected_instrument;
@@ -539,8 +542,4 @@ impl PulseForgeApp {
         self.selection_anchor = hits.first().copied();
         self.status = format!("Selected {} note(s) in the ruler range.", hits.len());
     }
-
-
-
 }
-

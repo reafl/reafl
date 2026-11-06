@@ -40,7 +40,9 @@ mod macros;
 
 pub use flame::{ChannelFlame, FlameNode, Snapshot};
 pub use plugin::{PluginDebug, PluginKind, PluginSample, SlotCounters};
-pub use span::{Channel, Profiler, RawSpan, Scope, install, profiler, set_thread_channel, thread_channel};
+pub use span::{
+    Channel, Profiler, RawSpan, Scope, install, profiler, set_thread_channel, thread_channel,
+};
 
 #[cfg(feature = "system")]
 pub use system::{SystemMonitor, SystemStats};

@@ -65,7 +65,11 @@ impl PulseForgeApp {
 
     /// External plug-in wrapper: shows the bundle identity plus an editor area.
     /// Fallback shown until an instrument's bundle has been loaded.
-    pub(crate) fn render_external_plugin_wrapper(&mut self, ui: &mut egui::Ui, instrument_id: usize) {
+    pub(crate) fn render_external_plugin_wrapper(
+        &mut self,
+        ui: &mut egui::Ui,
+        instrument_id: usize,
+    ) {
         let host_id = pulseforge_core::hosted::instrument_host_id(instrument_id);
         if self.hosted.contains_key(&host_id) {
             self.render_hosted_plugin(ui, host_id);
@@ -100,4 +104,3 @@ impl PulseForgeApp {
             });
     }
 }
-

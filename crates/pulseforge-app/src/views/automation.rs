@@ -1,4 +1,4 @@
-﻿//! The automation window.
+//! The automation window.
 //!
 //! The window is an assembly of three helpers that live in their own modules:
 //! [`automation_target`](super::automation_target) owns the target picker,
@@ -29,4 +29,3 @@ impl PulseForgeApp {
         self.automation_track_list(ui);
     }
 }
-

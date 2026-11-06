@@ -141,10 +141,6 @@ impl PulseForgeApp {
             }
         });
     }
-
-
 }
 
-impl PulseForgeApp {
-}
-
+impl PulseForgeApp {}

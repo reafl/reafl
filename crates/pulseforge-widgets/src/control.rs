@@ -129,7 +129,11 @@ impl<'a> ValueControl<'a> {
     /// # Returns
     ///
     /// A control that draws as a slider until another kind is chosen.
-    pub fn new(label: &'static str, value: &'a mut f32, range: std::ops::RangeInclusive<f32>) -> Self {
+    pub fn new(
+        label: &'static str,
+        value: &'a mut f32,
+        range: std::ops::RangeInclusive<f32>,
+    ) -> Self {
         Self {
             spec: Spec {
                 label,
@@ -158,7 +162,11 @@ impl<'a> ValueControl<'a> {
     /// # Returns
     ///
     /// A [`ControlKind::Knob`] control.
-    pub fn knob(label: &'static str, value: &'a mut f32, range: std::ops::RangeInclusive<f32>) -> Self {
+    pub fn knob(
+        label: &'static str,
+        value: &'a mut f32,
+        range: std::ops::RangeInclusive<f32>,
+    ) -> Self {
         let mut control = Self::new(label, value, range);
         control.spec.kind = ControlKind::Knob;
         control
@@ -175,7 +183,11 @@ impl<'a> ValueControl<'a> {
     /// # Returns
     ///
     /// A [`ControlKind::Number`] control.
-    pub fn number(label: &'static str, value: &'a mut f32, range: std::ops::RangeInclusive<f32>) -> Self {
+    pub fn number(
+        label: &'static str,
+        value: &'a mut f32,
+        range: std::ops::RangeInclusive<f32>,
+    ) -> Self {
         let mut control = Self::new(label, value, range);
         control.spec.kind = ControlKind::Number;
         control
@@ -221,11 +233,7 @@ impl<'a> ValueControl<'a> {
     /// # Returns
     ///
     /// A [`ControlKind::Choice`] control.
-    pub fn choice(
-        label: &'static str,
-        index: &'a mut usize,
-        labels: &'a [&'a str],
-    ) -> Self {
+    pub fn choice(label: &'static str, index: &'a mut usize, labels: &'a [&'a str]) -> Self {
         let max = labels.len().saturating_sub(1) as f32;
         Self {
             spec: Spec {
@@ -336,9 +344,7 @@ impl<'a> ValueControl<'a> {
     /// widget response for tooltips.
     pub fn show(self, ui: &mut egui::Ui) -> ControlResponse {
         let ValueControl { mut spec, bound } = self;
-        let live = spec
-            .target
-            .and_then(|target| target_live_value(ui, target));
+        let live = spec.target.and_then(|target| target_live_value(ui, target));
         match bound {
             Bound::Number(value) => show_number(ui, &mut spec, value, live),
             Bound::Flag(flag) => show_flag(ui, &mut spec, flag, live),

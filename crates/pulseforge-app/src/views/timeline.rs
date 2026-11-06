@@ -1,4 +1,4 @@
-﻿//! The arrangement timeline.
+//! The arrangement timeline.
 //!
 //! One frame of the timeline is built in three passes that live in their own
 //! modules: [`timeline_paint`](super::timeline_paint) paints the ruler and the
@@ -78,8 +78,7 @@ impl PulseForgeApp {
         let header_height = 30.0;
         // Rows have independent heights, so the visible count is discovered
         // after the layout is built instead of being divided by a constant.
-        let view_end_step =
-            start_step.saturating_add(bars_visible.saturating_mul(steps_per_bar));
+        let view_end_step = start_step.saturating_add(bars_visible.saturating_mul(steps_per_bar));
         TimelineGeometry {
             rect,
             grid_top: rect.top() + header_height,
@@ -96,4 +95,3 @@ impl PulseForgeApp {
         }
     }
 }
-
