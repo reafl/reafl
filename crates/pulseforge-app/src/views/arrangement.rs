@@ -403,15 +403,18 @@ impl PulseForgeApp {
                     ui.close();
                 }
             });
-            painter.circle_filled(
-                point_position(point),
-                4.5,
-                if curve_source {
+            // The marker comes from the shared point style, so every lane and
+            // the piano roll draw points the same way.
+            let style = pulseforge_widgets::shape::PointStyle {
+                radius: 4.5,
+                fill: if curve_source {
                     egui::Color32::from_rgb(229, 185, 251)
                 } else {
                     egui::Color32::from_rgb(255, 218, 112)
                 },
-            );
+                ..Default::default()
+            };
+            style.paint(&painter, point_position(point));
         }
         if let Some(point_id) = remove_point {
             points.remove(point_id);

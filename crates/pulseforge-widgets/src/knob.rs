@@ -46,6 +46,24 @@ impl Knob {
     }
 
     pub fn show(self, ui: &mut egui::Ui, value: &mut f32) -> bool {
+        self.show_response(ui, value).0
+    }
+
+    /// Draws the knob and also returns its widget response.
+    ///
+    /// # Parameters
+    ///
+    /// - `ui`: the parent layout.
+    /// - `value`: the value to edit, written back in place.
+    ///
+    /// # Returns
+    ///
+    /// Whether the value changed, and the response of the dial.
+    pub fn show_response(
+        self,
+        ui: &mut egui::Ui,
+        value: &mut f32,
+    ) -> (bool, egui::Response) {
         let compact = self.size < 40.0;
         let height = if compact { 40.0 } else { 76.0 };
         let (rect, response) =
@@ -216,12 +234,12 @@ impl Knob {
             ui.separator();
             ui.add_enabled(false, egui::Button::new("More parameter actions"));
         });
-        response.on_hover_text(format!(
+        response.clone().on_hover_text(format!(
             "{}: {:.2}{} · Alt+click reset · Ctrl+click type · right-click menu",
             self.label, *value, self.suffix
         ));
         let _ = editing;
-        changed
+        (changed, response)
     }
 }
 

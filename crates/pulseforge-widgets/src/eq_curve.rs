@@ -1,10 +1,17 @@
 //! The three-band EQ response curve.
 
 use eframe::egui;
-use pulseforge_core::project::ThreeBandEq;
 
+use crate::shape::eq_response_curve;
 
-pub fn draw_eq_curve(ui: &mut egui::Ui, eq: ThreeBandEq) {
+/// Draws the small three-band response display used by the inspector and the
+/// effect windows.
+///
+/// # Parameters
+///
+/// - `ui`: the parent layout; the widget allocates its own space.
+/// - `eq`: the shelf gains in dB.
+pub fn draw_eq_curve(ui: &mut egui::Ui, eq: pulseforge_core::project::ThreeBandEq) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(192.0, 82.0), egui::Sense::hover());
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 4.0, egui::Color32::from_gray(18));
@@ -16,19 +23,10 @@ pub fn draw_eq_curve(ui: &mut egui::Ui, eq: ThreeBandEq) {
         ],
         egui::Stroke::new(1.0_f32, egui::Color32::from_gray(66)),
     );
-    let points: Vec<_> = (0..=64)
-        .map(|index| {
-            let x = index as f32 / 64.0;
-            let low = eq.low_db * (-((x - 0.16) / 0.24).powi(2)).exp();
-            let mid = eq.mid_db * (-((x - 0.50) / 0.20).powi(2)).exp();
-            let high = eq.high_db * (-((x - 0.84) / 0.24).powi(2)).exp();
-            let db = (low + mid + high).clamp(-12.0, 12.0);
-            egui::pos2(
-                rect.left() + x * rect.width(),
-                center_y - db / 12.0 * (rect.height() * 0.42),
-            )
-        })
-        .collect();
+    // The response maths lives in `shape`, shared with any other curve drawing.
+    let curve = eq_response_curve(&eq, rect.width(), rect.height() * 0.84, 64);
+    let offset = egui::vec2(rect.left(), rect.top() + rect.height() * 0.08);
+    let points: Vec<egui::Pos2> = curve.points().iter().map(|point| *point + offset).collect();
     painter.add(egui::Shape::line(
         points,
         egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(112, 208, 190)),

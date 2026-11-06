@@ -11,10 +11,14 @@
 //! - [`platform`] holds the few OS calls egui does not expose.
 //! - [`theme`] carries the colour and sizing tokens, [`icons`] paints the vector
 //!   glyphs, and [`knob`], [`fader`], [`meter`] and [`power`] are the controls.
+//! - [`control`] is the one control type every window can use, and [`shape`]
+//!   draws the points and curves - lanes, EQ responses and routing cables - that
+//!   those windows share.
 
 pub mod anim;
 pub mod automation_bridge;
 pub mod context_menu;
+pub mod control;
 pub mod effect_parameters;
 pub mod eq_curve;
 pub mod fader;
@@ -27,6 +31,7 @@ pub mod mixer_strip;
 pub mod platform;
 pub mod power;
 pub mod presets;
+pub mod shape;
 pub mod theme;
 pub mod time_edit;
 pub mod tooltip;
