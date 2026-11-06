@@ -32,8 +32,9 @@ use pulseforge_profiling::{
 use pulseforge_settings::{cli, settings};
 use pulseforge_tasks as tasks;
 use pulseforge_widgets::{
-    anim, automation_bridge, context_menu, effect_parameters, eq_curve, fader, fader_math, icons,
-    knob, lane_slider, meter, mixer_strip, power, presets, theme, time_edit, tooltip,
+    anim, automation_bridge, context_menu, control, effect_parameters, eq_curve, fader,
+    fader_math, icons, knob, lane_slider, meter, mixer_strip, power, presets, shape, theme,
+    time_edit, tooltip,
 };
 
 use anim::Animated;
@@ -48,6 +49,7 @@ mod snap;
 mod views;
 
 use automation_bridge::*;
+use control::ValueControl;
 use effect_parameters::*;
 use eq_curve::*;
 use geometry::*;

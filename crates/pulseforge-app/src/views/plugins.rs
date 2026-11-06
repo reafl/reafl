@@ -100,16 +100,13 @@ impl PulseForgeApp {
                     ui.end_row();
                     ui.label("Gate");
                     let mut gate = instrument.arpeggio.gate;
-                    if lane_parameter_slider(
-                        ui,
-                        "",
-                        &mut gate,
-                        0.05..=1.0,
-                        ParameterTarget::Instrument {
+                    let gate_edit = ValueControl::new("", &mut gate, 0.05..=1.0)
+                        .automates(ParameterTarget::Instrument {
                             instrument_id,
                             parameter: InstrumentParameter::ArpGate,
-                        },
-                    ) {
+                        })
+                        .show(ui);
+                    if gate_edit.changed {
                         instrument.arpeggio.gate = gate;
                     }
                     ui.end_row();
