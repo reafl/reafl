@@ -528,6 +528,28 @@ pub(crate) fn lane_source_columns(
     Some(sources)
 }
 
+/// The value a lane's source produces at a position, before it is compared with
+/// the target's own value.
+///
+/// Everything except a track peak is derivable from the project, so the
+/// arrangement can draw it ahead of playback. A peak lane is the exception: its
+/// level only exists while audio runs, so the caller passes the follower value
+/// the engine published for this frame.
+///
+/// # Parameters
+///
+/// - `source`: the lane source, already resolved against its own automation.
+/// - `target`: the parameter the lane drives.
+/// - `lanes`: arrangement lanes, for the note-driven sources.
+/// - `patterns`: patterns, for the note-driven sources.
+/// - `bpm`: tempo used for the time-valued settings.
+/// - `start_step`: start of the lane's clip.
+/// - `position`: transport position in steps.
+/// - `peak_level`: live follower level in 0..=1, used by peak lanes only.
+///
+/// # Returns
+///
+/// The source value in normalized 0..=1 units.
 pub(crate) fn automation_source_preview(
     source: &project::AutomationSource,
     target: ParameterTarget,
@@ -536,6 +558,7 @@ pub(crate) fn automation_source_preview(
     bpm: f32,
     start_step: u64,
     position: f64,
+    peak_level: f32,
 ) -> f32 {
     match source {
         project::AutomationSource::Curve | project::AutomationSource::RelativeCurve => 0.0,
@@ -615,9 +638,11 @@ pub(crate) fn automation_source_preview(
             *base + project::perlin_noise_octaves(*seed, phase, *octaves) * *depth
         }
         // A peak lane has no stored shape: its value comes from the audio that
-        // is playing, so the preview is the flat rest level and the lane draws a
-        // placeholder clip instead of a curve.
-        project::AutomationSource::Peak { base, .. } => *base,
+        // is playing, so the caller supplies the follower level the engine
+        // published for this frame.
+        project::AutomationSource::Peak { base, depth, .. } => {
+            *base + peak_level.clamp(0.0, 1.0) * *depth
+        }
     }
 }
 

@@ -27,6 +27,10 @@ pub struct AudioOutput {
     pub sender: SyncSender<AudioCommand>,
     /// Meter levels in dB, one per mixer channel plus the master.
     pub meters: Arc<Mutex<Vec<f32>>>,
+    /// Followed level of every automation lane that listens to a track peak,
+    /// indexed by lane. Peaks only exist while audio runs, so the UI reads them
+    /// here instead of prerendering them.
+    pub peaks: Arc<Mutex<Vec<f32>>>,
     /// Integer playhead in steps, published every callback.
     pub playhead_steps: Arc<AtomicU64>,
     /// Fractional playhead in steps, published as `f64` bits so the UI can
@@ -84,6 +88,7 @@ impl AudioOutput {
         }
 
         let meters = Arc::new(Mutex::new(vec![0.0; project.lanes.len() + 1]));
+        let peaks = Arc::new(Mutex::new(vec![0.0; project.automation_tracks.len()]));
         let project_updates = Arc::new(Mutex::new(None));
         let retired_projects = Arc::new(Mutex::new(Vec::new()));
         let playhead_steps = Arc::new(AtomicU64::new(0));
@@ -96,6 +101,7 @@ impl AudioOutput {
         let mut build = |buffer_size: BufferSize| -> Result<Stream, String> {
             let (stream_sender, receiver) = mpsc::sync_channel(512);
             let callback_meters = Arc::clone(&meters);
+            let callback_peaks = Arc::clone(&peaks);
             let callback_project_updates = Arc::clone(&project_updates);
             let callback_retired_projects = Arc::clone(&retired_projects);
             let callback_playhead_steps = Arc::clone(&playhead_steps);
@@ -136,6 +142,9 @@ impl AudioOutput {
                         if let Ok(mut published) = callback_meters.try_lock() {
                             published.clone_from(&engine.meter_levels);
                         }
+                        if let Ok(mut published) = callback_peaks.try_lock() {
+                            published.clone_from(&engine.peak_levels);
+                        }
                         if let Some(retired) = engine.retired_project.take()
                             && let Ok(mut pool) = callback_retired_projects.try_lock()
                         {
@@ -166,6 +175,7 @@ impl AudioOutput {
         Ok(Self {
             sender,
             meters,
+            peaks,
             playhead_steps,
             playhead_position,
             dsp_load,
@@ -185,6 +195,20 @@ impl AudioOutput {
     /// Frames per callback the device is currently using.
     pub fn block_frames(&self) -> u32 {
         self.block_frames.load(Ordering::Relaxed)
+    }
+
+    /// Followed level of one peak lane, as published by the last callback.
+    ///
+    /// # Parameters
+    ///
+    /// - `track_id`: automation lane index.
+    ///
+    /// # Returns
+    ///
+    /// The follower level in 0..=1, or `None` when the lane has no peak source.
+    pub fn peak_level(&self, track_id: usize) -> Option<f32> {
+        let peaks = self.peaks.lock().ok()?;
+        peaks.get(track_id).copied()
     }
 
     /// Replaces the engine's copy of the project.

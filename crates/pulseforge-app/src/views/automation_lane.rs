@@ -139,6 +139,9 @@ impl PulseForgeApp {
             grid.start_step as f64 + f64::from(x - grid.grid_left) / f64::from(grid.step_width)
         });
         let lane_parameters = lane_automated_parameters(&self.project, track_id);
+        // Peak lanes are the only source whose value cannot be prerendered, so
+        // the engine's follower is read here and drawn as it moves.
+        let lane_peak_level = self.peak_level(track_id);
         let project = &mut self.project;
         let lanes = &project.lanes;
         let patterns = &project.patterns;
@@ -319,6 +322,28 @@ impl PulseForgeApp {
                     .map_or_else(|| "a missing track".to_owned(), |lane| lane.name.clone())
             };
             let side = if post_fx { "post FX" } else { "pre FX" };
+            // The follower level is live, so the clip fills as the track plays;
+            // that is the one source that cannot be prerendered.
+            let level = lane_peak_level.clamp(0.0, 1.0);
+            let fill = egui::Rect::from_min_max(
+                clip_rect.left_top(),
+                egui::pos2(
+                    clip_rect.left() + clip_rect.width() * level,
+                    clip_rect.bottom(),
+                ),
+            );
+            painter.rect_filled(
+                fill,
+                4.0,
+                egui::Color32::from_rgba_unmultiplied(112, 208, 190, 46),
+            );
+            painter.line_segment(
+                [
+                    egui::pos2(fill.right(), clip_rect.top() + 2.0),
+                    egui::pos2(fill.right(), clip_rect.bottom() - 2.0),
+                ],
+                egui::Stroke::new(1.6_f32, egui::Color32::from_rgb(112, 208, 190)),
+            );
             // Follower motif: one loud bar and a decaying tail, so the blank
             // clip reads as an envelope and not as an empty lane.
             let motif_right = clip_rect.right() - 10.0;
@@ -341,7 +366,7 @@ impl PulseForgeApp {
             painter.text(
                 egui::pos2(clip_rect.left() + 8.0, clip_rect.center().y),
                 egui::Align2::LEFT_CENTER,
-                format!("Peak of {channel_name} ({side})"),
+                format!("Peak of {channel_name} ({side}) · {:.0}%", level * 100.0),
                 egui::FontId::proportional(11.5),
                 egui::Color32::from_rgb(150, 220, 205),
             );
@@ -373,6 +398,7 @@ impl PulseForgeApp {
                     bpm,
                     track.start_step,
                     step,
+                    lane_peak_level,
                 )
                 .clamp(0.0, 1.0);
                 let multiplier = if multiplier_points.is_empty() {

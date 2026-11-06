@@ -96,6 +96,7 @@ fn automation_source_preview_reacts_to_step_hits() {
         120.0,
         0,
         0.25,
+        0.0,
     );
     assert!(level > 0.9, "envelope preview stayed at {level}");
 }
@@ -286,4 +287,50 @@ fn lane_preview_follows_automation_of_its_own_rate() {
         "preview kept the stored rate {} instead of the automated one",
         rate.amount
     );
+}
+
+#[test]
+fn peak_source_preview_uses_the_live_level() {
+    use project::{AutomationSource, TimeUnit, TimeValue};
+    let project = Project::default();
+    let source = AutomationSource::Peak {
+        channel_id: 0,
+        post_fx: true,
+        attack: TimeValue {
+            amount: 5.0,
+            unit: TimeUnit::Milliseconds,
+        },
+        release: TimeValue {
+            amount: 180.0,
+            unit: TimeUnit::Milliseconds,
+        },
+        base: 0.25,
+        depth: 0.5,
+    };
+    let target = ParameterTarget::Instrument {
+        instrument_id: 0,
+        parameter: InstrumentParameter::Gain,
+    };
+    let silent = automation_source_preview(
+        &source,
+        target,
+        &project.lanes,
+        &project.patterns,
+        120.0,
+        0,
+        0.0,
+        0.0,
+    );
+    let loud = automation_source_preview(
+        &source,
+        target,
+        &project.lanes,
+        &project.patterns,
+        120.0,
+        0,
+        0.0,
+        1.0,
+    );
+    assert!((silent - 0.25).abs() < 1e-4, "silent level gave {silent}");
+    assert!((loud - 0.75).abs() < 1e-4, "full level gave {loud}");
 }

@@ -119,6 +119,17 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ### Fixed
 
+- Live automation values now match the engine for *every* source, not just
+  drawn curves. The UI reproduces the engine's arithmetic (drawn curve replaces
+  the value, relative curves offset it, generated sources add a delta from their
+  own centre), so LFOs, Perlin noise, MIDI envelopes, sample & hold, peaks and
+  curves all move the controls the way they move the sound — driving a
+  lane-parameter lane included.
+- Track peaks are published from the audio thread (`AudioOutput::peaks`) and
+  read back by the UI, because a peak only exists during playback. Peak lanes
+  animate while everything else stays prerendered: the arrangement clip fills
+  with the follower level ("Peak of Track 02 (post FX) · 62%") and any control a
+  peak drives follows it live.
 - Automating an automation lane's own parameters now shows up where you look:
   the arrangement preview and the knobs resolve the driven source first, so a
   lane whose **rate**, **shape**, **attack/decay/release**, **sustain** or
