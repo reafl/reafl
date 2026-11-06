@@ -7,6 +7,24 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ## Unreleased
 
+### Changed
+
+- The workspace is split into one crate per concern: `pulseforge-core` (model and
+  engine), `pulseforge-plugins`, `pulseforge-hosting`, `pulseforge-profiling`,
+  `pulseforge-widgets` (all shared egui drawing), `pulseforge-settings`
+  (settings + CLI), `pulseforge-tasks` (background jobs) and `pulseforge-app`
+  (the editor). The `pulseforge` binary is now a thin `run()` call.
+- `pulseforge-app` no longer holds one giant file: the `PulseForgeApp` methods
+  live in `views/{arrangement,automation,mixer,panels,piano,plugins,rack,settings,toolbar}.rs`
+  plus `actions.rs`, with the shared helpers in `geometry`, `labels` and `snap`.
+- New `pulseforge_widgets::control::ValueControl`: one control type for sliders,
+  knobs, number boxes, toggles and enums, each bound to a `&mut` value with an
+  optional `ParameterTarget` (automation ring, live value, lane menu) and an
+  optional `on_change` callback. The arpeggiator gate is the first user.
+- New `pulseforge_widgets::shape`: `DrawPoint`/`PointStyle` for lane points,
+  `ScreenCurve` (line, fill and cable) and the samplers `sample_curve`,
+  `value_at` and `eq_response_curve` shared by the EQ display and the lanes.
+
 ### Added
 
 - Sample and hold is its own automation source
