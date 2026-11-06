@@ -21,6 +21,7 @@ pub mod piano_velocity;
 pub mod plugin_effect;
 pub mod plugin_hosted;
 pub mod plugin_instrument;
+pub mod plugin_windows;
 pub mod plugins;
 pub mod rack;
 pub mod settings;
