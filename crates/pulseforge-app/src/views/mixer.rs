@@ -6,7 +6,7 @@ impl PulseForgeApp {
     /// Adds a mixer channel (and its arrangement lane) and selects it.
     pub(crate) fn add_mixer_channel(&mut self) {
         let old_master_id = self.project.tracks.len();
-        self.project.add_lane();
+        self.project.add_track();
         if self.automation_channel_id == old_master_id {
             self.automation_channel_id = old_master_id + 1;
         }

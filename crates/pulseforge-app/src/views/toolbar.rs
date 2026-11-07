@@ -245,7 +245,7 @@ impl PulseForgeApp {
         ui.add_space(12.0);
         if ui.button("+ Arrangement lane").clicked() {
             let old_master_id = self.project.tracks.len();
-            self.project.add_lane();
+            self.project.add_track();
             if self.automation_channel_id == old_master_id {
                 self.automation_channel_id = old_master_id + 1;
             }

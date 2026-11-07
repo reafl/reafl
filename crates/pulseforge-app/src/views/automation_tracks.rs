@@ -233,8 +233,7 @@ impl PulseForgeApp {
                 match &mut track.source {
                     project::AutomationSource::Curve | project::AutomationSource::RelativeCurve => {
                     }
-                    project::AutomationSource::MidiEnvelope {
-                        instrument_id,
+                    project::AutomationSource::MidiEnvelope { track_id: instrument_id,
                         attack,
                         decay,
                         sustain,
