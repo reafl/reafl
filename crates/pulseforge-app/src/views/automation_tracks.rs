@@ -242,14 +242,14 @@ impl PulseForgeApp {
                         base,
                         depth,
                     } => {
-                        if !self.project.instruments.is_empty() {
+                        if !self.project.tracks.is_empty() {
                             *instrument_id =
-                                (*instrument_id).min(self.project.instruments.len() - 1);
+                                (*instrument_id).min(self.project.tracks.len() - 1);
                             egui::ComboBox::from_id_salt(("automation_env_instrument", track_id))
-                                .selected_text(&self.project.instruments[*instrument_id].name)
+                                .selected_text(&self.project.tracks[*instrument_id].name)
                                 .show_ui(ui, |ui| {
                                     for (id, instrument) in
-                                        self.project.instruments.iter().enumerate()
+                                        self.project.tracks.iter().enumerate()
                                     {
                                         if ui
                                             .selectable_value(instrument_id, id, &instrument.name)

@@ -8,19 +8,19 @@ impl PulseForgeApp {
         egui::Frame::NONE.inner_margin(4.0).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Pattern");
-                let name = &self.project.patterns[self.selected_clip].name;
+                let name = &self.project.tracks[self.selected_clip].name;
                 egui::ComboBox::from_id_salt("piano_pattern")
                     .selected_text(name)
                     .show_ui(ui, |ui| {
-                        for (id, pattern) in self.project.patterns.iter().enumerate() {
+                        for (id, pattern) in self.project.tracks.iter().enumerate() {
                             ui.selectable_value(&mut self.selected_clip, id, &pattern.name);
                         }
                     });
                 ui.label("Instrument");
                 egui::ComboBox::from_id_salt("piano_instrument")
-                    .selected_text(&self.project.instruments[self.selected_instrument].name)
+                    .selected_text(&self.project.tracks[self.selected_instrument].name)
                     .show_ui(ui, |ui| {
-                        for (id, instrument) in self.project.instruments.iter().enumerate() {
+                        for (id, instrument) in self.project.tracks.iter().enumerate() {
                             ui.selectable_value(
                                 &mut self.selected_instrument,
                                 id,

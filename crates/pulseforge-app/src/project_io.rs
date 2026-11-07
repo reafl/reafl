@@ -107,8 +107,8 @@ impl PulseForgeApp {
             self.unload_host(id);
         }
         let mut jobs = Vec::new();
-        for instrument_id in 0..self.project.instruments.len() {
-            let instrument = &self.project.instruments[instrument_id];
+        for instrument_id in 0..self.project.tracks.len() {
+            let instrument = &self.project.tracks[instrument_id];
             if instrument.synth_kind == SynthKind::External && !instrument.plugin_path.is_empty() {
                 jobs.push((
                     pulseforge_core::hosted::instrument_host_id(instrument_id),
@@ -141,8 +141,8 @@ impl PulseForgeApp {
     }
 
     pub(crate) fn load_instrument_samples(&mut self) {
-        for instrument_id in 0..self.project.instruments.len() {
-            if !self.project.instruments[instrument_id]
+        for instrument_id in 0..self.project.tracks.len() {
+            if !self.project.tracks[instrument_id]
                 .sample_path
                 .is_empty()
             {

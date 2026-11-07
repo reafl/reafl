@@ -115,7 +115,7 @@ impl PulseForgeApp {
         ui.separator();
         match target {
             PluginTarget::Instrument(instrument_id) => {
-                let Some(instrument) = self.project.instruments.get(instrument_id) else {
+                let Some(instrument) = self.project.tracks.get(instrument_id) else {
                     ui.colored_label(egui::Color32::LIGHT_RED, "Instrument no longer exists.");
                     return;
                 };
@@ -133,7 +133,7 @@ impl PulseForgeApp {
                         // the wrapper window cannot claim the slot.
                         let host_id = pulseforge_core::hosted::instrument_host_id(instrument_id);
                         self.unload_host(host_id);
-                        let instrument = &mut self.project.instruments[instrument_id];
+                        let instrument = &mut self.project.tracks[instrument_id];
                         instrument.synth_kind = kind;
                         instrument.plugin_path.clear();
                         instrument.enabled = true;
@@ -152,7 +152,7 @@ impl PulseForgeApp {
                     }
                     let active = self
                         .project
-                        .instruments
+                        .tracks
                         .get(instrument_id)
                         .is_some_and(|instrument| instrument.plugin_path == plugin.path);
                     if ui
@@ -163,7 +163,7 @@ impl PulseForgeApp {
                         let host_id = pulseforge_core::hosted::instrument_host_id(instrument_id);
                         let path = plugin.path.clone();
                         self.load_host(host_id, &path, true);
-                        let instrument = &mut self.project.instruments[instrument_id];
+                        let instrument = &mut self.project.tracks[instrument_id];
                         instrument.plugin_path = plugin.path.clone();
                         instrument.name = plugin.name.clone();
                         // An external generator must not keep the built-in voice

@@ -48,7 +48,7 @@ impl PulseForgeApp {
         let count = self.note_repeat_count;
         let ticks = self.note_repeat_ticks;
         let decay = self.note_repeat_decay;
-        let Some(pattern) = self.project.patterns.get_mut(pattern) else {
+        let Some(pattern) = self.project.tracks.get_mut(pattern) else {
             return;
         };
         let mut updated = 0;
@@ -88,7 +88,7 @@ impl PulseForgeApp {
     /// the selected mixer channel.
     pub(crate) fn lane_for_selection(&self) -> usize {
         match self.selection {
-            Some(Selection::Clip { lane, .. }) => lane.min(self.project.tracks.len() - 1),
+            Some(Selection::Clip { track: lane, .. }) => lane.min(self.project.tracks.len() - 1),
             _ => self.selected_lane.min(self.project.tracks.len() - 1),
         }
     }

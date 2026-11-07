@@ -346,13 +346,13 @@ impl PulseForgeApp {
                     egui::ComboBox::from_id_salt(("route", channel))
                         .selected_text(
                             self.project
-                                .instruments
+                                .tracks
                                 .get(instrument)
                                 .map_or("Instrument", |item| item.name.as_str())
                                 .to_owned(),
                         )
                         .show_ui(ui, |ui| {
-                            for (id, item) in self.project.instruments.iter().enumerate() {
+                            for (id, item) in self.project.tracks.iter().enumerate() {
                                 ui.selectable_value(&mut instrument, id, &item.name);
                             }
                         });
@@ -429,7 +429,7 @@ impl PulseForgeApp {
                 start_step,
             }) => self
                 .project
-                .patterns
+                .tracks
                 .get(pattern)
                 .and_then(|pattern| {
                     pattern.notes.iter().find(|note| {
@@ -444,10 +444,10 @@ impl PulseForgeApp {
                 ),
             Some(Selection::Instrument(instrument)) => self
                 .project
-                .instruments
+                .tracks
                 .get(instrument)
                 .map_or_else(|| "instrument".to_owned(), |item| item.name.clone()),
-            Some(Selection::Clip { lane, clip }) => self
+            Some(Selection::Clip { track: lane, clip }) => self
                 .project
                 .tracks
                 .get(lane)
@@ -456,7 +456,7 @@ impl PulseForgeApp {
                     || "clip".to_owned(),
                     |item| match &item.source {
                         ClipSource::Pattern { pattern_id } => {
-                            self.project.patterns.get(*pattern_id).map_or_else(
+                            self.project.tracks.get(*pattern_id).map_or_else(
                                 || "pattern clip".to_owned(),
                                 |pattern| pattern.name.clone(),
                             )

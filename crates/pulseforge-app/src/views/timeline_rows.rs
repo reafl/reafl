@@ -367,7 +367,7 @@ impl PulseForgeApp {
                     painter,
                     clip_rect,
                     clip,
-                    &self.project.patterns,
+                    &self.project.tracks,
                     clip_visible_start,
                     clip_visible_end,
                     geo.step_width,
@@ -390,7 +390,7 @@ impl PulseForgeApp {
                 let name = match &clip.source {
                     ClipSource::Pattern { pattern_id } => self
                         .project
-                        .patterns
+                        .tracks
                         .get(*pattern_id)
                         .map_or_else(|| "Pattern".to_owned(), |pattern| pattern.name.clone()),
                     ClipSource::Audio { path } => std::path::Path::new(path)

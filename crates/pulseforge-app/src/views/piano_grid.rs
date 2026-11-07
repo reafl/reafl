@@ -60,7 +60,7 @@ impl PulseForgeApp {
         let ruler_painter = ui.painter_at(ruler_rect);
         let absolute_start = self.piano_pan_steps;
         let visible_end = absolute_start.saturating_add(visible_steps);
-        let pattern = &self.project.patterns[self.selected_clip];
+        let pattern = &self.project.tracks[self.selected_clip];
 
         for row in 0..PIANO_ROWS {
             let pitch = PIANO_MIN_PITCH + (PIANO_ROWS - 1 - row) as u8;
@@ -341,7 +341,7 @@ impl PulseForgeApp {
         let (low_tick, high_tick) = (from_tick.min(to_tick), from_tick.max(to_tick));
         let (low_pitch, high_pitch) = (from_pitch.min(to_pitch), from_pitch.max(to_pitch));
         let instrument = self.selected_instrument;
-        let hits: Vec<Selection> = self.project.patterns[self.selected_clip]
+        let hits: Vec<Selection> = self.project.tracks[self.selected_clip]
             .notes
             .iter()
             .filter(|note| {
@@ -372,7 +372,7 @@ impl PulseForgeApp {
 
     /// Selects every note starting inside `[start, end)` steps.
     pub(crate) fn select_notes_in_range(&mut self, start: u64, end: u64) {
-        let Some(pattern) = self.project.patterns.get(self.selected_clip) else {
+        let Some(pattern) = self.project.tracks.get(self.selected_clip) else {
             return;
         };
         let hits: Vec<Selection> = pattern

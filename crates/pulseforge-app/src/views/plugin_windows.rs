@@ -4,7 +4,7 @@ use crate::*;
 
 impl PulseForgeApp {
     pub(crate) fn render_plugin_windows(&mut self, context: &egui::Context) {
-        for instrument_id in 0..self.project.instruments.len() {
+        for instrument_id in 0..self.project.tracks.len() {
             let mut open = self.open_instrument_plugins.contains(&instrument_id);
             egui::Window::new(self.instrument_window_title(instrument_id))
                 .id(egui::Id::new(("instrument_plugin_window", instrument_id)))

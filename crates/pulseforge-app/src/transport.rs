@@ -131,7 +131,7 @@ impl PulseForgeApp {
         if self.selected_clip_playback {
             let length = self
                 .project
-                .patterns
+                .tracks
                 .get(self.selected_clip)
                 .map_or(1, |pattern| pattern.length_steps.max(1));
             position % length as f64

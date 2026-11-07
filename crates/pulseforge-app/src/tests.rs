@@ -84,7 +84,7 @@ fn automation_source_preview_reacts_to_step_hits() {
         base: 0.0,
         depth: 1.0,
     };
-    let target = ParameterTarget::Instrument {
+    let target = ParameterTarget::Track {
         instrument_id: 0,
         parameter: InstrumentParameter::Gain,
     };
@@ -105,7 +105,7 @@ fn automation_source_preview_reacts_to_step_hits() {
 fn collapsed_tracks_hide_their_automation_rows() {
     let mut project = Project::default();
     project.automation_tracks.push(AutomationTrack {
-        target: ParameterTarget::Instrument {
+        target: ParameterTarget::Track {
             instrument_id: 0,
             parameter: InstrumentParameter::Gain,
         },
@@ -147,7 +147,7 @@ fn row_heights_offset_and_hit_test_together() {
 fn arrangement_rows_group_automation_under_its_mixer_lane() {
     let mut project = Project::default();
     project.automation_tracks.push(AutomationTrack {
-        target: ParameterTarget::Instrument {
+        target: ParameterTarget::Track {
             instrument_id: 0,
             parameter: InstrumentParameter::Gain,
         },
@@ -246,7 +246,7 @@ fn lane_preview_follows_automation_of_its_own_rate() {
     use project::{AutomationLaneParameter, AutomationSource, TimeUnit, TimeValue};
     let mut project = Project::default();
     project.automation_tracks.push(AutomationTrack {
-        target: ParameterTarget::Instrument {
+        target: ParameterTarget::Track {
             instrument_id: 0,
             parameter: InstrumentParameter::Gain,
         },
@@ -294,7 +294,7 @@ fn peak_lane_drives_another_lane_parameter() {
     use project::{AutomationLaneParameter, AutomationSource, TimeUnit, TimeValue};
     let mut project = Project::default();
     project.automation_tracks.push(AutomationTrack {
-        target: ParameterTarget::Instrument {
+        target: ParameterTarget::Track {
             instrument_id: 0,
             parameter: InstrumentParameter::Gain,
         },
@@ -369,7 +369,7 @@ fn peak_source_preview_uses_the_live_level() {
         base: 0.25,
         depth: 0.5,
     };
-    let target = ParameterTarget::Instrument {
+    let target = ParameterTarget::Track {
         instrument_id: 0,
         parameter: InstrumentParameter::Gain,
     };

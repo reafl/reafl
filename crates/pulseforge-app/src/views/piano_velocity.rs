@@ -30,7 +30,7 @@ impl PulseForgeApp {
         );
         let instrument = self.selected_instrument;
         let visible_end = absolute_start.saturating_add(VISIBLE_PIANO_STEPS);
-        let notes: Vec<(usize, f32, u8)> = self.project.patterns[self.selected_clip]
+        let notes: Vec<(usize, f32, u8)> = self.project.tracks[self.selected_clip]
             .notes
             .iter()
             .enumerate()
@@ -93,7 +93,7 @@ impl PulseForgeApp {
             if let Some((index, start)) = target
                 && (start - position).abs() <= 1.0
             {
-                let note = &mut self.project.patterns[self.selected_clip].notes[index];
+                let note = &mut self.project.tracks[self.selected_clip].notes[index];
                 if repeats_mode {
                     note.repeat_count =
                         ((f32::from(velocity) / 127.0 * 32.0).round() as u8).min(32);

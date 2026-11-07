@@ -10,14 +10,14 @@ impl PulseForgeApp {
         // is open, which used to panic here.
         self.automation_instrument_id = self
             .automation_instrument_id
-            .min(self.project.instruments.len().saturating_sub(1));
+            .min(self.project.tracks.len().saturating_sub(1));
         self.automation_channel_id = self.automation_channel_id.min(self.project.tracks.len());
         self.automation_mixer_channel_id = self
             .automation_mixer_channel_id
             .min(self.project.tracks.len());
         self.selected_instrument = self
             .selected_instrument
-            .min(self.project.instruments.len().saturating_sub(1));
+            .min(self.project.tracks.len().saturating_sub(1));
         self.selected_mixer_channel = self.selected_mixer_channel.min(self.project.tracks.len());
     }
 
@@ -29,7 +29,7 @@ impl PulseForgeApp {
     /// - `target`: the parameter that was picked in the UI.
     pub(crate) fn focus_automation_target(&mut self, target: ParameterTarget) {
         match target {
-            ParameterTarget::Instrument {
+            ParameterTarget::Track {
                 instrument_id,
                 parameter,
             } => {
@@ -131,7 +131,7 @@ impl PulseForgeApp {
     /// The remembered target, or `None` when it no longer exists.
     pub(crate) fn selected_automation_target(&self) -> Option<ParameterTarget> {
         let target = match self.automation_target_kind {
-            AutomationTargetKind::Instrument => ParameterTarget::Instrument {
+            AutomationTargetKind::Instrument => ParameterTarget::Track {
                 instrument_id: self.automation_instrument_id,
                 parameter: self.automation_instrument_parameter,
             },
@@ -184,17 +184,17 @@ impl PulseForgeApp {
 
     /// Instrument picker: which instrument and which of its parameters.
     fn pick_instrument_target(&mut self, ui: &mut egui::Ui) -> Option<ParameterTarget> {
-        if self.project.instruments.is_empty() {
+        if self.project.tracks.is_empty() {
             ui.label("Add an instrument first.");
             return None;
         }
         self.automation_instrument_id = self
             .automation_instrument_id
-            .min(self.project.instruments.len() - 1);
+            .min(self.project.tracks.len() - 1);
         egui::ComboBox::from_id_salt("automation_instrument")
-            .selected_text(&self.project.instruments[self.automation_instrument_id].name)
+            .selected_text(&self.project.tracks[self.automation_instrument_id].name)
             .show_ui(ui, |ui| {
-                for (instrument_id, instrument) in self.project.instruments.iter().enumerate() {
+                for (instrument_id, instrument) in self.project.tracks.iter().enumerate() {
                     ui.selectable_value(
                         &mut self.automation_instrument_id,
                         instrument_id,
@@ -202,7 +202,7 @@ impl PulseForgeApp {
                     );
                 }
             });
-        let synth_kind = self.project.instruments[self.automation_instrument_id].synth_kind;
+        let synth_kind = self.project.tracks[self.automation_instrument_id].synth_kind;
         let parameters = instrument_parameter_options(synth_kind);
         if !parameters.contains(&self.automation_instrument_parameter) {
             self.automation_instrument_parameter = parameters[0];

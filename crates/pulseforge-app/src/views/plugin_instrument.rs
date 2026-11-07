@@ -6,7 +6,7 @@ impl PulseForgeApp {
     pub(crate) fn render_instrument_plugin(&mut self, instrument_id: usize, ui: &mut egui::Ui) {
         let name = self
             .project
-            .instruments
+            .tracks
             .get(instrument_id)
             .map_or("Plug-in".to_owned(), |instrument| instrument.name.clone());
         if self.plugin_window_header(ui, PluginTarget::Instrument(instrument_id), &name) {
@@ -18,7 +18,7 @@ impl PulseForgeApp {
         }
         let show_waveform = self
             .project
-            .instruments
+            .tracks
             .get(instrument_id)
             .is_some_and(|instrument| instrument.synth_kind == SynthKind::SamplePlayer);
         let waveform_rect = show_waveform.then(|| {
@@ -28,7 +28,12 @@ impl PulseForgeApp {
         if let Some(rect) = waveform_rect {
             self.draw_sample_waveform(ui.painter_at(rect), rect, instrument_id);
         }
-        let Some(instrument) = self.project.instruments.get_mut(instrument_id) else {
+        let Some(instrument) = self
+            .project
+            .tracks
+            .get_mut(instrument_id)
+            .and_then(Track::generator_mut)
+        else {
             ui.colored_label(egui::Color32::LIGHT_RED, "Instrument no longer exists.");
             return;
         };
@@ -91,14 +96,14 @@ impl PulseForgeApp {
                 ui.horizontal(|ui| {
                     changed |= Knob::new("LEVEL", 0.0, 1.0, "")
                         .with_default(0.8)
-                        .automates(ParameterTarget::Instrument {
+                        .automates(ParameterTarget::Track {
                             instrument_id,
                             parameter: InstrumentParameter::Gain,
                         })
                         .show(ui, &mut instrument.gain);
                     changed |= Knob::new("PAN", -1.0, 1.0, "")
                         .with_default(0.0)
-                        .automates(ParameterTarget::Instrument {
+                        .automates(ParameterTarget::Track {
                             instrument_id,
                             parameter: InstrumentParameter::Pan,
                         })
@@ -112,14 +117,14 @@ impl PulseForgeApp {
                         .changed();
                     changed |= Knob::new("LEVEL", 0.0, 1.0, "")
                         .with_default(0.8)
-                        .automates(ParameterTarget::Instrument {
+                        .automates(ParameterTarget::Track {
                             instrument_id,
                             parameter: InstrumentParameter::Gain,
                         })
                         .show(ui, &mut instrument.gain);
                     changed |= Knob::new("PAN", -1.0, 1.0, "")
                         .with_default(0.0)
-                        .automates(ParameterTarget::Instrument {
+                        .automates(ParameterTarget::Track {
                             instrument_id,
                             parameter: InstrumentParameter::Pan,
                         })
@@ -135,7 +140,7 @@ impl PulseForgeApp {
                             "MIDI note",
                             &mut note,
                             0.0..=127.0,
-                            ParameterTarget::Instrument {
+                            ParameterTarget::Track {
                                 instrument_id,
                                 parameter: InstrumentParameter::SynthNote,
                             },
@@ -168,7 +173,7 @@ impl PulseForgeApp {
                                     "waveform · {}",
                                     waveform_label(instrument.signal_waveform)
                                 ),
-                                ParameterTarget::Instrument {
+                                ParameterTarget::Track {
                                     instrument_id,
                                     parameter: InstrumentParameter::Waveform,
                                 },
@@ -179,14 +184,14 @@ impl PulseForgeApp {
                         ui.horizontal(|ui| {
                             changed |= Knob::new("CUTOFF", 40.0, 16_000.0, " Hz")
                                 .with_default(1_800.0)
-                                .automates(ParameterTarget::Instrument {
+                                .automates(ParameterTarget::Track {
                                     instrument_id,
                                     parameter: InstrumentParameter::CutoffHz,
                                 })
                                 .show(ui, &mut instrument.ms20_cutoff_hz);
                             changed |= Knob::new("RESONANCE", 0.0, 0.9, "")
                                 .with_default(0.2)
-                                .automates(ParameterTarget::Instrument {
+                                .automates(ParameterTarget::Track {
                                     instrument_id,
                                     parameter: InstrumentParameter::Resonance,
                                 })
@@ -197,28 +202,28 @@ impl PulseForgeApp {
                         ui.horizontal(|ui| {
                             changed |= Knob::new("CUTOFF", 40.0, 16_000.0, " Hz")
                                 .with_default(2_400.0)
-                                .automates(ParameterTarget::Instrument {
+                                .automates(ParameterTarget::Track {
                                     instrument_id,
                                     parameter: InstrumentParameter::CutoffHz,
                                 })
                                 .show(ui, &mut instrument.juno_cutoff_hz);
                             changed |= Knob::new("RESONANCE", 0.0, 0.9, "")
                                 .with_default(0.15)
-                                .automates(ParameterTarget::Instrument {
+                                .automates(ParameterTarget::Track {
                                     instrument_id,
                                     parameter: InstrumentParameter::Resonance,
                                 })
                                 .show(ui, &mut instrument.juno_resonance);
                             changed |= Knob::new("PULSE", 0.05, 0.95, "")
                                 .with_default(0.5)
-                                .automates(ParameterTarget::Instrument {
+                                .automates(ParameterTarget::Track {
                                     instrument_id,
                                     parameter: InstrumentParameter::PulseWidth,
                                 })
                                 .show(ui, &mut instrument.juno_pulse_width);
                             changed |= Knob::new("SUB", 0.0, 1.0, "")
                                 .with_default(0.3)
-                                .automates(ParameterTarget::Instrument {
+                                .automates(ParameterTarget::Track {
                                     instrument_id,
                                     parameter: InstrumentParameter::SubLevel,
                                 })
@@ -229,7 +234,7 @@ impl PulseForgeApp {
                         ui.horizontal(|ui| {
                             changed |= Knob::new("TONE", 0.0, 1.0, "")
                                 .with_default(0.55)
-                                .automates(ParameterTarget::Instrument {
+                                .automates(ParameterTarget::Track {
                                     instrument_id,
                                     parameter: InstrumentParameter::Tone,
                                 })
@@ -259,7 +264,7 @@ impl PulseForgeApp {
                                 project::TimeUnit::Steps => {
                                     changed |= Knob::new("DECAY", 0.01, 256.0, " steps")
                                         .with_default(4.0)
-                                        .automates(ParameterTarget::Instrument {
+                                        .automates(ParameterTarget::Track {
                                             instrument_id,
                                             parameter: InstrumentParameter::Decay,
                                         })
@@ -269,7 +274,7 @@ impl PulseForgeApp {
                                     let mut decay_ms = instrument.m1_decay * 1_000.0;
                                     let decay_changed = Knob::new("DECAY", 50.0, 4_000.0, " ms")
                                         .with_default(1_200.0)
-                                        .automates(ParameterTarget::Instrument {
+                                        .automates(ParameterTarget::Track {
                                             instrument_id,
                                             parameter: InstrumentParameter::Decay,
                                         })
@@ -286,14 +291,14 @@ impl PulseForgeApp {
                         ui.horizontal(|ui| {
                             changed |= Knob::new("RATIO", 0.25, 16.0, "")
                                 .with_default(2.0)
-                                .automates(ParameterTarget::Instrument {
+                                .automates(ParameterTarget::Track {
                                     instrument_id,
                                     parameter: InstrumentParameter::FmRatio,
                                 })
                                 .show(ui, &mut instrument.fm_ratio);
                             changed |= Knob::new("FM INDEX", 0.0, 1.0, "")
                                 .with_default(0.35)
-                                .automates(ParameterTarget::Instrument {
+                                .automates(ParameterTarget::Track {
                                     instrument_id,
                                     parameter: InstrumentParameter::FmIndex,
                                 })

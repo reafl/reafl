@@ -175,8 +175,8 @@ impl PulseForgeApp {
         egui::ScrollArea::vertical()
             .max_height(280.0)
             .show(ui, |ui| {
-                for pattern_id in 0..self.project.patterns.len() {
-                    let name = self.project.patterns[pattern_id].name.clone();
+                for pattern_id in 0..self.project.tracks.len() {
+                    let name = self.project.tracks[pattern_id].name.clone();
                     // The selected pattern is the one the arrangement pen
                     // places, so the picker marks it.
                     let selected = pattern_id == self.selected_clip;

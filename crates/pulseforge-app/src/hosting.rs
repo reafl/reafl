@@ -83,7 +83,7 @@ impl PulseForgeApp {
 
     /// Plug-in state stored in the project for a host id, if any.
     pub(crate) fn stored_plugin_state(&self, id: u64) -> Option<Vec<u8>> {
-        for (instrument_id, instrument) in self.project.instruments.iter().enumerate() {
+        for (instrument_id, instrument) in self.project.tracks.iter().enumerate() {
             if pulseforge_core::hosted::instrument_host_id(instrument_id) == id {
                 return Some(instrument.plugin_state.clone());
             }
@@ -231,8 +231,8 @@ impl PulseForgeApp {
     /// Asks every hosted plug-in for its opaque state and stores it in the
     /// project, so a reload restores exactly what the user had.
     pub(crate) fn capture_plugin_states(&mut self) {
-        for instrument_id in 0..self.project.instruments.len() {
-            if self.project.instruments[instrument_id]
+        for instrument_id in 0..self.project.tracks.len() {
+            if self.project.tracks[instrument_id]
                 .plugin_path
                 .is_empty()
             {
@@ -244,7 +244,7 @@ impl PulseForgeApp {
                 .get_mut(&id)
                 .and_then(pulseforge_hosting::HostedUi::save_state)
             {
-                self.project.instruments[instrument_id].plugin_state = state;
+                self.project.tracks[instrument_id].plugin_state = state;
             }
         }
         let track_count = self.project.tracks.len();

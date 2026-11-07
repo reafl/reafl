@@ -332,7 +332,7 @@ impl PulseForgeApp {
         clips.sort_unstable();
         clips
             .into_iter()
-            .map(|(_, lane, clip)| Selection::Clip { lane, clip })
+            .map(|(_, lane, clip)| Selection::Clip { track: lane, clip })
             .collect()
     }
 
@@ -351,7 +351,7 @@ impl PulseForgeApp {
             (Selection::Clip { .. }, Selection::Clip { .. }) => self.clip_order(),
             (Selection::MixerChannel(_), Selection::MixerChannel(_)) => self.channel_order(),
             (Selection::Instrument(_), Selection::Instrument(_)) => {
-                (0..self.project.instruments.len())
+                (0..self.project.tracks.len())
                     .map(Selection::Instrument)
                     .collect()
             }

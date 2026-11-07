@@ -87,9 +87,9 @@ impl PulseForgeApp {
     pub(crate) fn load_default_sample_into_selected(&mut self, kind: DefaultSample) {
         let instrument_id = self
             .selected_instrument
-            .min(self.project.instruments.len() - 1);
+            .min(self.project.tracks.len() - 1);
         self.push_history();
-        let instrument = &mut self.project.instruments[instrument_id];
+        let instrument = &mut self.project.tracks[instrument_id];
         instrument.default_sample = kind;
         instrument.sample_path.clear();
         instrument.name = default_sample_label(kind).to_owned();
@@ -101,10 +101,10 @@ impl PulseForgeApp {
     pub(crate) fn load_sample_into_selected(&mut self, path: &str) {
         let instrument_id = self
             .selected_instrument
-            .min(self.project.instruments.len() - 1);
+            .min(self.project.tracks.len() - 1);
         self.push_history();
-        self.project.instruments[instrument_id].sample_path = path.to_owned();
-        self.project.instruments[instrument_id].default_sample = DefaultSample::None;
+        self.project.tracks[instrument_id].sample_path = path.to_owned();
+        self.project.tracks[instrument_id].default_sample = DefaultSample::None;
         self.sync_project();
         self.load_instrument_sample(instrument_id);
     }
