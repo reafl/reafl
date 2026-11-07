@@ -218,7 +218,7 @@ fn lane_preview_follows_automation_of_its_own_rate() {
     use project::{AutomationLaneParameter, AutomationSource, TimeUnit, TimeValue};
     let mut project = Project::default();
     project.automation_tracks.push(AutomationTrack {
-        target: generator_target(0, InstrumentParameter::Gain),
+        target: generator_target(1, InstrumentParameter::Gain),
         source: AutomationSource::Lfo {
             shape: project::LfoShape::Sine,
             rate: TimeValue {
@@ -264,7 +264,7 @@ fn peak_lane_drives_another_lane_parameter() {
     use project::{AutomationLaneParameter, AutomationSource, TimeUnit, TimeValue};
     let mut project = Project::default();
     project.automation_tracks.push(AutomationTrack {
-        target: generator_target(0, InstrumentParameter::Gain),
+        target: generator_target(1, InstrumentParameter::Gain),
         source: AutomationSource::Lfo {
             shape: project::LfoShape::Sine,
             rate: TimeValue {
