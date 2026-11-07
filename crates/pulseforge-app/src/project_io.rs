@@ -63,11 +63,11 @@ impl PulseForgeApp {
             } => match (result, purpose) {
                 (Ok(sample), SampleUse::Instrument(instrument_id)) => {
                     let frames = sample.frames.len();
-                    if self.send_audio(AudioCommand::LoadInstrumentSample {
-                        instrument_id,
+                    if self.send_audio(AudioCommand::LoadTrackSample {
+                        track_id: instrument_id,
                         sample,
                     }) {
-                        self.status = format!("Loaded {frames} frames into the instrument.");
+                        self.status = format!("Loaded {frames} frames into the track.");
                     }
                 }
                 (Ok(sample), SampleUse::Clip) => {
@@ -108,11 +108,15 @@ impl PulseForgeApp {
         }
         let mut jobs = Vec::new();
         for instrument_id in 0..self.project.tracks.len() {
-            let instrument = &self.project.tracks[instrument_id];
-            if instrument.synth_kind == SynthKind::External && !instrument.plugin_path.is_empty() {
+            let Some(generator) = self.project.tracks[instrument_id].generator() else {
+                continue;
+            };
+            if generator.kind.synth_kind() == Some(SynthKind::External)
+                && !generator.plugin_path.is_empty()
+            {
                 jobs.push((
                     pulseforge_core::hosted::instrument_host_id(instrument_id),
-                    instrument.plugin_path.clone(),
+                    generator.plugin_path.clone(),
                     true,
                 ));
             }
@@ -142,10 +146,10 @@ impl PulseForgeApp {
 
     pub(crate) fn load_instrument_samples(&mut self) {
         for instrument_id in 0..self.project.tracks.len() {
-            if !self.project.tracks[instrument_id]
-                .sample_path
-                .is_empty()
-            {
+            let has_path = self.project.tracks[instrument_id]
+                .generator()
+                .is_some_and(|generator| !generator.sample_path.is_empty());
+            if has_path {
                 self.load_instrument_sample(instrument_id);
             }
         }
