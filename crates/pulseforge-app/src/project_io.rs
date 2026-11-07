@@ -219,7 +219,7 @@ impl PulseForgeApp {
                     }
                 };
                 let event = AudioCommand::MidiNote {
-                    instrument_id,
+                    track_id: instrument_id,
                     note: message[1],
                     velocity: message[2],
                     on: kind == 0x90 && message[2] > 0,
