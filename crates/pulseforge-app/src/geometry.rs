@@ -26,6 +26,21 @@ pub(crate) fn clips_match(left: &Clip, right: &Clip) -> bool {
     left.audio_path == right.audio_path && left.notes == right.notes
 }
 
+/// The placement that reproduces a clip, used when a clip is dragged, copied or
+/// re-dropped on the timeline.
+///
+/// # Parameters
+///
+/// - `clip`: the clip to reproduce.
+pub(crate) fn clip_placement(clip: &Clip) -> ClipPlacement {
+    match &clip.audio_path {
+        Some(path) => ClipPlacement::Audio { path: path.clone() },
+        None => ClipPlacement::Notes {
+            length_steps: clip.length_steps.max(1),
+        },
+    }
+}
+
 /// Shared editing-tool strip so the piano roll and the clip arrangement expose
 /// the same tools. The arrangement omits Join, which only merges notes.
 pub(crate) fn tool_palette(ui: &mut egui::Ui, tool: &mut PianoTool, include_join: bool) {

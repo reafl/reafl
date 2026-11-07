@@ -281,12 +281,10 @@ impl PulseForgeApp {
                 match hit_clip.clone() {
                     Some((lane, clip_index, clip)) => {
                         self.selected_lane = lane;
-                        self.arrangement_source = Some(clip.source.clone());
-                        // Selecting a pattern clip also selects its pattern, so
-                        // the piano roll and clip picker follow the click.
-                        if let ClipSource::Pattern { pattern_id } = &clip.source {
-                            self.selected_clip = *pattern_id;
-                        }
+                        self.arrangement_source = Some(clip_placement(&clip));
+                        // Selecting a clip also targets its slot, so the piano
+                        // roll and clip picker follow the click.
+                        self.selected_clip = clip_index;
                         if self.mod_shift {
                             // Shift+click duplicates instead of extending the
                             // selection; the copy is selected so it can be dragged
@@ -299,7 +297,7 @@ impl PulseForgeApp {
                             let (shift, ctrl) = self.selection_modifiers();
                             self.select_item(
                                 Selection::Clip {
-                                    lane,
+                                    track: lane,
                                     clip: clip_index,
                                 },
                                 shift,
@@ -334,11 +332,11 @@ impl PulseForgeApp {
                 // Ctrl+click only extends the selection; starting a drag here
                 // would move the clip instead of adding it to the range.
                 self.selected_lane = lane;
-                self.arrangement_source = Some(clip.source.clone());
+                self.arrangement_source = Some(clip_placement(&clip));
                 if self.arrangement_tool != PianoTool::Select {
                     self.select_item(
                         Selection::Clip {
-                            lane,
+                            track: lane,
                             clip: clip_index,
                         },
                         false,
@@ -354,7 +352,7 @@ impl PulseForgeApp {
                     lane,
                     start_step: clip.start_step,
                     pointer_offset_steps: step.saturating_sub(clip.start_step),
-                    source: clip.source.clone(),
+                    source: clip_placement(&clip),
                     resizing: resizing_start || clip_end - step <= 1,
                     resizing_start,
                     resize_end_step: clip_end,
@@ -441,7 +439,7 @@ impl PulseForgeApp {
                         );
                         if band.intersects(rect) {
                             let item = Selection::Clip {
-                                lane,
+                                track: lane,
                                 clip: clip_index,
                             };
                             if !self.is_selected(item) {
@@ -516,7 +514,7 @@ impl PulseForgeApp {
                     .iter_mut()
                     .find(|clip| {
                         clip.start_step == gesture.start_step
-                            && clip_sources_match(&clip.source, &gesture.source)
+                            && clip_placement(clip) == gesture.source
                     })
                 {
                     let (new_start, new_length) = if gesture.resizing_start {
@@ -560,7 +558,7 @@ impl PulseForgeApp {
                     && let Some(old_lane) = self.project.tracks.get_mut(gesture.lane)
                     && let Some(index) = old_lane.clips.iter().position(|clip| {
                         clip.start_step == gesture.start_step
-                            && clip_sources_match(&clip.source, &gesture.source)
+                            && clip_placement(clip) == gesture.source
                     })
                 {
                     let mut clip = old_lane.clips.remove(index);
@@ -591,7 +589,7 @@ impl PulseForgeApp {
                 .iter()
                 .position(|clip| {
                     clip.start_step == gesture.start_step
-                        && clip_sources_match(&clip.source, &gesture.source)
+                        && clip_placement(clip) == gesture.source
                 });
             if let Some(clip) = clip_index {
                 self.selection = Some(Selection::Clip { track: gesture.lane,
