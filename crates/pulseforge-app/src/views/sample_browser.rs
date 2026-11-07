@@ -85,9 +85,7 @@ impl PulseForgeApp {
 
     /// Assigns a built-in drum sample to the selected instrument.
     pub(crate) fn load_default_sample_into_selected(&mut self, kind: DefaultSample) {
-        let instrument_id = self
-            .selected_instrument
-            .min(self.project.tracks.len() - 1);
+        let instrument_id = self.selected_instrument.min(self.project.tracks.len() - 1);
         self.push_history();
         let track = &mut self.project.tracks[instrument_id];
         track.name = default_sample_label(kind).to_owned();
@@ -101,9 +99,7 @@ impl PulseForgeApp {
     }
 
     pub(crate) fn load_sample_into_selected(&mut self, path: &str) {
-        let instrument_id = self
-            .selected_instrument
-            .min(self.project.tracks.len() - 1);
+        let instrument_id = self.selected_instrument.min(self.project.tracks.len() - 1);
         self.push_history();
         if let Some(generator) = self.project.tracks[instrument_id].generator_mut() {
             generator.sample_path = path.to_owned();

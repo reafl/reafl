@@ -2,45 +2,6 @@
 
 use super::*;
 
-pub(crate) fn instrument_parameter_options(kind: SynthKind) -> Vec<InstrumentParameter> {
-    let mut parameters = vec![InstrumentParameter::Gain, InstrumentParameter::Pan];
-    match kind {
-        SynthKind::Ms20 => parameters.extend([
-            InstrumentParameter::CutoffHz,
-            InstrumentParameter::Resonance,
-        ]),
-        SynthKind::JunoPoly => parameters.extend([
-            InstrumentParameter::CutoffHz,
-            InstrumentParameter::Resonance,
-            InstrumentParameter::PulseWidth,
-            InstrumentParameter::SubLevel,
-        ]),
-        SynthKind::M1Workstation => {
-            parameters.extend([InstrumentParameter::Tone, InstrumentParameter::Decay])
-        }
-        SynthKind::FmSynth => {
-            parameters.extend([InstrumentParameter::FmRatio, InstrumentParameter::FmIndex])
-        }
-        SynthKind::Sine
-        | SynthKind::SamplePlayer
-        | SynthKind::SignalGenerator
-        | SynthKind::External => {}
-    }
-    // Enums are automatable as integers, so they are offered like any other
-    // parameter. The waveform only exists for the signal generator.
-    if matches!(kind, SynthKind::SignalGenerator) {
-        parameters.push(InstrumentParameter::Waveform);
-    }
-    parameters.extend([
-        InstrumentParameter::ArpMode,
-        InstrumentParameter::ArpGate,
-        InstrumentParameter::ArpOctaves,
-        InstrumentParameter::ArpRate,
-        InstrumentParameter::VoiceCount,
-    ]);
-    parameters
-}
-
 pub(crate) fn synth_kind_label(kind: SynthKind) -> &'static str {
     match kind {
         SynthKind::External => "External plug-in",

@@ -22,7 +22,10 @@ impl AudioEngine {
                 self.instrument_controls
                     .resize(self.project.tracks.len(), InstrumentControls::default());
                 let bpm = self.project.bpm;
-                for (controls, track) in self.instrument_controls.iter_mut().zip(&self.project.tracks)
+                for (controls, track) in self
+                    .instrument_controls
+                    .iter_mut()
+                    .zip(&self.project.tracks)
                 {
                     *controls = track
                         .generator()

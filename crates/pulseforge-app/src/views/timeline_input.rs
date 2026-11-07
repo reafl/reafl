@@ -198,14 +198,14 @@ impl PulseForgeApp {
                 .start_step
                 .saturating_add(((position.x - geo.left) / geo.step_width).floor().max(0.0) as u64);
             let mut on_edge = false;
-            if let Some(clip) =
-                lane.and_then(|lane| self.project.tracks.get(lane))
-                    .and_then(|lane| {
-                        lane.clips.iter().find(|clip| {
-                            clip.start_step <= step
-                                && step < clip.start_step.saturating_add(clip.length_steps)
-                        })
+            if let Some(clip) = lane
+                .and_then(|lane| self.project.tracks.get(lane))
+                .and_then(|lane| {
+                    lane.clips.iter().find(|clip| {
+                        clip.start_step <= step
+                            && step < clip.start_step.saturating_add(clip.length_steps)
                     })
+                })
             {
                 let clip_start_x = geo.left
                     + clip.start_step.saturating_sub(geo.start_step) as f32 * geo.step_width;
@@ -509,13 +509,14 @@ impl PulseForgeApp {
                 arrangement_snap,
             );
             if target_lane == gesture.lane && gesture.resizing {
-                if let Some(clip) = self.project.tracks[gesture.lane]
-                    .clips
-                    .iter_mut()
-                    .find(|clip| {
-                        clip.start_step == gesture.start_step
-                            && clip_placement(clip) == gesture.source
-                    })
+                if let Some(clip) =
+                    self.project.tracks[gesture.lane]
+                        .clips
+                        .iter_mut()
+                        .find(|clip| {
+                            clip.start_step == gesture.start_step
+                                && clip_placement(clip) == gesture.source
+                        })
                 {
                     let (new_start, new_length) = if gesture.resizing_start {
                         let new_start = pointer_step.min(gesture.resize_end_step.saturating_sub(1));
@@ -588,11 +589,11 @@ impl PulseForgeApp {
                 .clips
                 .iter()
                 .position(|clip| {
-                    clip.start_step == gesture.start_step
-                        && clip_placement(clip) == gesture.source
+                    clip.start_step == gesture.start_step && clip_placement(clip) == gesture.source
                 });
             if let Some(clip) = clip_index {
-                self.selection = Some(Selection::Clip { track: gesture.lane,
+                self.selection = Some(Selection::Clip {
+                    track: gesture.lane,
                     clip,
                 });
             }

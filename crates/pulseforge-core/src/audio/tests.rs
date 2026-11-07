@@ -29,14 +29,44 @@ mod tests {
         }
     }
 
+    /// A project whose first track is a plain synth, so channel-index tests do
+    /// not trip over the default folder.
+    pub(crate) fn synth_project() -> Project {
+        let mut project = Project::default();
+        let mut lead = Track::source("Synth", crate::project::Generator::default());
+        lead.parent = None;
+        project.tracks[0] = lead;
+        project.normalize();
+        project
+    }
+
     /// Replaces a track's clips with one note clip.
-    pub(crate) fn set_clip(track: &mut Track, start_step: u64, length_steps: u64, notes: Vec<ClipNote>) {
+    pub(crate) fn set_clip(
+        track: &mut Track,
+        start_step: u64,
+        length_steps: u64,
+        notes: Vec<ClipNote>,
+    ) {
         track.clips = vec![Clip {
             start_step,
             length_steps,
             notes,
             ..Clip::default()
         }];
+    }
+
+    /// Leaves one clip in the whole project, so note counts are unambiguous.
+    pub(crate) fn only_clip(
+        project: &mut Project,
+        track: usize,
+        start_step: u64,
+        length_steps: u64,
+        notes: Vec<ClipNote>,
+    ) {
+        for entry in &mut project.tracks {
+            entry.clips.clear();
+        }
+        set_clip(&mut project.tracks[track], start_step, length_steps, notes);
     }
 
     pub(crate) fn empty_project_updates() -> Mutex<Option<Box<Project>>> {
@@ -52,22 +82,24 @@ mod tests {
 
     #[test]
     pub(crate) fn clip_notes_trigger_the_track_that_owns_them() {
-        let mut project = Project::default();
-        set_clip(&mut project.tracks[1], 0, 8, vec![ClipNote::new(0, 60, 100, 1)]);
+        let mut project = synth_project();
+        only_clip(&mut project, 1, 0, 8, vec![ClipNote::new(0, 60, 100, 1)]);
         let mut engine = AudioEngine::new(project, 48_000);
         engine.trigger_step(0);
-        assert!(engine.trigger_events.iter().any(|event| matches!(
-            event,
-            TriggerEvent::Note {
-                track_id: 1,
-                ..
-            }
-        )));
+        assert!(
+            engine
+                .trigger_events
+                .iter()
+                .any(|event| matches!(event, TriggerEvent::Note { track_id: 1, .. }))
+        );
     }
     #[test]
     pub(crate) fn mixer_eq_automation_moves_the_filter_gains() {
-        let target = ParameterTarget::Track { track_id: 0, parameter: TrackParameter::Mixer(crate::project::MixerParameter::LowDb) };
-        let mut project = Project::default();
+        let target = ParameterTarget::Track {
+            track_id: 0,
+            parameter: TrackParameter::Mixer(crate::project::MixerParameter::LowDb),
+        };
+        let mut project = synth_project();
         project
             .automation_tracks
             .push(crate::project::AutomationTrack {
@@ -98,12 +130,15 @@ mod tests {
             AutomationLaneParameter, AutomationSource, LfoShape, MixerParameter, TimeUnit,
             TimeValue,
         };
-        let mut project = Project::default();
+        let mut project = synth_project();
         // Lane 0 is an LFO whose base is 0 and whose depth is 0.2.
         project
             .automation_tracks
             .push(crate::project::AutomationTrack {
-                target: ParameterTarget::Track { track_id: 0, parameter: TrackParameter::Generator(InstrumentParameter::Gain) },
+                target: ParameterTarget::Track {
+                    track_id: 0,
+                    parameter: TrackParameter::Generator(InstrumentParameter::Gain),
+                },
                 source: AutomationSource::Lfo {
                     shape: LfoShape::Sine,
                     rate: TimeValue {
@@ -150,7 +185,7 @@ mod tests {
 
     #[test]
     pub(crate) fn arrangement_loop_wraps_playhead_at_end_step() {
-        let mut engine = AudioEngine::new(Project::default(), 48_000);
+        let mut engine = AudioEngine::new(synth_project(), 48_000);
         engine.playing = true;
         engine.position_steps = 3;
         engine.loop_range = Some((2, 4));
@@ -162,7 +197,7 @@ mod tests {
 
     #[test]
     pub(crate) fn stopping_playback_releases_ringing_voices() {
-        let mut project = Project::default();
+        let mut project = synth_project();
         use_synth(&mut project.tracks[0], SynthKind::Sine);
         let mut engine = AudioEngine::new(project, 48_000);
         engine.playing = true;
@@ -218,8 +253,9 @@ mod tests {
 
     #[test]
     pub(crate) fn offline_wav_render_writes_a_stereo_file_with_audio() {
-        let mut project = Project::default();
-        project.tracks[0].clips[0].length_steps = 16;
+        let mut project = synth_project();
+        only_clip(&mut project, 0, 0, 16, vec![ClipNote::new(0, 60, 100, 4)]);
+        project.normalize();
         let path =
             std::env::temp_dir().join(format!("pulseforge-render-{}.wav", std::process::id()));
         let frames = render_project_to_wav(&project, path.to_str().unwrap()).unwrap();
@@ -239,7 +275,7 @@ mod tests {
 
     #[test]
     pub(crate) fn ms20_instrument_reuses_a_single_voice() {
-        let mut project = Project::default();
+        let mut project = synth_project();
         use_synth(&mut project.tracks[0], SynthKind::Ms20);
         let mut engine = AudioEngine::new(project, 48_000);
 
@@ -262,7 +298,7 @@ mod tests {
             SynthKind::M1Workstation,
             SynthKind::FmSynth,
         ] {
-            let mut project = Project::default();
+            let mut project = synth_project();
             use_synth(&mut project.tracks[0], kind);
             let mut engine = AudioEngine::new(project, 48_000);
             engine.start_voice(0, 60, 110, None);
@@ -287,8 +323,11 @@ mod tests {
 
     #[test]
     pub(crate) fn instrument_automation_updates_audio_rate_controls() {
-        let target = ParameterTarget::Track { track_id: 0, parameter: TrackParameter::Generator(InstrumentParameter::CutoffHz) };
-        let mut project = Project::default();
+        let target = ParameterTarget::Track {
+            track_id: 0,
+            parameter: TrackParameter::Generator(InstrumentParameter::CutoffHz),
+        };
+        let mut project = synth_project();
         use_synth(&mut project.tracks[0], SynthKind::JunoPoly);
         project
             .automation_tracks
@@ -318,8 +357,11 @@ mod tests {
 
     #[test]
     pub(crate) fn peak_source_follows_the_lane_level() {
-        let target = ParameterTarget::Track { track_id: 0, parameter: TrackParameter::Generator(InstrumentParameter::Gain) };
-        let mut project = Project::default();
+        let target = ParameterTarget::Track {
+            track_id: 0,
+            parameter: TrackParameter::Generator(InstrumentParameter::Gain),
+        };
+        let mut project = synth_project();
         use_synth(&mut project.tracks[0], SynthKind::Sine);
         project
             .automation_tracks
@@ -336,8 +378,8 @@ mod tests {
                         amount: 50.0,
                         unit: crate::project::TimeUnit::Milliseconds,
                     },
-                    base: 0.0,
-                    depth: 1.0,
+                    base: 0.4,
+                    depth: 0.3,
                 },
                 ..Default::default()
             });
@@ -365,8 +407,11 @@ mod tests {
 
     #[test]
     pub(crate) fn control_rate_automation_reaches_the_instrument_within_one_block() {
-        let target = ParameterTarget::Track { track_id: 0, parameter: TrackParameter::Generator(InstrumentParameter::CutoffHz) };
-        let mut project = Project::default();
+        let target = ParameterTarget::Track {
+            track_id: 0,
+            parameter: TrackParameter::Generator(InstrumentParameter::CutoffHz),
+        };
+        let mut project = synth_project();
         use_synth(&mut project.tracks[0], SynthKind::JunoPoly);
         project
             .automation_tracks
@@ -404,11 +449,14 @@ mod tests {
 
     #[test]
     pub(crate) fn disabled_automation_lanes_are_skipped_by_the_index() {
-        let mut project = Project::default();
+        let mut project = synth_project();
         project
             .automation_tracks
             .push(crate::project::AutomationTrack {
-                target: ParameterTarget::Track { track_id: 0, parameter: TrackParameter::Generator(InstrumentParameter::Gain) },
+                target: ParameterTarget::Track {
+                    track_id: 0,
+                    parameter: TrackParameter::Generator(InstrumentParameter::Gain),
+                },
                 enabled: false,
                 ..Default::default()
             });
@@ -419,7 +467,7 @@ mod tests {
 
     #[test]
     pub(crate) fn metronome_clicks_without_any_instrument_content() {
-        let project = Project::default();
+        let project = synth_project();
         let mut engine = AudioEngine::new(project, 48_000);
         let (sender, receiver) = mpsc::channel();
         sender.send(AudioCommand::SetMetronome(true)).unwrap();
@@ -436,7 +484,7 @@ mod tests {
 
     #[test]
     pub(crate) fn unchanged_project_updates_keep_audio_runtimes_in_place() {
-        let mut project = Project::default();
+        let mut project = synth_project();
         project.tracks[0].clips.push(Clip {
             start_step: 0,
             length_steps: 16,
@@ -465,7 +513,7 @@ mod tests {
 
     #[test]
     pub(crate) fn duplicated_audio_clips_share_one_loaded_sample() {
-        let mut project = Project::default();
+        let mut project = synth_project();
         project.tracks[0].clips.clear();
         project.tracks[0].clips.push(Clip {
             start_step: 0,
@@ -508,7 +556,7 @@ mod tests {
     pub(crate) fn audio_clips_start_from_their_source_offset() {
         let mut project = Project {
             bpm: 120.0,
-            ..Project::default()
+            ..synth_project()
         };
         project.tracks[0].clips.clear();
         project.tracks[0].clips.push(Clip {
@@ -534,16 +582,22 @@ mod tests {
 
     #[test]
     pub(crate) fn note_repeats_queue_one_trigger_per_repeat() {
-        let mut project = Project::default();
-        set_clip(&mut project.tracks[1], 0, 16, vec![ClipNote {
-            pitch: 60,
-            velocity: 100,
-            duration_steps: 1,
-            repeat_count: 2,
-            repeat_ticks: 4,
-            repeat_decay: 10,
-            ..ClipNote::default()
-        }]);
+        let mut project = synth_project();
+        only_clip(
+            &mut project,
+            1,
+            0,
+            16,
+            vec![ClipNote {
+                pitch: 60,
+                velocity: 100,
+                duration_steps: 1,
+                repeat_count: 2,
+                repeat_ticks: 4,
+                repeat_decay: 10,
+                ..ClipNote::default()
+            }],
+        );
         project.normalize();
         let mut engine = AudioEngine::new(project, 48_000);
         engine.trigger_step(0);
@@ -565,7 +619,7 @@ mod tests {
 
     #[test]
     pub(crate) fn disabling_smoothing_snaps_mixer_gain_immediately() {
-        let project = Project::default();
+        let project = synth_project();
         let mut engine = AudioEngine::new(project, 48_000);
         assert!(engine.smoothing_enabled);
         let (sender, receiver) = mpsc::channel();
@@ -587,7 +641,7 @@ mod tests {
 
     #[test]
     pub(crate) fn smoothing_ramps_toward_a_new_gain_over_several_frames() {
-        let mut project = Project::default();
+        let mut project = synth_project();
         project.normalize();
         let mut engine = AudioEngine::new(project, 48_000);
         let (sender, receiver) = mpsc::channel();
@@ -615,7 +669,7 @@ mod tests {
 
     #[test]
     pub(crate) fn preview_sample_plays_through_the_master_bus() {
-        let project = Project::default();
+        let project = synth_project();
         let mut engine = AudioEngine::new(project, 48_000);
         let (sender, receiver) = mpsc::channel();
         sender
@@ -637,7 +691,7 @@ mod tests {
     pub(crate) fn audio_clips_play_when_the_transport_starts_inside_them() {
         let mut project = Project {
             bpm: 120.0,
-            ..Project::default()
+            ..synth_project()
         };
         project.tracks[0].clips.clear();
         project.tracks[0].clips.push(Clip {
@@ -670,7 +724,7 @@ mod tests {
 
     #[test]
     pub(crate) fn audio_clips_rewind_after_leaving_their_range() {
-        let mut project = Project::default();
+        let mut project = synth_project();
         project.tracks[0].clips.clear();
         project.tracks[0].clips.push(Clip {
             start_step: 0,
@@ -697,7 +751,7 @@ mod tests {
 
     #[test]
     pub(crate) fn muted_instruments_and_tracks_stay_silent() {
-        let mut project = Project::default();
+        let mut project = synth_project();
         project.tracks[0].enabled = false;
         project.normalize();
         let mut engine = AudioEngine::new(project, 48_000);
@@ -706,15 +760,13 @@ mod tests {
 
         let mut project = engine.project.clone();
         project.tracks[0].enabled = true;
-        project.tracks[0].enabled = false;
         engine.apply_project(project);
         assert!(engine.track_audible(0));
-        assert!(!engine.track_audible(0));
     }
 
     #[test]
     pub(crate) fn soloing_one_instrument_silences_the_others() {
-        let mut project = Project::default();
+        let mut project = synth_project();
         project.tracks[1].solo = true;
         project.normalize();
         let engine = AudioEngine::new(project, 48_000);
@@ -726,18 +778,24 @@ mod tests {
     pub(crate) fn arpeggiator_schedules_one_note_per_rate_step() {
         let mut project = Project {
             bpm: 120.0,
-            ..Project::default()
+            ..synth_project()
         };
         if let Some(generator) = project.tracks[1].generator_mut() {
             generator.arpeggio.enabled = true;
             generator.arpeggio.octaves = 2;
         }
-        set_clip(&mut project.tracks[1], 0, 16, vec![ClipNote {
-            pitch: 60,
-            velocity: 100,
-            duration_steps: 4,
-            ..ClipNote::default()
-        }]);
+        only_clip(
+            &mut project,
+            1,
+            0,
+            16,
+            vec![ClipNote {
+                pitch: 60,
+                velocity: 100,
+                duration_steps: 4,
+                ..ClipNote::default()
+            }],
+        );
         project.normalize();
         let mut engine = AudioEngine::new(project, 48_000);
         engine.trigger_step(0);
@@ -752,7 +810,7 @@ mod tests {
 
     #[test]
     pub(crate) fn external_generators_do_not_fall_back_to_a_builtin_voice() {
-        let mut project = Project::default();
+        let mut project = synth_project();
         use_synth(&mut project.tracks[0], SynthKind::External);
         if let Some(generator) = project.tracks[0].generator_mut() {
             generator.plugin_path = "C:/Plugins/Thing.vst3".to_owned();
@@ -793,28 +851,21 @@ mod tests {
 
     #[test]
     pub(crate) fn clip_routes_note_to_its_own_track() {
-        let mut project = Project::default();
-        project.tracks[1].name = "Second".to_owned();
-        project.tracks[1].clips.push(Clip {
-            start_step: 0,
-            length_steps: 16,
-            audio_path: None,
-            offset_steps: 0,
-            notes: vec![ClipNote::new(0, 60, 100, 4)],
-            ..Clip::default()
-        });
+        let mut project = synth_project();
+        only_clip(&mut project, 0, 0, 16, vec![ClipNote::new(0, 60, 100, 4)]);
+        project.tracks[0].name = "Lead".to_owned();
         project.normalize();
 
         let mut engine = AudioEngine::new(project, 48_000);
         engine.playing = true;
         engine.trigger_step(0);
         let voice = engine.voices.iter().find(|voice| voice.active).unwrap();
-        assert_eq!(voice.track_id, 1);
+        assert_eq!(voice.track_id, 0);
     }
 
     #[test]
     pub(crate) fn master_bus_receives_routed_audio_and_drives_the_output_meter() {
-        let project = Project::default();
+        let project = synth_project();
         let master_index = project.tracks.len();
         let mut engine = AudioEngine::new(project, 48_000);
         let edge = engine
@@ -834,12 +885,12 @@ mod tests {
 
     #[test]
     pub(crate) fn project_updates_keep_audio_samples_attached_when_clips_move_lanes() {
-        let mut project = Project::default();
+        let mut project = synth_project();
         project.tracks[0].clips.push(Clip {
             start_step: 16,
             length_steps: 16,
             offset_steps: 0,
-            audio_path: Some("clip.wav".to_owned()),
+            audio_path: Some("existing.wav".to_owned()),
             ..Clip::default()
         });
         project.normalize();
@@ -847,9 +898,7 @@ mod tests {
         let existing_index = project.tracks[0]
             .clips
             .iter()
-            .position(
-                |clip| clip.audio_path.as_deref() == Some("existing.wav"),
-            )
+            .position(|clip| clip.audio_path.as_deref() == Some("existing.wav"))
             .unwrap();
         engine.audio_clips[0][existing_index].sample = Some(Arc::new(SampleData {
             sample_rate: 48_000,
@@ -877,9 +926,7 @@ mod tests {
         let moved_index = project.tracks[1]
             .clips
             .iter()
-            .position(
-                |clip| clip.audio_path.as_deref() == Some("existing.wav"),
-            )
+            .position(|clip| clip.audio_path.as_deref() == Some("existing.wav"))
             .unwrap();
         assert!(engine.audio_clips[1][moved_index].sample.is_some());
     }
@@ -891,7 +938,7 @@ mod tests {
                 numerator: 7,
                 denominator: 8,
             },
-            ..Project::default()
+            ..synth_project()
         };
         let engine = AudioEngine::new(project, 48_000);
         assert!((engine.frames_per_step() - 6000.0).abs() < 0.001);

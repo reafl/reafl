@@ -1,4 +1,4 @@
-﻿//! The PulseForge editor: application state, windows and panels.
+//! The PulseForge editor: application state, windows and panels.
 //!
 //! This crate owns everything that needs to know about a loaded project: the
 //! `PulseForgeApp` type, the arrangement, mixer, piano roll, channel rack and
@@ -23,10 +23,9 @@ use pulseforge_core::{
     project,
     project::{
         AutomationCurve, AutomationPoint, AutomationTrack, Clip, ClipNote, ClipParameter,
-        DefaultSample, EffectParameter, Generator, GeneratorKind, InsertFxSlot,
-        InstrumentParameter, MIDI_CHANNEL_COUNT, MixerParameter, MidiFxParameter,
-        ParameterTarget, Project, SignalWaveform, SynthKind, TimeSignature, Track, TrackParameter,
-        disconnect_channel,
+        DefaultSample, EffectParameter, GeneratorKind, InsertFxSlot, InstrumentParameter,
+        MIDI_CHANNEL_COUNT, MixerParameter, ParameterTarget, Project, SignalWaveform, SynthKind,
+        TimeSignature, Track, TrackParameter, disconnect_channel,
     },
 };
 use pulseforge_profiling::{

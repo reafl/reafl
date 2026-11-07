@@ -69,7 +69,10 @@ impl PulseForgeApp {
                     ui.end_row();
                     ui.label("Voices");
                     let mut voices = f32::from(instrument.voices.voice_count);
-                    let voices_target = ParameterTarget::Track { track_id: instrument_id, parameter: TrackParameter::Generator(InstrumentParameter::VoiceCount) };
+                    let voices_target = ParameterTarget::Track {
+                        track_id: instrument_id,
+                        parameter: TrackParameter::Generator(InstrumentParameter::VoiceCount),
+                    };
                     let voices_response = ui.add(
                         egui::DragValue::new(&mut voices)
                             .range(1.0..=64.0)
@@ -95,7 +98,10 @@ impl PulseForgeApp {
                 .num_columns(2)
                 .show(right, |ui| {
                     ui.label("Mode");
-                    let arp_mode = ParameterTarget::Track { track_id: instrument_id, parameter: TrackParameter::Generator(InstrumentParameter::ArpMode) };
+                    let arp_mode = ParameterTarget::Track {
+                        track_id: instrument_id,
+                        parameter: TrackParameter::Generator(InstrumentParameter::ArpMode),
+                    };
                     // The combo and its automation button share one grid cell.
                     ui.horizontal(|ui| {
                         egui::ComboBox::from_id_salt(("arp_mode", instrument_id))
@@ -119,7 +125,10 @@ impl PulseForgeApp {
                     ui.label("Gate");
                     let mut gate = instrument.arpeggio.gate;
                     let gate_edit = ValueControl::new("", &mut gate, 0.05..=1.0)
-                        .automates(ParameterTarget::Track { track_id: instrument_id, parameter: TrackParameter::Generator(InstrumentParameter::ArpGate) })
+                        .automates(ParameterTarget::Track {
+                            track_id: instrument_id,
+                            parameter: TrackParameter::Generator(InstrumentParameter::ArpGate),
+                        })
                         .show(ui);
                     if gate_edit.changed {
                         instrument.arpeggio.gate = gate;
@@ -132,7 +141,10 @@ impl PulseForgeApp {
                         "",
                         &mut octaves,
                         1.0..=8.0,
-                        ParameterTarget::Track { track_id: instrument_id, parameter: TrackParameter::Generator(InstrumentParameter::ArpOctaves) },
+                        ParameterTarget::Track {
+                            track_id: instrument_id,
+                            parameter: TrackParameter::Generator(InstrumentParameter::ArpOctaves),
+                        },
                     ) {
                         instrument.arpeggio.octaves = octaves.round().clamp(1.0, 8.0) as u8;
                     }
@@ -144,7 +156,10 @@ impl PulseForgeApp {
                 instrument_id,
                 "Rate",
                 &mut arp_rate,
-                Some(ParameterTarget::Track { track_id: instrument_id, parameter: TrackParameter::Generator(InstrumentParameter::ArpRate) }),
+                Some(ParameterTarget::Track {
+                    track_id: instrument_id,
+                    parameter: TrackParameter::Generator(InstrumentParameter::ArpRate),
+                }),
             ) {
                 instrument.arpeggio.rate = arp_rate;
             }

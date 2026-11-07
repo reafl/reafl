@@ -152,14 +152,15 @@ impl PulseForgeApp {
                     self.attached_editor = None;
                     // The project handles sends, parents and automation itself.
                     self.project.remove_track(instrument);
-                    self.open_instrument_plugins = std::mem::take(&mut self.open_instrument_plugins)
-                        .into_iter()
-                        .filter_map(|id| match id.cmp(&instrument) {
-                            std::cmp::Ordering::Less => Some(id),
-                            std::cmp::Ordering::Equal => None,
-                            std::cmp::Ordering::Greater => Some(id - 1),
-                        })
-                        .collect();
+                    self.open_instrument_plugins =
+                        std::mem::take(&mut self.open_instrument_plugins)
+                            .into_iter()
+                            .filter_map(|id| match id.cmp(&instrument) {
+                                std::cmp::Ordering::Less => Some(id),
+                                std::cmp::Ordering::Equal => None,
+                                std::cmp::Ordering::Greater => Some(id - 1),
+                            })
+                            .collect();
                     self.selected_instrument = self
                         .selected_instrument
                         .min(self.project.tracks.len().saturating_sub(1));
@@ -175,7 +176,8 @@ impl PulseForgeApp {
                         }
                     }
                 }
-            }            ContextAction::GroupTrack(track) => {
+            }
+            ContextAction::GroupTrack(track) => {
                 if self.project.group_track(track).is_some() {
                     self.status = "Grouped the track in a new folder.".to_owned();
                 } else {

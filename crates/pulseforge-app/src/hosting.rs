@@ -85,7 +85,9 @@ impl PulseForgeApp {
     pub(crate) fn stored_plugin_state(&self, id: u64) -> Option<Vec<u8>> {
         for (instrument_id, track) in self.project.tracks.iter().enumerate() {
             if pulseforge_core::hosted::instrument_host_id(instrument_id) == id {
-                return track.generator().map(|generator| generator.plugin_state.clone());
+                return track
+                    .generator()
+                    .map(|generator| generator.plugin_state.clone());
             }
         }
         let track_count = self.project.tracks.len();

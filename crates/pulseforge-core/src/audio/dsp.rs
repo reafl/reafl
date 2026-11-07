@@ -11,9 +11,7 @@ use std::{
 use crate::{
     hosted::effect_host_id,
     plugins::BuiltinEffect,
-    project::{
-        Clip, Generator, LfoShape, Project, SignalWaveform, SynthKind, TimeUnit, TimeValue,
-    },
+    project::{Clip, Generator, LfoShape, Project, SignalWaveform, SynthKind, TimeUnit, TimeValue},
 };
 
 use super::engine::*;

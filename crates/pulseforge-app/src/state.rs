@@ -1,7 +1,5 @@
 //! Small state types: windows, selections, gestures and rows.
 
-use crate::*;
-
 #[derive(Default)]
 pub(crate) struct EditorWindows {
     pub(crate) channel_rack: bool,
@@ -130,7 +128,6 @@ pub(crate) enum PianoGesture {
 pub(crate) struct RackGesture {
     pub(crate) track_id: usize,
     pub(crate) clip_id: usize,
-    pub(crate) pitch: u8,
     pub(crate) enabled: bool,
     pub(crate) last_step: u64,
 }

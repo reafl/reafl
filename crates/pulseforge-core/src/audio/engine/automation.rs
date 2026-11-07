@@ -411,14 +411,8 @@ impl AudioEngine {
                     base,
                     depth,
                 } => {
-                    let level = self.midi_envelope_level(
-                        lane_id,
-                        *source,
-                        *attack,
-                        *decay,
-                        *sustain,
-                        *release,
-                    );
+                    let level = self
+                        .midi_envelope_level(lane_id, *source, *attack, *decay, *sustain, *release);
                     let multiplier = if track.modulation_points.is_empty() {
                         1.0
                     } else {
@@ -714,8 +708,7 @@ impl AudioEngine {
                     ..
                 } if *source_id == channel_id => {
                     if self.position_steps < lane.start_step
-                        || self.position_steps
-                            >= lane.start_step.saturating_add(lane.length_steps)
+                        || self.position_steps >= lane.start_step.saturating_add(lane.length_steps)
                     {
                         continue;
                     }

@@ -10,6 +10,9 @@ impl Project {
     /// The index of the new track.
     pub fn add_track(&mut self) -> TrackId {
         let id = self.tracks.len();
+        // The master bus sits one past the last track, so automation that
+        // addresses a master insert has to move up with it.
+        self.shift_master_automation(id);
         self.tracks.push(Track::source(
             format!("Track {:02}", id + 1),
             Generator::default(),
@@ -25,9 +28,26 @@ impl Project {
     /// The index of the new group.
     pub fn add_group(&mut self) -> TrackId {
         let id = self.tracks.len();
-        self.tracks.push(Track::group(format!("Folder {:02}", id + 1)));
+        self.shift_master_automation(id);
+        self.tracks
+            .push(Track::group(format!("Folder {:02}", id + 1)));
         self.normalize();
         id
+    }
+
+    /// Moves automation that addresses a master insert one slot up.
+    ///
+    /// # Parameters
+    ///
+    /// - `master_id`: the index the master bus used before the track was added.
+    fn shift_master_automation(&mut self, master_id: TrackId) {
+        for lane in &mut self.automation_tracks {
+            if let ParameterTarget::InsertEffect { track_id, .. } = &mut lane.target
+                && *track_id == master_id
+            {
+                *track_id = master_id + 1;
+            }
+        }
     }
 
     /// Wraps a track in a new folder, so it becomes the folder's only child.
@@ -141,6 +161,76 @@ impl Project {
             }
         }
         self.normalize();
+    }
+
+    /// Toggles one step-sequencer hit in a track's clip.
+    ///
+    /// Step-sequencer hits are ordinary C5 notes, so the rack and the piano
+    /// roll edit the same data.
+    ///
+    /// # Parameters
+    ///
+    /// - `track_id`: the track whose clip is edited.
+    /// - `clip_index`: clip slot on that track.
+    /// - `step`: step inside the clip.
+    /// - `enabled`: `true` to add the hit, `false` to remove it.
+    ///
+    /// # Returns
+    ///
+    /// `true` when the clip changed.
+    pub fn set_clip_step(
+        &mut self,
+        track_id: TrackId,
+        clip_index: usize,
+        step: u64,
+        enabled: bool,
+    ) -> bool {
+        let Some(clip) = self
+            .tracks
+            .get_mut(track_id)
+            .and_then(|track| track.clips.get_mut(clip_index))
+        else {
+            return false;
+        };
+        if enabled && step >= clip.length_steps {
+            // Activating a step outside the range grows the clip, so the range
+            // always covers what the user painted.
+            clip.length_steps = step + 1;
+        }
+        let existing = clip
+            .notes
+            .iter()
+            .position(|note| note.pitch == STEP_SEQUENCER_PITCH && note.start_step == step);
+        match (enabled, existing) {
+            (true, None) => {
+                clip.notes
+                    .push(ClipNote::new(step, STEP_SEQUENCER_PITCH, 100, 1));
+                true
+            }
+            (false, Some(index)) => {
+                clip.notes.remove(index);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// True when a track's clip holds a step-sequencer hit at `step`.
+    ///
+    /// # Parameters
+    ///
+    /// - `track_id`: the track to inspect.
+    /// - `clip_index`: clip slot on that track.
+    /// - `step`: step to test.
+    pub fn has_clip_step(&self, track_id: TrackId, clip_index: usize, step: u64) -> bool {
+        self.tracks
+            .get(track_id)
+            .and_then(|track| track.clips.get(clip_index))
+            .is_some_and(|clip| {
+                clip.notes
+                    .iter()
+                    .any(|note| note.pitch == STEP_SEQUENCER_PITCH && note.start_step == step)
+            })
     }
 
     /// Reorders an automation lane so grouped rows can be rearranged.

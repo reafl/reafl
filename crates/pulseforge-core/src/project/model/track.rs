@@ -8,8 +8,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Arpeggio, DefaultSample, InsertFxSlot, SignalWaveform, SynthKind, ThreeBandEq, TimeUnit,
-    TrackParameter, VoiceSettings, INSERT_SLOTS,
+    Arpeggio, DefaultSample, INSERT_SLOTS, InsertFxSlot, SignalWaveform, SynthKind, ThreeBandEq,
+    TimeUnit, TrackParameter, VoiceSettings,
 };
 
 /// Index of a track inside a project's track list.

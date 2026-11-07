@@ -74,10 +74,7 @@ impl AudioEngine {
                     self.project.bpm = finite_clamp(bpm, 20.0, 300.0, 120.0);
                 }
                 AudioCommand::SetProject(project) => pending_project = Some(project),
-                AudioCommand::LoadTrackSample {
-                    track_id,
-                    sample,
-                } => {
+                AudioCommand::LoadTrackSample { track_id, sample } => {
                     if track_id < self.instrument_samples.len() {
                         self.instrument_samples[track_id] = Some(sample);
                     }
@@ -173,20 +170,16 @@ impl AudioEngine {
                         .get(track_id)
                         .and_then(Track::generator)
                         .is_some_and(|old| {
-                            old.sample_path == generator.sample_path
-                                && old.kind == generator.kind
+                            old.sample_path == generator.sample_path && old.kind == generator.kind
                         });
                     if unchanged {
                         old_instrument_samples
                             .get_mut(track_id)
                             .and_then(Option::take)
                     } else if generator.sample_path.is_empty() {
-                        generator
-                            .kind
-                            .sample()
-                            .and_then(|sample| {
-                                SampleData::default_drum(sample, self.sample_rate as u32)
-                            })
+                        generator.kind.sample().and_then(|sample| {
+                            SampleData::default_drum(sample, self.sample_rate as u32)
+                        })
                     } else {
                         None
                     }
@@ -209,9 +202,7 @@ impl AudioEngine {
                             .clips
                             .iter()
                             .zip(&new.clips)
-                            .any(|(old_clip, new_clip)| {
-                                !clip_routes_match(old_clip, new_clip)
-                            })
+                            .any(|(old_clip, new_clip)| !clip_routes_match(old_clip, new_clip))
                 });
         if clips_changed {
             // Clips resolve their audio from the path cache, so a rebuild never

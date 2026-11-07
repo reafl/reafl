@@ -46,7 +46,7 @@ impl Default for MasterChannel {
 pub struct Project {
     /// Tempo in beats per minute.
     pub bpm: f32,
-    /// Snap grid in ticks; see [`TICKS_PER_STEP`].
+    /// Snap grid in ticks; one step is [`crate::project::TICKS_PER_STEP`] ticks.
     pub snap_ticks: u64,
     /// Time signature used for bar lines and the metronome.
     pub time_signature: TimeSignature,

@@ -55,10 +55,7 @@ impl AudioEngine {
                         .trigger_offsets()
                         .into_iter()
                         .find(|(offset, _)| note.start_tick().saturating_add(*offset) == local_tick)
-                        .map(|(_, velocity)| ClipNote {
-                            velocity,
-                            ..*note
-                        });
+                        .map(|(_, velocity)| ClipNote { velocity, ..*note });
                     let Some(note) = trigger else {
                         continue;
                     };
@@ -79,10 +76,8 @@ impl AudioEngine {
                             });
                         }
                     } else {
-                        self.trigger_events.push(TriggerEvent::Note {
-                            track_id,
-                            note,
-                        });
+                        self.trigger_events
+                            .push(TriggerEvent::Note { track_id, note });
                     }
                 }
             }
@@ -171,13 +166,13 @@ impl AudioEngine {
     /// - `note`: the note that was triggered.
     /// - `track_id`: the track that would play it.
     /// - `tick`: position of the note in sixteenths.
-    pub(crate) fn schedule_arpeggio(&mut self, note: &ClipNote, track_id: usize, tick: u64) -> bool {
-        let Some(generator) = self
-            .project
-            .tracks
-            .get(track_id)
-            .and_then(Track::generator)
-        else {
+    pub(crate) fn schedule_arpeggio(
+        &mut self,
+        note: &ClipNote,
+        track_id: usize,
+        tick: u64,
+    ) -> bool {
+        let Some(generator) = self.project.tracks.get(track_id).and_then(Track::generator) else {
             return false;
         };
         let arp = generator.arpeggio;

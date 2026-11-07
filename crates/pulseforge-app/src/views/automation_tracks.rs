@@ -233,7 +233,8 @@ impl PulseForgeApp {
                 match &mut track.source {
                     project::AutomationSource::Curve | project::AutomationSource::RelativeCurve => {
                     }
-                    project::AutomationSource::MidiEnvelope { track_id: instrument_id,
+                    project::AutomationSource::MidiEnvelope {
+                        track_id: instrument_id,
                         attack,
                         decay,
                         sustain,
@@ -242,14 +243,11 @@ impl PulseForgeApp {
                         depth,
                     } => {
                         if !self.project.tracks.is_empty() {
-                            *instrument_id =
-                                (*instrument_id).min(self.project.tracks.len() - 1);
+                            *instrument_id = (*instrument_id).min(self.project.tracks.len() - 1);
                             egui::ComboBox::from_id_salt(("automation_env_instrument", track_id))
                                 .selected_text(&self.project.tracks[*instrument_id].name)
                                 .show_ui(ui, |ui| {
-                                    for (id, instrument) in
-                                        self.project.tracks.iter().enumerate()
-                                    {
+                                    for (id, instrument) in self.project.tracks.iter().enumerate() {
                                         if ui
                                             .selectable_value(instrument_id, id, &instrument.name)
                                             .changed()

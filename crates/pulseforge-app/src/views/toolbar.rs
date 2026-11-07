@@ -221,7 +221,8 @@ impl PulseForgeApp {
             self.add_clip(track, start, 16, None);
             self.selected_clip = self.project.tracks[track].clips.len().saturating_sub(1);
             self.sync_project();
-        }        ui.separator();
+        }
+        ui.separator();
         ui.label("Audio clip");
         ui.add(
             egui::TextEdit::singleline(&mut self.new_audio_path)

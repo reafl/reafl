@@ -92,7 +92,10 @@ impl PulseForgeApp {
             if let Some((index, start)) = target
                 && (start - position).abs() <= 1.0
             {
-                let Some(note) = self.active_notes_mut().and_then(|notes| notes.get_mut(index)) else {
+                let Some(note) = self
+                    .active_notes_mut()
+                    .and_then(|notes| notes.get_mut(index))
+                else {
                     return;
                 };
                 if repeats_mode {

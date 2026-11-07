@@ -6,15 +6,29 @@ use super::*;
 mod tests {
     use super::*;
 
+    /// A project whose first track is a plain synth, so tests can address
+    /// generator parameters on track 0.
+    fn synth_project() -> Project {
+        let mut project = Project::default();
+        let mut lead = Track::source("Synth", Generator::default());
+        lead.parent = None;
+        project.tracks[0] = lead;
+        project.normalize();
+        project
+    }
+
     #[test]
     fn external_synth_kind_and_plugin_path_round_trip_through_json() {
-        let mut project = Project::default();
-        project.instruments[0].synth_kind = SynthKind::External;
-        project.instruments[0].plugin_path = "C:/Plugins/Thing.vst3".to_owned();
+        let mut project = synth_project();
+        if let Some(generator) = project.tracks[0].generator_mut() {
+            generator.kind = GeneratorKind::Synth(SynthKind::External);
+            generator.plugin_path = "C:/Plugins/Thing.vst3".to_owned();
+        }
         let json = serde_json::to_string(&project).unwrap();
         let loaded: Project = serde_json::from_str(&json).unwrap();
-        assert_eq!(loaded.instruments[0].synth_kind, SynthKind::External);
-        assert_eq!(loaded.instruments[0].plugin_path, "C:/Plugins/Thing.vst3");
+        let generator = loaded.tracks[0].generator().expect("source track");
+        assert_eq!(generator.kind.synth_kind(), Some(SynthKind::External));
+        assert_eq!(generator.plugin_path, "C:/Plugins/Thing.vst3");
     }
 
     #[test]
@@ -25,19 +39,19 @@ mod tests {
 
     #[test]
     fn step_sequencer_edits_are_c5_piano_notes() {
-        let mut project = Project::default();
-        project.set_step_note_on_pattern(0, 0, 4, true);
-        assert!(project.has_step_note(0, 0, 4));
-        let note = project.patterns[0]
+        let mut project = synth_project();
+        project.set_clip_step(1, 0, 4, true);
+        assert!(project.has_clip_step(1, 0, 4));
+        let note = project.tracks[1].clips[0]
             .notes
             .iter()
-            .find(|note| note.instrument_id == 0 && note.start_step == 4)
+            .find(|note| note.start_step == 4 && note.pitch == STEP_SEQUENCER_PITCH)
             .copied()
             .expect("step edit should create a note");
         assert_eq!(note.pitch, STEP_SEQUENCER_PITCH);
 
-        project.set_step_note_on_pattern(0, 0, 4, false);
-        assert!(!project.has_step_note(0, 0, 4));
+        project.set_clip_step(1, 0, 4, false);
+        assert!(!project.has_clip_step(1, 0, 4));
     }
 
     #[test]
@@ -55,26 +69,26 @@ mod tests {
 
     #[test]
     fn solo_and_power_flags_default_to_audible_and_are_reported() {
-        let mut project = Project::default();
-        assert!(!project.instrument_solo_active());
-        assert!(!project.lane_solo_active());
-        assert!(project.instruments[0].enabled);
-        assert!(project.lanes[0].enabled);
-        project.instruments[0].solo = true;
-        project.lanes[1].solo = true;
-        assert!(project.instrument_solo_active());
-        assert!(project.lane_solo_active());
+        let mut project = synth_project();
+        assert!(!project.track_solo_active());
+        assert!(!project.track_solo_active());
+        assert!(project.tracks[0].enabled);
+        assert!(project.tracks[0].enabled);
+        project.tracks[0].solo = true;
+        project.tracks[1].solo = true;
+        assert!(project.track_solo_active());
+        assert!(project.track_solo_active());
     }
 
     #[test]
     fn note_repeats_produce_spaced_triggers_with_falling_velocity() {
-        let note = PianoNote {
+        let note = ClipNote {
             velocity: 100,
             repeat_count: 3,
             repeat_ticks: 4,
             repeat_decay: 10,
             duration_steps: 1,
-            ..PianoNote::default()
+            ..ClipNote::default()
         };
         let offsets = note.trigger_offsets();
         assert_eq!(offsets.len(), 4);
@@ -86,12 +100,12 @@ mod tests {
 
     #[test]
     fn repeats_default_to_half_the_note_length() {
-        let note = PianoNote {
+        let note = ClipNote {
             velocity: 64,
             repeat_count: 1,
             repeat_ticks: 0,
             duration_steps: 2,
-            ..PianoNote::default()
+            ..ClipNote::default()
         };
         let offsets = note.trigger_offsets();
         assert_eq!(offsets.len(), 2);
@@ -100,30 +114,30 @@ mod tests {
 
     #[test]
     fn moving_a_lane_keeps_instrument_and_automation_targets_aligned() {
-        let mut project = Project::default();
-        project.add_lane();
-        project.instruments[0].default_mixer_lane = 0;
-        project.lanes[0].inserts[0].name = "Reverb".to_owned();
-        project.lanes[0].inserts[0].enabled = true;
+        let mut project = synth_project();
+        project.add_track();
+
+        project.tracks[0].inserts[0].name = "Reverb".to_owned();
+        project.tracks[0].inserts[0].enabled = true;
         project.automation_tracks.push(AutomationTrack {
             target: ParameterTarget::InsertEffect {
-                channel_id: 0,
+                track_id: 0,
                 slot_id: 0,
                 parameter: EffectParameter::Mix,
             },
             ..AutomationTrack::default()
         });
         project.normalize();
-        let lane_name = project.lanes[0].name.clone();
+        let lane_name = project.tracks[0].name.clone();
 
-        project.move_lane(0, 2);
+        project.move_track(0, 2);
 
-        assert_eq!(project.lanes[2].name, lane_name);
-        assert_eq!(project.instruments[0].default_mixer_lane, 2);
+        assert_eq!(project.tracks[2].name, lane_name);
+
         assert_eq!(
             project.automation_tracks[0].target,
             ParameterTarget::InsertEffect {
-                channel_id: 2,
+                track_id: 2,
                 slot_id: 0,
                 parameter: EffectParameter::Mix,
             }
@@ -132,20 +146,20 @@ mod tests {
 
     #[test]
     fn lane_height_and_collapse_survive_normalization() {
-        let mut project = Project::default();
-        project.lanes[0].height = 5.0;
-        project.lanes[0].automation_collapsed = true;
+        let mut project = synth_project();
+        project.tracks[0].height = 5.0;
+        project.tracks[0].automation_collapsed = true;
         project.normalize();
-        assert!((project.lanes[0].height - 34.0).abs() < f32::EPSILON);
-        assert!(project.lanes[0].automation_collapsed);
-        project.lanes[0].height = 400.0;
+        assert!((project.tracks[0].height - 34.0).abs() < f32::EPSILON);
+        assert!(project.tracks[0].automation_collapsed);
+        project.tracks[0].height = 400.0;
         project.normalize();
-        assert!((project.lanes[0].height - 260.0).abs() < f32::EPSILON);
+        assert!((project.tracks[0].height - 260.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn extra_automation_lanes_can_target_the_same_parameter() {
-        let mut project = Project::default();
+        let mut project = synth_project();
         let track = AutomationTrack {
             start_step: 0,
             length_steps: 16,
@@ -178,18 +192,22 @@ mod tests {
     }
 
     #[test]
-    fn default_project_separates_instruments_patterns_and_lanes() {
+    fn default_project_is_a_folder_with_source_tracks() {
         let project = Project::default();
-        assert_eq!(project.instruments.len(), 4);
-        assert_eq!(project.patterns.len(), 1);
-        assert_eq!(project.lanes.len(), INITIAL_LANES);
-        assert_eq!(project.patterns[0].length_steps, 64);
-        assert_eq!(project.instruments[0].synth_kind, SynthKind::SamplePlayer);
-        assert_eq!(project.instruments[0].default_sample, DefaultSample::Kick);
-        assert_eq!(project.instruments[1].default_sample, DefaultSample::Snare);
-        assert_eq!(project.instruments[2].default_sample, DefaultSample::HiHat);
+        // A drum folder holding kick, snare and hat, plus a lead synth.
+        assert_eq!(project.tracks.len(), 5);
+        assert!(project.tracks[0].is_group());
+        assert_eq!(project.tracks[1].parent, Some(0));
+        let kick = project.tracks[1].generator().expect("kick track");
+        assert_eq!(kick.kind.sample(), Some(DefaultSample::Kick));
+        let snare = project.tracks[2].generator().expect("snare track");
+        assert_eq!(snare.kind.sample(), Some(DefaultSample::Snare));
+        let hat = project.tracks[3].generator().expect("hat track");
+        assert_eq!(hat.kind.sample(), Some(DefaultSample::HiHat));
+        // Each drum track owns one clip with its notes.
+        assert_eq!(project.tracks[1].clips.len(), 1);
+        assert!(!project.tracks[1].clips[0].notes.is_empty());
     }
-
     #[test]
     fn signature_accepts_plain_numeric_values_and_computes_bar_length() {
         assert_eq!(
@@ -225,89 +243,55 @@ mod tests {
     }
 
     #[test]
-    fn arrangement_clips_and_patterns_have_no_fixed_bar_limit() {
-        let mut project = Project::default();
-        project.patterns[0].length_steps = 4096;
-        project.lanes[0].clips[0].length_steps = 4096;
-        project.lanes[0].clips[0].start_step = 8192;
+    fn clips_have_no_fixed_bar_limit() {
+        let mut project = synth_project();
+        project.tracks[1].clips[0].length_steps = 4096;
+        project.tracks[1].clips[0].start_step = 8192;
         project.normalize();
 
-        assert_eq!(project.patterns[0].length_steps, 4096);
-        assert_eq!(project.lanes[0].clips[0].start_step, 8192);
+        assert_eq!(project.tracks[1].clips[0].length_steps, 4096);
+        assert_eq!(project.tracks[1].clips[0].start_step, 8192);
     }
 
     #[test]
-    fn duplicate_clip_repeats_after_it_and_keeps_pattern_linked() {
-        let mut project = Project::default();
-        let original = project.lanes[0].clips[0].clone();
+    fn duplicate_clip_repeats_after_it_with_its_own_notes() {
+        let mut project = synth_project();
+        let original = project.tracks[1].clips[0].clone();
 
-        let duplicate_id = project.duplicate_clip_after(0, 0).unwrap();
-        let duplicate = &project.lanes[0].clips[duplicate_id];
+        let duplicate_id = project.duplicate_clip_after(1, 0).unwrap();
+        let duplicate = &project.tracks[1].clips[duplicate_id];
 
         assert_eq!(
             duplicate.start_step,
             original.start_step + original.length_steps
         );
         assert_eq!(duplicate.length_steps, original.length_steps);
-        assert!(matches!(
-            &duplicate.source,
-            ClipSource::Pattern { pattern_id: 0 }
-        ));
-        assert_eq!(project.lanes[0].clips[0].start_step, original.start_step);
+        assert_eq!(duplicate.notes, original.notes);
+        assert_eq!(project.tracks[1].clips[0].start_step, original.start_step);
     }
-
-    #[test]
-    fn making_a_pattern_clip_unique_clones_its_pattern_data() {
-        let mut project = Project::default();
-        project.duplicate_clip_after(0, 0).unwrap();
-        let original_pattern = project.patterns[0].clone();
-        let original_id = match project.lanes[0].clips[0].source {
-            ClipSource::Pattern { pattern_id } => pattern_id,
-            ClipSource::Audio { .. } => unreachable!(),
-        };
-
-        let unique_id = project.make_clip_pattern_unique(0, 1).unwrap();
-
-        assert_eq!(unique_id, 1);
-        assert_eq!(
-            project.patterns[unique_id].step_hits.len(),
-            original_pattern.step_hits.len()
-        );
-        assert_eq!(
-            project.patterns[unique_id].notes.len(),
-            original_pattern.notes.len()
-        );
-        assert!(matches!(
-            &project.lanes[0].clips[0].source,
-            ClipSource::Pattern { pattern_id } if *pattern_id == original_id
-        ));
-        assert!(matches!(
-            &project.lanes[0].clips[1].source,
-            ClipSource::Pattern { pattern_id } if *pattern_id == unique_id
-        ));
-    }
-
     #[test]
     fn adding_lanes_expands_mixer_routes() {
-        let mut project = Project::default();
-        project.add_lane();
-        assert_eq!(project.lanes.len(), 5);
-        assert_eq!(project.sends.len(), 6);
-        assert!(project.sends.iter().all(|row| row.len() == 6));
+        let mut project = synth_project();
+        let before = project.tracks.len();
+        project.add_track();
+        assert_eq!(project.tracks.len(), before + 1);
+        let channels = project.tracks.len() + 1;
+        assert_eq!(project.sends.len(), channels);
+        assert!(project.sends.iter().all(|row| row.len() == channels));
         assert!(
-            project.sends[..project.lanes.len()]
+            project.sends[..project.tracks.len()]
                 .iter()
-                .all(|row| row[project.lanes.len()] > 0.0)
+                .all(|row| row[project.tracks.len()] > 0.0)
         );
     }
 
     #[test]
     fn legacy_projects_gain_default_master_routes() {
-        let mut project = Project::default();
-        project.sends = vec![vec![0.0; project.lanes.len()]; project.lanes.len()];
+        let mut project = synth_project();
+        project.sends = vec![vec![0.0; project.tracks.len()]; project.tracks.len()];
         project.normalize();
 
-        assert_eq!(project.sends.len(), project.lanes.len() + 1);
+        assert_eq!(project.sends.len(), project.tracks.len() + 1);
         assert!(
             project
                 .sends
@@ -315,41 +299,45 @@ mod tests {
                 .all(|row| row.len() == project.sends.len())
         );
         assert!(
-            project.sends[..project.lanes.len()]
+            project.sends[..project.tracks.len()]
                 .iter()
-                .all(|row| row[project.lanes.len()] > 0.0)
+                .all(|row| row[project.tracks.len()] > 0.0)
         );
     }
 
     #[test]
-    fn older_project_json_uses_defaults_for_new_mixer_and_synth_fields() {
+    fn older_project_json_uses_defaults_for_missing_fields() {
         let mut serialized = serde_json::to_value(Project::default()).unwrap();
         let project = serialized.as_object_mut().unwrap();
         project.remove("mixer_collapsed");
-        project["lanes"][0]
+        project["tracks"][0]
             .as_object_mut()
             .unwrap()
             .remove("pinned");
-        project["instruments"][0]
-            .as_object_mut()
-            .unwrap()
-            .remove("synth_kind");
+        // A track written before generators existed has no `kind` at all.
+        project["tracks"][1].as_object_mut().unwrap().remove("kind");
         project.remove("automation_tracks");
         let loaded: Project = serde_json::from_value(serialized).unwrap();
 
         assert!(!loaded.mixer_collapsed);
-        assert!(!loaded.lanes[0].pinned);
-        assert_eq!(loaded.instruments[0].synth_kind, SynthKind::Sine);
+        assert!(!loaded.tracks[0].pinned);
+        // The track whose `kind` was missing falls back to a plain sine voice.
+        assert_eq!(
+            loaded.tracks[1]
+                .generator()
+                .and_then(|generator| generator.kind.synth_kind()),
+            Some(SynthKind::Sine)
+        );
         assert!(loaded.automation_tracks.is_empty());
     }
 
     #[test]
     fn automation_interpolates_normalized_values_and_holds_its_endpoints() {
-        let target = ParameterTarget::Instrument {
-            instrument_id: 0,
-            parameter: InstrumentParameter::Gain,
+        let target = ParameterTarget::Track {
+            track_id: 0,
+            parameter: TrackParameter::Generator(InstrumentParameter::Gain),
         };
-        let mut project = Project::default();
+        let mut project = synth_project();
         project.automation_tracks.push(AutomationTrack {
             name: "Gain ramp".to_owned(),
             target,
@@ -380,11 +368,11 @@ mod tests {
 
     #[test]
     fn automation_clip_limits_curve_to_its_arrangement_range() {
-        let target = ParameterTarget::Instrument {
-            instrument_id: 0,
-            parameter: InstrumentParameter::Gain,
+        let target = ParameterTarget::Track {
+            track_id: 0,
+            parameter: TrackParameter::Generator(InstrumentParameter::Gain),
         };
-        let mut project = Project::default();
+        let mut project = synth_project();
         project.automation_tracks.push(AutomationTrack {
             target,
             start_step: 8,
@@ -411,10 +399,10 @@ mod tests {
 
     #[test]
     fn relative_automation_offsets_the_parameter_and_may_be_negative() {
-        let mut project = Project::default();
-        let target = ParameterTarget::Instrument {
-            instrument_id: 0,
-            parameter: InstrumentParameter::Gain,
+        let mut project = synth_project();
+        let target = ParameterTarget::Track {
+            track_id: 0,
+            parameter: TrackParameter::Generator(InstrumentParameter::Gain),
         };
         project.automation_tracks.push(AutomationTrack {
             target,
@@ -446,23 +434,27 @@ mod tests {
 
     #[test]
     fn enums_are_addressed_as_integers() {
-        let mut project = Project::default();
-        project.instruments.clear();
-        project.instruments.push(Instrument {
-            signal_waveform: SignalWaveform::Saw,
-            arpeggio: Arpeggio {
-                mode: ArpMode::UpDown,
-                ..Arpeggio::default()
+        let mut project = synth_project();
+        project.tracks.clear();
+        project.tracks.push(Track::source(
+            "Test",
+            Generator {
+                kind: GeneratorKind::Synth(SynthKind::SignalGenerator),
+                signal_waveform: SignalWaveform::Saw,
+                arpeggio: Arpeggio {
+                    mode: ArpMode::UpDown,
+                    ..Arpeggio::default()
+                },
+                ..Generator::default()
             },
-            ..Instrument::default()
-        });
-        let waveform = ParameterTarget::Instrument {
-            instrument_id: 0,
-            parameter: InstrumentParameter::Waveform,
+        ));
+        let waveform = ParameterTarget::Track {
+            track_id: 0,
+            parameter: TrackParameter::Generator(InstrumentParameter::Waveform),
         };
-        let arp = ParameterTarget::Instrument {
-            instrument_id: 0,
-            parameter: InstrumentParameter::ArpMode,
+        let arp = ParameterTarget::Track {
+            track_id: 0,
+            parameter: TrackParameter::Generator(InstrumentParameter::ArpMode),
         };
         assert_eq!(project.parameter_value(waveform), Some(2.0));
         assert_eq!(project.parameter_value(arp), Some(2.0));
@@ -475,7 +467,7 @@ mod tests {
 
     #[test]
     fn automation_lane_parameters_are_addressable() {
-        let mut project = Project::default();
+        let mut project = synth_project();
         project.automation_tracks.push(AutomationTrack {
             source: AutomationSource::Lfo {
                 shape: LfoShape::Square,
@@ -522,10 +514,10 @@ mod tests {
 
     #[test]
     fn normalization_prunes_automation_targets_without_a_plugin() {
-        let mut project = Project::default();
+        let mut project = synth_project();
         project.automation_tracks.push(AutomationTrack {
             target: ParameterTarget::InsertEffect {
-                channel_id: 0,
+                track_id: 0,
                 slot_id: 0,
                 parameter: EffectParameter::Mix,
             },
@@ -538,24 +530,24 @@ mod tests {
 
     #[test]
     fn adding_a_lane_keeps_master_effect_automation_attached_to_master() {
-        let mut project = Project::default();
-        let master_id = project.lanes.len();
+        let mut project = synth_project();
+        let master_id = project.tracks.len();
         project.master.inserts[0].name = "Delay".to_owned();
         project.automation_tracks.push(AutomationTrack {
             target: ParameterTarget::InsertEffect {
-                channel_id: master_id,
+                track_id: master_id,
                 slot_id: 0,
                 parameter: EffectParameter::Mix,
             },
             ..AutomationTrack::default()
         });
 
-        project.add_lane();
+        project.add_track();
 
         assert_eq!(
             project.automation_tracks[0].target,
             ParameterTarget::InsertEffect {
-                channel_id: project.lanes.len(),
+                track_id: project.tracks.len(),
                 slot_id: 0,
                 parameter: EffectParameter::Mix,
             }
@@ -579,23 +571,16 @@ mod tests {
 
     #[test]
     fn normalize_bounds_sends_and_prunes_invalid_references() {
-        let mut project = Project::default();
+        let mut project = synth_project();
         project.sends[0][1] = 0.9;
         project.sends[2][1] = 0.9;
-        project.patterns[0].step_hits.push(StepHit {
-            instrument_id: 999,
-            step: 0,
-        });
+        // A clip that points at a file that is gone is pruned.
+        project.tracks[1].clips[0].audio_path = Some("   ".to_owned());
         project.normalize();
 
         let total: f32 = project.sends.iter().map(|row| row[1]).sum();
         assert!(total <= MAX_SEND_GAIN_SUM + 0.00001);
-        assert!(
-            project.patterns[0]
-                .step_hits
-                .iter()
-                .all(|hit| hit.instrument_id < project.instruments.len())
-        );
+        assert_eq!(project.tracks[1].clips[0].audio_path, None);
     }
 
     #[test]
@@ -681,7 +666,7 @@ mod tests {
 
     #[test]
     fn normalize_sorts_and_clamps_modulation_curve_points() {
-        let mut project = Project::default();
+        let mut project = synth_project();
         let track = AutomationTrack {
             modulation_points: vec![
                 AutomationPoint {
@@ -709,32 +694,30 @@ mod tests {
 
     #[test]
     fn mixer_eq_send_and_clip_parameters_are_readable() {
-        let mut project = Project::default();
-        project.lanes[0].eq.low_db = -4.0;
+        let mut project = synth_project();
+        project.tracks[0].eq.low_db = -4.0;
         project.sends[0][1] = 0.3;
-        project.lanes[0].clips.push(ArrangementClip {
-            source: ClipSource::Audio {
-                path: "clip.wav".to_owned(),
-            },
+        project.tracks[0].clips.push(Clip {
+            audio_path: Some("clip.wav".to_owned()),
             sample_gain: 0.4,
             sample_pan: -0.5,
             sample_pitch: 7.0,
-            ..ArrangementClip::default()
+            ..Clip::default()
         });
-        let clip_id = project.lanes[0].clips.len() - 1;
+        let clip_id = project.tracks[0].clips.len() - 1;
 
-        let eq = ParameterTarget::MixerChannel {
-            channel_id: 0,
-            parameter: MixerParameter::LowDb,
+        let eq = ParameterTarget::Track {
+            track_id: 0,
+            parameter: TrackParameter::Mixer(MixerParameter::LowDb),
         };
         assert_eq!(project.parameter_value(eq), Some(-4.0));
-        let send = ParameterTarget::MixerChannel {
-            channel_id: 0,
-            parameter: MixerParameter::Send { destination: 1 },
+        let send = ParameterTarget::Track {
+            track_id: 0,
+            parameter: TrackParameter::Mixer(MixerParameter::Send { destination: 1 }),
         };
         assert_eq!(project.parameter_value(send), Some(0.3));
         let pitch = ParameterTarget::Clip {
-            lane_id: 0,
+            track_id: 0,
             clip_id,
             parameter: ClipParameter::Pitch,
         };
@@ -749,11 +732,11 @@ mod tests {
 
     #[test]
     fn lanes_for_removed_clips_are_pruned() {
-        let mut project = Project::default();
-        project.lanes[0].clips.clear();
+        let mut project = synth_project();
+        project.tracks[0].clips.clear();
         project.automation_tracks.push(AutomationTrack {
             target: ParameterTarget::Clip {
-                lane_id: 0,
+                track_id: 0,
                 clip_id: 0,
                 parameter: ClipParameter::Gain,
             },

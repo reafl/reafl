@@ -80,7 +80,9 @@ impl Project {
         track.pan = finite_clamp(track.pan, -1.0, 1.0, 0.0);
         track.width = finite_clamp(track.width, 0.0, 2.0, 1.0);
         Self::normalize_eq(&mut track.eq);
-        track.inserts.resize_with(INSERT_SLOTS, InsertFxSlot::default);
+        track
+            .inserts
+            .resize_with(INSERT_SLOTS, InsertFxSlot::default);
         track.inserts.truncate(INSERT_SLOTS);
         Self::normalize_inserts(&mut track.inserts);
         track.midi_fx.transpose = track.midi_fx.transpose.clamp(-48, 48);
@@ -161,9 +163,8 @@ impl Project {
         let groups: Vec<bool> = self.tracks.iter().map(Track::is_group).collect();
         for index in 0..track_count {
             let parent = self.tracks[index].parent;
-            let valid = parent.is_some_and(|parent| {
-                parent != index && parent < track_count && groups[parent]
-            });
+            let valid = parent
+                .is_some_and(|parent| parent != index && parent < track_count && groups[parent]);
             if !valid {
                 self.tracks[index].parent = None;
             }
@@ -212,11 +213,12 @@ impl Project {
                 ParameterTarget::Track {
                     track_id,
                     parameter,
-                } => track_id <= track_count && self.track_parameter_value(track_id, parameter).is_some(),
+                } => {
+                    track_id <= track_count
+                        && self.track_parameter_value(track_id, parameter).is_some()
+                }
                 ParameterTarget::InsertEffect {
-                    track_id,
-                    slot_id,
-                    ..
+                    track_id, slot_id, ..
                 } => {
                     let slots = if track_id == track_count {
                         &self.master.inserts
@@ -232,9 +234,7 @@ impl Project {
                 ParameterTarget::PluginParameter { .. } => true,
                 // Clip targets follow their clip: removing the clip prunes the lane.
                 ParameterTarget::Clip {
-                    track_id,
-                    clip_id,
-                    ..
+                    track_id, clip_id, ..
                 } => self
                     .tracks
                     .get(track_id)

@@ -288,9 +288,7 @@ impl PulseForgeApp {
                     egui::Id::new(("arrangement_clip", lane_id, clip_index)),
                     egui::Sense::click(),
                 );
-                if clip_response.double_clicked()
-                    && clip.is_audio()
-                {
+                if clip_response.double_clicked() && clip.is_audio() {
                     self.sample_clip_window = Some((lane_id, clip_index));
                 }
                 if clip_response.clicked() {
@@ -299,7 +297,8 @@ impl PulseForgeApp {
                         continue;
                     }
                     self.selected_lane = lane_id;
-                    self.selection = Some(Selection::Clip { track: lane_id,
+                    self.selection = Some(Selection::Clip {
+                        track: lane_id,
                         clip: clip_index,
                     });
                 }
@@ -352,7 +351,8 @@ impl PulseForgeApp {
                 };
                 // Clips in the multi-selection are drawn lifted as well, so a
                 // range selected with ctrl reads as one block.
-                let selected = self.is_selected(Selection::Clip { track: lane_id,
+                let selected = self.is_selected(Selection::Clip {
+                    track: lane_id,
                     clip: clip_index,
                 });
                 let lift = if selected {

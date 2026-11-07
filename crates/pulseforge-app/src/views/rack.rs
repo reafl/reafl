@@ -365,7 +365,6 @@ impl PulseForgeApp {
                         self.rack_gesture = Some(RackGesture {
                             track_id,
                             clip_id: clip_index,
-                            pitch: project::STEP_SEQUENCER_PITCH,
                             enabled,
                             last_step: step,
                         });
@@ -378,12 +377,7 @@ impl PulseForgeApp {
                     {
                         let (first_step, last_step) = rack_step_span(gesture.last_step, step);
                         for painted_step in first_step..=last_step {
-                            self.set_step_hit(
-                                track_id,
-                                clip_index,
-                                painted_step,
-                                gesture.enabled,
-                            );
+                            self.set_step_hit(track_id, clip_index, painted_step, gesture.enabled);
                         }
                         gesture.last_step = step;
                         self.rack_gesture = Some(gesture);
@@ -492,8 +486,8 @@ impl PulseForgeApp {
 /// - `step`: step to test.
 fn step_is_active(track: &Track, clip_index: usize, step: u64) -> bool {
     track.clips.get(clip_index).is_some_and(|clip| {
-        clip.notes.iter().any(|note| {
-            note.pitch == project::STEP_SEQUENCER_PITCH && note.start_step == step
-        })
+        clip.notes
+            .iter()
+            .any(|note| note.pitch == project::STEP_SEQUENCER_PITCH && note.start_step == step)
     })
 }

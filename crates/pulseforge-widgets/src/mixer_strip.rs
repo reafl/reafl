@@ -306,7 +306,9 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                         let pad = ((strip_width - pair_width) * 0.5).max(0.0);
                         let gain_target = ParameterTarget::Track {
                             track_id: strip.track_id,
-                            parameter: project::TrackParameter::Mixer(project::MixerParameter::Gain),
+                            parameter: project::TrackParameter::Mixer(
+                                project::MixerParameter::Gain,
+                            ),
                         };
                         let pan_target = ParameterTarget::Track {
                             track_id: strip.track_id,
@@ -314,7 +316,9 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                         };
                         let width_target = ParameterTarget::Track {
                             track_id: strip.track_id,
-                            parameter: project::TrackParameter::Mixer(project::MixerParameter::Width),
+                            parameter: project::TrackParameter::Mixer(
+                                project::MixerParameter::Width,
+                            ),
                         };
                         ui.horizontal(|ui| {
                             ui.add_space(pad);
@@ -485,12 +489,11 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                             draw_eq_curve(ui, *strip.eq);
                             // Each band is its own automation target, so the
                             // channel EQ is automatable like the fader.
-                            let eq_target = |parameter: project::MixerParameter| {
-                                ParameterTarget::Track {
+                            let eq_target =
+                                |parameter: project::MixerParameter| ParameterTarget::Track {
                                     track_id: strip.track_id,
                                     parameter: project::TrackParameter::Mixer(parameter),
-                                }
-                            };
+                                };
                             ui.horizontal(|ui| {
                                 result.changed |=
                                     ValueControl::knob("LOW", &mut strip.eq.low_db, -12.0..=12.0)

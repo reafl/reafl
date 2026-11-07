@@ -100,7 +100,10 @@ impl PulseForgeApp {
         {
             return format!("{} \u{00B7} Hosted plug-in", track.name);
         }
-        let label = generator.kind.synth_kind().map_or("Sample", synth_kind_label);
+        let label = generator
+            .kind
+            .synth_kind()
+            .map_or("Sample", synth_kind_label);
         format!("{} \u{00B7} {}", track.name, label)
     }
 }
@@ -347,11 +350,9 @@ impl PulseForgeApp {
             (Selection::Note { .. }, Selection::Note { .. }) => self.note_order(),
             (Selection::Clip { .. }, Selection::Clip { .. }) => self.clip_order(),
             (Selection::MixerChannel(_), Selection::MixerChannel(_)) => self.channel_order(),
-            (Selection::Instrument(_), Selection::Instrument(_)) => {
-                (0..self.project.tracks.len())
-                    .map(Selection::Instrument)
-                    .collect()
-            }
+            (Selection::Instrument(_), Selection::Instrument(_)) => (0..self.project.tracks.len())
+                .map(Selection::Instrument)
+                .collect(),
             _ => return None,
         };
         let start = list.iter().position(|item| *item == from)?;

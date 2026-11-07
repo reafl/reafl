@@ -272,11 +272,7 @@ impl Project {
     ///
     /// The value, or `None` when the track is missing or the parameter does not
     /// exist on it (for example a generator control on a group).
-    pub fn track_parameter_value(
-        &self,
-        track_id: usize,
-        parameter: TrackParameter,
-    ) -> Option<f32> {
+    pub fn track_parameter_value(&self, track_id: usize, parameter: TrackParameter) -> Option<f32> {
         let is_master = track_id == self.tracks.len();
         if is_master {
             let TrackParameter::Mixer(parameter) = parameter else {
@@ -347,7 +343,11 @@ impl Project {
             return Some(self.automated_value(own, base, step));
         }
         for ancestor in Track::ancestors(&self.tracks, track_id) {
-            if !self.tracks.get(ancestor).is_some_and(|track| track.is_group()) {
+            if !self
+                .tracks
+                .get(ancestor)
+                .is_some_and(|track| track.is_group())
+            {
                 continue;
             }
             if !self.tracks[ancestor].supports(parameter) {

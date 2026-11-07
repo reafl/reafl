@@ -340,7 +340,6 @@ impl PulseForgeApp {
     ) {
         let (low_tick, high_tick) = (from_tick.min(to_tick), from_tick.max(to_tick));
         let (low_pitch, high_pitch) = (from_pitch.min(to_pitch), from_pitch.max(to_pitch));
-        let instrument = self.selected_instrument;
         let hits: Vec<Selection> = self
             .active_notes()
             .iter()

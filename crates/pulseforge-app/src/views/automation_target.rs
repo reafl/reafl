@@ -191,7 +191,8 @@ impl PulseForgeApp {
                     ui.selectable_value(&mut self.automation_track_id, track_id, &track.name);
                 }
             });
-        let parameters = Track::automation_parameters(&self.project.tracks, self.automation_track_id);
+        let parameters =
+            Track::automation_parameters(&self.project.tracks, self.automation_track_id);
         if parameters.is_empty() {
             ui.label("This track has no automatable parameters.");
             return None;
@@ -220,7 +221,9 @@ impl PulseForgeApp {
             .selected_text(if self.automation_channel_id == master_id {
                 "Master"
             } else {
-                self.project.tracks[self.automation_channel_id].name.as_str()
+                self.project.tracks[self.automation_channel_id]
+                    .name
+                    .as_str()
             })
             .show_ui(ui, |ui| {
                 for (track_id, lane) in self.project.tracks.iter().enumerate() {

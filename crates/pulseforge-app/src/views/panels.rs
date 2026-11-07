@@ -230,7 +230,10 @@ impl PulseForgeApp {
             // The send level uses the shared knob widget, so it drags, resets and
             // offers its context menu exactly like every other parameter.
             let mut value = self.project.sends[source][destination];
-            let send_target = ParameterTarget::Track { track_id: source, parameter: TrackParameter::Mixer(project::MixerParameter::Send { destination }) };
+            let send_target = ParameterTarget::Track {
+                track_id: source,
+                parameter: TrackParameter::Mixer(project::MixerParameter::Send { destination }),
+            };
             ui.scope_builder(egui::UiBuilder::new().max_rect(knob_rect), |ui| {
                 if Knob::new("", 0.0, 0.95, "")
                     .with_default(0.25)
@@ -437,7 +440,8 @@ impl PulseForgeApp {
                 .map_or_else(
                     || "note".to_owned(),
                     |note| format!("note {} @ {}", note_name(note.pitch), note.start_step),
-                ),            Some(Selection::Instrument(instrument)) => self
+                ),
+            Some(Selection::Instrument(instrument)) => self
                 .project
                 .tracks
                 .get(instrument)

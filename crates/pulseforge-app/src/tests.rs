@@ -42,7 +42,10 @@ fn envelope_preview_finds_clip_notes() {
         notes: vec![ClipNote::new(2, 60, 100, 1), ClipNote::new(4, 60, 100, 1)],
         ..Clip::default()
     }];
-    assert_eq!(automation_note_at(&project.tracks[1], 4.5), Some((4.0, 1.0)));
+    assert_eq!(
+        automation_note_at(&project.tracks[1], 4.5),
+        Some((4.0, 1.0))
+    );
     assert!(automation_note_at(&project.tracks[1], 1.0).is_none());
     // A folder owns no notes of its own.
     assert!(automation_note_at(&project.tracks[0], 4.5).is_none());
@@ -247,8 +250,7 @@ fn lane_preview_follows_automation_of_its_own_rate() {
 
     let driven = lane_driven_parameters(&project, 0);
     assert_eq!(driven, vec![AutomationLaneParameter::RateAmount]);
-    let resolved =
-        resolved_lane_source(&project, 0, 0.0, 120.0, &|_| 0.0, 0).expect("lane exists");
+    let resolved = resolved_lane_source(&project, 0, 0.0, 120.0, &|_| 0.0, 0).expect("lane exists");
     let AutomationSource::Lfo { rate, .. } = resolved else {
         panic!("source should stay an LFO");
     };
@@ -337,8 +339,7 @@ fn peak_source_preview_uses_the_live_level() {
         depth: 0.5,
     };
     let target = generator_target(0, InstrumentParameter::Gain);
-    let silent =
-        automation_source_preview(&source, target, &project.tracks, 120.0, 0, 0.0, 0.0);
+    let silent = automation_source_preview(&source, target, &project.tracks, 120.0, 0, 0.0, 0.0);
     let loud = automation_source_preview(&source, target, &project.tracks, 120.0, 0, 0.0, 1.0);
     assert!((silent - 0.25).abs() < 1e-4, "silent level gave {silent}");
     assert!((loud - 0.75).abs() < 1e-4, "full level gave {loud}");

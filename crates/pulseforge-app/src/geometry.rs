@@ -20,12 +20,6 @@ pub(crate) fn rack_step_span(start: u64, end: u64) -> (u64, u64) {
     (start.min(end), start.max(end))
 }
 
-/// True when two clips play the same material, so a drag can keep the audio
-/// runtime instead of reloading it.
-pub(crate) fn clips_match(left: &Clip, right: &Clip) -> bool {
-    left.audio_path == right.audio_path && left.notes == right.notes
-}
-
 /// The placement that reproduces a clip, used when a clip is dragged, copied or
 /// re-dropped on the timeline.
 ///

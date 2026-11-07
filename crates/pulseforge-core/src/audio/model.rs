@@ -1,4 +1,4 @@
-﻿//! Audio-side data: commands and the structures the renderer keeps per voice.
+//! Audio-side data: commands and the structures the renderer keeps per voice.
 
 use std::sync::Arc;
 
@@ -205,14 +205,8 @@ impl Default for AudioClipRuntime {
 
 #[derive(Clone, Copy)]
 pub(crate) enum TriggerEvent {
-    Note {
-        track_id: usize,
-        note: ClipNote,
-    },
-    AudioClip {
-        track_id: usize,
-        clip_index: usize,
-    },
+    Note { track_id: usize, note: ClipNote },
+    AudioClip { track_id: usize, clip_index: usize },
 }
 
 /// One insert slot's processor. Built-in effects run their DSP; external

@@ -40,8 +40,7 @@ impl PulseForgeApp {
                 }
             },
         };
-        let clip_index =
-            self.add_clip(track, start_step, length_steps.max(1), audio_path.clone());
+        let clip_index = self.add_clip(track, start_step, length_steps.max(1), audio_path.clone());
         self.selected_lane = track;
         self.selected_clip = clip_index;
         self.selection = Some(Selection::Clip {

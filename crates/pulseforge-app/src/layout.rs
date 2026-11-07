@@ -101,10 +101,9 @@ pub(crate) fn draw_clip_contents(
         let center = inner.center().y;
         // A cheap hash keeps each clip's motif distinct instead of repeating
         // one sine everywhere.
-        let mut noise = path
-            .bytes()
-            .fold(7_u32, |acc, byte| acc.wrapping_mul(31).wrapping_add(u32::from(byte)))
-            | 1;
+        let mut noise = path.bytes().fold(7_u32, |acc, byte| {
+            acc.wrapping_mul(31).wrapping_add(u32::from(byte))
+        }) | 1;
         for column in 0..columns {
             noise ^= noise << 13;
             noise ^= noise >> 17;
