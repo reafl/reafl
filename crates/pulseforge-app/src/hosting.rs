@@ -83,9 +83,9 @@ impl PulseForgeApp {
 
     /// Plug-in state stored in the project for a host id, if any.
     pub(crate) fn stored_plugin_state(&self, id: u64) -> Option<Vec<u8>> {
-        for (instrument_id, instrument) in self.project.tracks.iter().enumerate() {
+        for (instrument_id, track) in self.project.tracks.iter().enumerate() {
             if pulseforge_core::hosted::instrument_host_id(instrument_id) == id {
-                return Some(instrument.plugin_state.clone());
+                return track.generator().map(|generator| generator.plugin_state.clone());
             }
         }
         let track_count = self.project.tracks.len();
@@ -232,10 +232,10 @@ impl PulseForgeApp {
     /// project, so a reload restores exactly what the user had.
     pub(crate) fn capture_plugin_states(&mut self) {
         for instrument_id in 0..self.project.tracks.len() {
-            if self.project.tracks[instrument_id]
-                .plugin_path
-                .is_empty()
-            {
+            let has_bundle = self.project.tracks[instrument_id]
+                .generator()
+                .is_some_and(|generator| !generator.plugin_path.is_empty());
+            if !has_bundle {
                 continue;
             }
             let id = pulseforge_core::hosted::instrument_host_id(instrument_id);
@@ -244,7 +244,9 @@ impl PulseForgeApp {
                 .get_mut(&id)
                 .and_then(pulseforge_hosting::HostedUi::save_state)
             {
-                self.project.tracks[instrument_id].plugin_state = state;
+                if let Some(generator) = self.project.tracks[instrument_id].generator_mut() {
+                    generator.plugin_state = state;
+                }
             }
         }
         let track_count = self.project.tracks.len();
