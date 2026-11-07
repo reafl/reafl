@@ -9,6 +9,41 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ### Added
 
+- **Track unification (breaking).** Every row of the arrangement is now one
+  `Track` that is simultaneously an arrangement row, a mixer strip and a rack
+  slot. `Project::instruments`, `Project::lanes` and `Project::patterns` are
+  replaced by `Project::tracks`; a clip owns its notes, so `ClipSource`,
+  `Pattern`, `StepHit` and `ClipNote::instrument_id` are gone. Project files
+  from the previous shape are intentionally not migrated.
+- **Folder tracks.** A track with children has no generator: it applies its own
+  `midi_fx` to a clip and plays it through every descendant, and its
+  gain/pan/width/EQ/inserts process the summed children. Nesting is arbitrary;
+  `reparent_track` refuses cycles. `processing_order` renders children before
+  parents and zeroes each child buffer once it has been summed, so the tree
+  ordering is also the mixer routing.
+- **Group automation.** A folder offers its descendants' common generator
+  parameters in `group_targets` (`available_group_targets` filters to the
+  intersection over every descendant, skipping nested folders), and all mixer
+  and MIDI FX parameters are group-wide without configuration
+  (`TrackParameter::is_group_wide`). Values resolve own lane → nearest ancestor
+  group lane → base, in both `Project::effective_track_value` and the engine's
+  `AudioEngine::resolve_track_value`.
+
+### Changed
+
+- Automation targets collapsed into `ParameterTarget::Track { track_id,
+  parameter }` with `TrackParameter::{Generator, MidiFx, Mixer}`, alongside the
+  existing clip and sample-default targets; the instrument/mixer-channel
+  families are gone. `normalize` prunes lanes whose track or parameter
+  disappeared, and `add_track`/`add_group` shift master-insert lanes so they
+  keep addressing the master.
+- The editor's rack, arrangement, mixer, piano roll and automation picker are
+  per-track views over the same index space, so a track id means the same thing
+  in every window. The rack paints steps onto the selected clip and the piano
+  roll edits the clip's own notes.
+- The default project is a `Drums` folder holding Kick, Snare and Hat plus a
+  standalone `Synth`, each with a clip.
+
 - Track model groundwork for the unified workflow: `Track` (generator or group,
   MIDI FX, mixer, clips), `Generator`, `GeneratorKind`, `MidiFx`, `TrackMixer`,
   `Clip` and `ClipNote`, plus tree helpers (`children`, `descendants`,

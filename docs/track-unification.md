@@ -93,29 +93,49 @@ Each step is its own commit (`AI: ...`) with the tests and the changelog entry
 updated in the same commit, and the workspace must build and pass tests at every
 one of them.
 
-1. **Core types** — `project/model/track.rs` and `project/model/track_param.rs`:
+Status: **all nine steps have landed** on `dev_abletonworkflow`; `cargo check
+--workspace --all-targets`, `cargo test --workspace` and `cargo doc --workspace
+--no-deps` are clean.
+
+1. ✅ **Core types** — `project/model/track.rs` and `project/model/track_param.rs`:
    `TrackId`, `TrackKind`, `Generator`, `GeneratorKind`, `MidiFx`, `TrackMixer`,
    `Clip`, `ClipNote`, `MidiFxParameter`, `TrackParameter`, the tree helpers
    (`children`, `descendants`, `ancestors`, cycle guard) and the group-target
    helpers. Purely additive.
-2. **Project owns tracks** — replace `instruments`, `lanes` and `patterns` with
-   `tracks`; new default project (one group with two children); `normalize`
-   validates parents, prunes dangling `group_targets`, clamps mixer values.
-3. **Unified targets** — replace the instrument/mixer/clip target families with
-   `ParameterTarget::Track` (+ clip and sample-default targets), one
+2. ✅ **Project owns tracks** — `instruments`, `lanes` and `patterns` are gone in
+   favour of `tracks`; the default project is a `Drums` folder holding Kick,
+   Snare and Hat plus one standalone `Synth`, each source with a clip;
+   `normalize` validates parents, prunes dangling `group_targets` and
+   group-insert automation, and clamps mixer values.
+3. ✅ **Unified targets** — the instrument/mixer/clip target families are
+   replaced by `ParameterTarget::Track` (+ clip and sample-default targets), one
    `parameter_value`, one base-value reader, one writer.
-4. **Inheritance helper** — `effective_track_value(project, track, parameter)`:
-   own lane, then nearest ancestor group lane, then base; used by the engine and
-   by every UI read.
-5. **Engine voices** — one voice pool per source track; group tracks are
-   processed after their children so a group's chain runs on the sum.
-6. **Engine notes** — clips on any track; a group's clip fans out to its
-   descendants through `midi_fx`; audio clips keep their per-clip controls.
-7. **UI track list** — the arrangement shows the track tree (indent, collapse),
-   clips belong to their row, the rack and mixer become per-track views.
-8. **Automation window** — the picker lists tracks instead of instrument/mixer/
-   clip families, including a group's forwarded child parameters.
-9. **Polish** — presets, docs, changelog, tests.
+4. ✅ **Inheritance helper** — `effective_track_value(project, track, parameter)`
+   and its engine twin `AudioEngine::resolve_track_value`: own lane, then
+   nearest ancestor group lane, then base; used by the engine and by every UI
+   read.
+5. ✅ **Engine voices** — one voice pool per source track; `processing_order`
+   renders children before parents, so a group's chain runs on the summed
+   children and the child buffers are zeroed afterwards.
+6. ✅ **Engine notes** — clips live on any track; a group's clip fans out to its
+   descendants through `midi_chain_note` after the group's `midi_fx`; audio
+   clips keep their per-clip controls through `TriggerEvent::AudioClip`.
+7. ✅ **UI track list** — the arrangement shows the track tree (indent, collapse),
+   clips belong to their row, the rack and the mixer are per-track views.
+8. ✅ **Automation window** — the picker lists track parameters per track,
+   including a group's forwarded child parameters (`available_group_targets`).
+9. ✅ **Polish** — tests ported to the new model (`synth_project`/`use_synth`
+   helpers), docs and changelog updated.
+
+### Notes from the migration
+
+* Folder tracks have no generator, so tests that want a plain synth must call
+  `synth_project()`; the first default track is a folder.
+* `add_track` / `add_group` shift master-insert automation so a lane that
+  addressed "the master" keeps addressing it after track indices move.
+* A peak-follower lane that drives its own track's generator gain with
+  `base = 0.0` silences the track and so can never see audio; use a non-zero
+  base when a lane feeds back into its own channel.
 
 ## Compatibility
 
