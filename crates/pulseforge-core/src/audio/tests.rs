@@ -9,8 +9,8 @@ use std::{
 };
 
 use crate::project::{
-    ClipSource, DefaultSample, InstrumentParameter, LfoShape, ParameterTarget, PianoNote, Project,
-    SignalWaveform, SynthKind,
+    Clip, ClipNote, DefaultSample, GeneratorKind, InstrumentParameter, LfoShape, ParameterTarget,
+    Project, SignalWaveform, SynthKind, TimeSignature, Track, TrackParameter,
 };
 
 use super::dsp::*;
@@ -21,7 +21,23 @@ use super::sample::*;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::project::{ArrangementClip, Pattern, TimeSignature};
+
+    /// Switches a track's generator to a built-in synth model.
+    pub(crate) fn use_synth(track: &mut Track, kind: SynthKind) {
+        if let Some(generator) = track.generator_mut() {
+            generator.kind = GeneratorKind::Synth(kind);
+        }
+    }
+
+    /// Replaces a track's clips with one note clip.
+    pub(crate) fn set_clip(track: &mut Track, start_step: u64, length_steps: u64, notes: Vec<ClipNote>) {
+        track.clips = vec![Clip {
+            start_step,
+            length_steps,
+            notes,
+            ..Clip::default()
+        }];
+    }
 
     pub(crate) fn empty_project_updates() -> Mutex<Option<Box<Project>>> {
         Mutex::new(None)
@@ -35,31 +51,22 @@ mod tests {
     }
 
     #[test]
-    pub(crate) fn selected_pattern_playback_uses_instrument_mixer_lane() {
+    pub(crate) fn clip_notes_trigger_the_track_that_owns_them() {
         let mut project = Project::default();
-        project.patterns[0].step_hits.push(crate::project::StepHit {
-            track_id: 0,
-            step: 0,
-        });
-        project.instruments[0].default_mixer_lane = 2;
+        set_clip(&mut project.tracks[1], 0, 8, vec![ClipNote::new(0, 60, 100, 1)]);
         let mut engine = AudioEngine::new(project, 48_000);
-        engine.selected_pattern = Some(0);
         engine.trigger_step(0);
         assert!(engine.trigger_events.iter().any(|event| matches!(
             event,
-            TriggerEvent::InstrumentHit {
-                track_id: 0,
-                track_id: 2
+            TriggerEvent::Note {
+                track_id: 1,
+                ..
             }
         )));
     }
-
     #[test]
     pub(crate) fn mixer_eq_automation_moves_the_filter_gains() {
-        let target = ParameterTarget::MixerChannel {
-            channel_id: 0,
-            parameter: crate::project::MixerParameter::LowDb,
-        };
+        let target = ParameterTarget::Track { track_id: 0, parameter: TrackParameter::Mixer(crate::project::MixerParameter::LowDb) };
         let mut project = Project::default();
         project
             .automation_tracks
@@ -96,10 +103,7 @@ mod tests {
         project
             .automation_tracks
             .push(crate::project::AutomationTrack {
-                target: ParameterTarget::Instrument {
-                    track_id: 0,
-                    parameter: InstrumentParameter::Gain,
-                },
+                target: ParameterTarget::Track { track_id: 0, parameter: TrackParameter::Generator(InstrumentParameter::Gain) },
                 source: AutomationSource::Lfo {
                     shape: LfoShape::Sine,
                     rate: TimeValue {
@@ -159,11 +163,10 @@ mod tests {
     #[test]
     pub(crate) fn stopping_playback_releases_ringing_voices() {
         let mut project = Project::default();
-        project.instruments[0].synth_kind = SynthKind::Sine;
-        project.instruments[0].synth_enabled = true;
+        use_synth(&mut project.tracks[0], SynthKind::Sine);
         let mut engine = AudioEngine::new(project, 48_000);
         engine.playing = true;
-        engine.start_voice(0, 0, 60, 110, Some(64));
+        engine.start_voice(0, 60, 110, Some(64));
         assert!(
             engine
                 .voices
@@ -237,12 +240,11 @@ mod tests {
     #[test]
     pub(crate) fn ms20_instrument_reuses_a_single_voice() {
         let mut project = Project::default();
-        project.instruments[0].synth_enabled = true;
-        project.instruments[0].synth_kind = SynthKind::Ms20;
+        use_synth(&mut project.tracks[0], SynthKind::Ms20);
         let mut engine = AudioEngine::new(project, 48_000);
 
-        engine.start_voice(0, 0, 60, 100, None);
-        engine.start_voice(0, 0, 67, 100, None);
+        engine.start_voice(0, 60, 100, None);
+        engine.start_voice(0, 67, 100, None);
 
         let active: Vec<_> = engine
             .voices
@@ -261,10 +263,9 @@ mod tests {
             SynthKind::FmSynth,
         ] {
             let mut project = Project::default();
-            project.instruments[0].synth_enabled = true;
-            project.instruments[0].synth_kind = kind;
+            use_synth(&mut project.tracks[0], kind);
             let mut engine = AudioEngine::new(project, 48_000);
-            engine.start_voice(0, 0, 60, 110, None);
+            engine.start_voice(0, 60, 110, None);
             let (_sender, receiver) = mpsc::channel();
             let mut peak = 0.0_f32;
             for _ in 0..100 {
@@ -286,12 +287,9 @@ mod tests {
 
     #[test]
     pub(crate) fn instrument_automation_updates_audio_rate_controls() {
-        let target = ParameterTarget::Instrument {
-            track_id: 0,
-            parameter: InstrumentParameter::CutoffHz,
-        };
+        let target = ParameterTarget::Track { track_id: 0, parameter: TrackParameter::Generator(InstrumentParameter::CutoffHz) };
         let mut project = Project::default();
-        project.instruments[0].synth_kind = SynthKind::JunoPoly;
+        use_synth(&mut project.tracks[0], SynthKind::JunoPoly);
         project
             .automation_tracks
             .push(crate::project::AutomationTrack {
@@ -320,13 +318,9 @@ mod tests {
 
     #[test]
     pub(crate) fn peak_source_follows_the_lane_level() {
-        let target = ParameterTarget::Instrument {
-            track_id: 0,
-            parameter: InstrumentParameter::Gain,
-        };
+        let target = ParameterTarget::Track { track_id: 0, parameter: TrackParameter::Generator(InstrumentParameter::Gain) };
         let mut project = Project::default();
-        project.instruments[0].synth_enabled = true;
-        project.instruments[0].synth_kind = SynthKind::Sine;
+        use_synth(&mut project.tracks[0], SynthKind::Sine);
         project
             .automation_tracks
             .push(crate::project::AutomationTrack {
@@ -350,7 +344,7 @@ mod tests {
         project.normalize();
         let mut engine = AudioEngine::new(project, 48_000);
         engine.playing = true;
-        engine.start_voice(0, 0, 60, 100, None);
+        engine.start_voice(0, 60, 100, None);
 
         let (_sender, receiver) = mpsc::channel();
         let updates = empty_project_updates();
@@ -371,12 +365,9 @@ mod tests {
 
     #[test]
     pub(crate) fn control_rate_automation_reaches_the_instrument_within_one_block() {
-        let target = ParameterTarget::Instrument {
-            track_id: 0,
-            parameter: InstrumentParameter::CutoffHz,
-        };
+        let target = ParameterTarget::Track { track_id: 0, parameter: TrackParameter::Generator(InstrumentParameter::CutoffHz) };
         let mut project = Project::default();
-        project.instruments[0].synth_kind = SynthKind::JunoPoly;
+        use_synth(&mut project.tracks[0], SynthKind::JunoPoly);
         project
             .automation_tracks
             .push(crate::project::AutomationTrack {
@@ -417,10 +408,7 @@ mod tests {
         project
             .automation_tracks
             .push(crate::project::AutomationTrack {
-                target: ParameterTarget::Instrument {
-                    track_id: 0,
-                    parameter: InstrumentParameter::Gain,
-                },
+                target: ParameterTarget::Track { track_id: 0, parameter: TrackParameter::Generator(InstrumentParameter::Gain) },
                 enabled: false,
                 ..Default::default()
             });
@@ -449,14 +437,12 @@ mod tests {
     #[test]
     pub(crate) fn unchanged_project_updates_keep_audio_runtimes_in_place() {
         let mut project = Project::default();
-        project.tracks[0].clips.push(ArrangementClip {
+        project.tracks[0].clips.push(Clip {
             start_step: 0,
             length_steps: 16,
             offset_steps: 0,
-            source: ClipSource::Audio {
-                path: "held.wav".to_owned(),
-            },
-            ..ArrangementClip::default()
+            audio_path: Some("held.wav".to_owned()),
+            ..Clip::default()
         });
         project.normalize();
         let mut engine = AudioEngine::new(project.clone(), 48_000);
@@ -481,14 +467,12 @@ mod tests {
     pub(crate) fn duplicated_audio_clips_share_one_loaded_sample() {
         let mut project = Project::default();
         project.tracks[0].clips.clear();
-        project.tracks[0].clips.push(ArrangementClip {
+        project.tracks[0].clips.push(Clip {
             start_step: 0,
             length_steps: 16,
             offset_steps: 0,
-            source: ClipSource::Audio {
-                path: "shared.wav".to_owned(),
-            },
-            ..ArrangementClip::default()
+            audio_path: Some("clip.wav".to_owned()),
+            ..Clip::default()
         });
         project.normalize();
         let mut engine = AudioEngine::new(project.clone(), 48_000);
@@ -498,14 +482,12 @@ mod tests {
         }));
 
         let mut duplicated = project;
-        duplicated.tracks[0].clips.push(ArrangementClip {
+        duplicated.tracks[0].clips.push(Clip {
             start_step: 16,
             length_steps: 16,
             offset_steps: 0,
-            source: ClipSource::Audio {
-                path: "shared.wav".to_owned(),
-            },
-            ..ArrangementClip::default()
+            audio_path: Some("clip.wav".to_owned()),
+            ..Clip::default()
         });
         engine.apply_project(duplicated);
 
@@ -529,14 +511,12 @@ mod tests {
             ..Project::default()
         };
         project.tracks[0].clips.clear();
-        project.tracks[0].clips.push(ArrangementClip {
+        project.tracks[0].clips.push(Clip {
             start_step: 0,
             length_steps: 16,
             offset_steps: 4,
-            source: ClipSource::Audio {
-                path: "offset.wav".to_owned(),
-            },
-            ..ArrangementClip::default()
+            audio_path: Some("clip.wav".to_owned()),
+            ..Clip::default()
         });
         project.normalize();
         let mut engine = AudioEngine::new(project, 48_000);
@@ -555,17 +535,15 @@ mod tests {
     #[test]
     pub(crate) fn note_repeats_queue_one_trigger_per_repeat() {
         let mut project = Project::default();
-        project.instruments[0].synth_enabled = true;
-        project.patterns[0].notes = vec![PianoNote {
-            track_id: 0,
+        set_clip(&mut project.tracks[1], 0, 16, vec![ClipNote {
             pitch: 60,
             velocity: 100,
             duration_steps: 1,
             repeat_count: 2,
             repeat_ticks: 4,
             repeat_decay: 10,
-            ..PianoNote::default()
-        }];
+            ..ClipNote::default()
+        }]);
         project.normalize();
         let mut engine = AudioEngine::new(project, 48_000);
         engine.trigger_step(0);
@@ -610,7 +588,6 @@ mod tests {
     #[test]
     pub(crate) fn smoothing_ramps_toward_a_new_gain_over_several_frames() {
         let mut project = Project::default();
-        project.instruments[0].synth_enabled = true;
         project.normalize();
         let mut engine = AudioEngine::new(project, 48_000);
         let (sender, receiver) = mpsc::channel();
@@ -663,14 +640,12 @@ mod tests {
             ..Project::default()
         };
         project.tracks[0].clips.clear();
-        project.tracks[0].clips.push(ArrangementClip {
+        project.tracks[0].clips.push(Clip {
             start_step: 8,
             length_steps: 8,
             offset_steps: 0,
-            source: ClipSource::Audio {
-                path: "mid.wav".to_owned(),
-            },
-            ..ArrangementClip::default()
+            audio_path: Some("clip.wav".to_owned()),
+            ..Clip::default()
         });
         project.normalize();
         let mut engine = AudioEngine::new(project, 48_000);
@@ -697,14 +672,12 @@ mod tests {
     pub(crate) fn audio_clips_rewind_after_leaving_their_range() {
         let mut project = Project::default();
         project.tracks[0].clips.clear();
-        project.tracks[0].clips.push(ArrangementClip {
+        project.tracks[0].clips.push(Clip {
             start_step: 0,
             length_steps: 4,
             offset_steps: 0,
-            source: ClipSource::Audio {
-                path: "short.wav".to_owned(),
-            },
-            ..ArrangementClip::default()
+            audio_path: Some("clip.wav".to_owned()),
+            ..Clip::default()
         });
         project.normalize();
         let mut engine = AudioEngine::new(project, 48_000);
@@ -725,29 +698,28 @@ mod tests {
     #[test]
     pub(crate) fn muted_instruments_and_tracks_stay_silent() {
         let mut project = Project::default();
-        project.instruments[0].synth_enabled = true;
-        project.instruments[0].enabled = false;
+        project.tracks[0].enabled = false;
         project.normalize();
         let mut engine = AudioEngine::new(project, 48_000);
         engine.playing = true;
-        assert!(!engine.instrument_audible(0));
+        assert!(!engine.track_audible(0));
 
         let mut project = engine.project.clone();
-        project.instruments[0].enabled = true;
+        project.tracks[0].enabled = true;
         project.tracks[0].enabled = false;
         engine.apply_project(project);
-        assert!(engine.instrument_audible(0));
-        assert!(!engine.lane_audible(0));
+        assert!(engine.track_audible(0));
+        assert!(!engine.track_audible(0));
     }
 
     #[test]
     pub(crate) fn soloing_one_instrument_silences_the_others() {
         let mut project = Project::default();
-        project.instruments[1].solo = true;
+        project.tracks[1].solo = true;
         project.normalize();
         let engine = AudioEngine::new(project, 48_000);
-        assert!(!engine.instrument_audible(0));
-        assert!(engine.instrument_audible(1));
+        assert!(!engine.track_audible(0));
+        assert!(engine.track_audible(1));
     }
 
     #[test]
@@ -756,16 +728,16 @@ mod tests {
             bpm: 120.0,
             ..Project::default()
         };
-        project.instruments[0].synth_enabled = true;
-        project.instruments[0].arpeggio.enabled = true;
-        project.instruments[0].arpeggio.octaves = 2;
-        project.patterns[0].notes = vec![PianoNote {
-            track_id: 0,
+        if let Some(generator) = project.tracks[1].generator_mut() {
+            generator.arpeggio.enabled = true;
+            generator.arpeggio.octaves = 2;
+        }
+        set_clip(&mut project.tracks[1], 0, 16, vec![ClipNote {
             pitch: 60,
             velocity: 100,
             duration_steps: 4,
-            ..PianoNote::default()
-        }];
+            ..ClipNote::default()
+        }]);
         project.normalize();
         let mut engine = AudioEngine::new(project, 48_000);
         engine.trigger_step(0);
@@ -781,13 +753,19 @@ mod tests {
     #[test]
     pub(crate) fn external_generators_do_not_fall_back_to_a_builtin_voice() {
         let mut project = Project::default();
-        project.instruments[0].synth_enabled = true;
-        project.instruments[0].synth_kind = SynthKind::External;
-        project.instruments[0].plugin_path = "C:/Plugins/Thing.vst3".to_owned();
+        use_synth(&mut project.tracks[0], SynthKind::External);
+        if let Some(generator) = project.tracks[0].generator_mut() {
+            generator.plugin_path = "C:/Plugins/Thing.vst3".to_owned();
+        }
         project.normalize();
-        assert_eq!(project.instruments[0].synth_kind, SynthKind::External);
+        assert_eq!(
+            project.tracks[0]
+                .generator()
+                .and_then(|generator| generator.kind.synth_kind()),
+            Some(SynthKind::External)
+        );
         let mut engine = AudioEngine::new(project, 48_000);
-        engine.start_voice(0, 0, 60, 110, None);
+        engine.start_voice(0, 60, 110, None);
         assert!(
             !engine
                 .voices
@@ -814,34 +792,16 @@ mod tests {
     }
 
     #[test]
-    pub(crate) fn pattern_clip_routes_note_to_its_arrangement_lane() {
+    pub(crate) fn clip_routes_note_to_its_own_track() {
         let mut project = Project::default();
-        project.add_lane();
         project.tracks[1].name = "Second".to_owned();
-        project.instruments[3].default_mixer_lane = 0;
-        project.patterns = vec![Pattern {
-            name: "Notes".to_owned(),
-            length_steps: 16,
-            notes: vec![PianoNote {
-                repeat_count: 0,
-                repeat_ticks: 0,
-                repeat_decay: 0,
-                track_id: 3,
-                start_step: 0,
-                start_substep: 0,
-                duration_steps: 4,
-                duration_substeps: 0,
-                pitch: 60,
-                velocity: 100,
-            }],
-            ..Pattern::default()
-        }];
-        project.tracks[1].clips.push(ArrangementClip {
+        project.tracks[1].clips.push(Clip {
             start_step: 0,
             length_steps: 16,
-            source: ClipSource::Pattern { pattern_id: 0 },
+            audio_path: None,
             offset_steps: 0,
-            ..ArrangementClip::default()
+            notes: vec![ClipNote::new(0, 60, 100, 4)],
+            ..Clip::default()
         });
         project.normalize();
 
@@ -875,14 +835,12 @@ mod tests {
     #[test]
     pub(crate) fn project_updates_keep_audio_samples_attached_when_clips_move_lanes() {
         let mut project = Project::default();
-        project.tracks[0].clips.push(ArrangementClip {
+        project.tracks[0].clips.push(Clip {
             start_step: 16,
             length_steps: 16,
             offset_steps: 0,
-            source: ClipSource::Audio {
-                path: "existing.wav".to_owned(),
-            },
-            ..ArrangementClip::default()
+            audio_path: Some("clip.wav".to_owned()),
+            ..Clip::default()
         });
         project.normalize();
         let mut engine = AudioEngine::new(project.clone(), 48_000);
@@ -890,7 +848,7 @@ mod tests {
             .clips
             .iter()
             .position(
-                |clip| matches!(&clip.source, ClipSource::Audio { path } if path == "existing.wav"),
+                |clip| clip.audio_path.as_deref() == Some("existing.wav"),
             )
             .unwrap();
         engine.audio_clips[0][existing_index].sample = Some(Arc::new(SampleData {
@@ -900,14 +858,12 @@ mod tests {
 
         let moved_clip = project.tracks[0].clips.remove(existing_index);
         project.tracks[1].clips.push(moved_clip);
-        project.tracks[0].clips.push(ArrangementClip {
+        project.tracks[0].clips.push(Clip {
             start_step: 0,
             length_steps: 8,
             offset_steps: 0,
-            source: ClipSource::Audio {
-                path: "new.wav".to_owned(),
-            },
-            ..ArrangementClip::default()
+            audio_path: Some("clip.wav".to_owned()),
+            ..Clip::default()
         });
         project.normalize();
         let (sender, receiver) = mpsc::channel();
@@ -922,7 +878,7 @@ mod tests {
             .clips
             .iter()
             .position(
-                |clip| matches!(&clip.source, ClipSource::Audio { path } if path == "existing.wav"),
+                |clip| clip.audio_path.as_deref() == Some("existing.wav"),
             )
             .unwrap();
         assert!(engine.audio_clips[1][moved_index].sample.is_some());
