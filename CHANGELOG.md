@@ -7,6 +7,21 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ## Unreleased
 
+### Added
+
+- Track model groundwork for the unified workflow: `Track` (generator or group,
+  MIDI FX, mixer, clips), `Generator`, `GeneratorKind`, `MidiFx`, `TrackMixer`,
+  `Clip` and `ClipNote`, plus tree helpers (`children`, `descendants`,
+  `ancestors`, depth, cycle-guarded reparenting).
+- `TrackParameter` / `MidiFxParameter` and `Track::automation_parameters`: a
+  track now lists its own automatable controls, and a group also offers the
+  parameters its children have in common (`Track::available_group_targets`,
+  `Track::group_targets`). Mixer and MIDI FX controls are group-wide; a
+  descendant's own lane still wins. See `docs/track-unification.md`.
+- Parameter ranges moved onto the parameter enums (`InstrumentParameter::range`,
+  `MixerParameter::range`, `MidiFxParameter::range`) so `ParameterTarget` and the
+  new track targets share one definition.
+
 ### Changed
 
 - The workspace is split into one crate per concern: `pulseforge-core` (model and

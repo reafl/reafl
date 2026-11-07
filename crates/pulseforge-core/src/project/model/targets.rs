@@ -133,6 +133,22 @@ impl MixerParameter {
             Self::Send { .. } => "Send",
         }
     }
+
+    /// Lowest and highest value this parameter accepts.
+    ///
+    /// # Returns
+    ///
+    /// The range of the control; send levels are bounded below the unity gain
+    /// of the destination channel.
+    pub fn range(self) -> (f32, f32) {
+        match self {
+            Self::Gain => (0.0, 1.0),
+            Self::Pan => (-1.0, 1.0),
+            Self::Width => (0.0, 2.0),
+            Self::LowDb | Self::MidDb | Self::HighDb => (-12.0, 12.0),
+            Self::Send { .. } => (0.0, 0.95),
+        }
+    }
 }
 
 /// Playback controls of an audio clip, and of the sample defaults every clip
@@ -276,25 +292,7 @@ impl ParameterTarget {
     /// Lowest and highest value this parameter accepts.
     pub fn range(self) -> (f32, f32) {
         match self {
-            Self::Instrument { parameter, .. } => match parameter {
-                InstrumentParameter::Gain => (0.0, 1.0),
-                InstrumentParameter::Pan => (-1.0, 1.0),
-                InstrumentParameter::CutoffHz => (40.0, 16_000.0),
-                InstrumentParameter::Resonance => (0.0, 0.9),
-                InstrumentParameter::PulseWidth => (0.05, 0.95),
-                InstrumentParameter::SubLevel | InstrumentParameter::FmIndex => (0.0, 1.0),
-                InstrumentParameter::Tone => (0.0, 1.0),
-                InstrumentParameter::Decay => (0.05, 4.0),
-                InstrumentParameter::FmRatio => (0.25, 16.0),
-                // Enums are addressed as integers, so their range is the index.
-                InstrumentParameter::Waveform => (0.0, (SignalWaveform::ALL.len() - 1) as f32),
-                InstrumentParameter::ArpMode => (0.0, (ArpMode::ALL.len() - 1) as f32),
-                InstrumentParameter::ArpGate => (0.01, 1.0),
-                InstrumentParameter::ArpOctaves => (1.0, 8.0),
-                InstrumentParameter::ArpRate => (0.1, 64.0),
-                InstrumentParameter::SynthNote => (0.0, 127.0),
-                InstrumentParameter::VoiceCount => (1.0, 64.0),
-            },
+            Self::Instrument { parameter, .. } => parameter.range(),
             Self::InsertEffect { parameter, .. } => match parameter {
                 EffectParameter::Mix
                 | EffectParameter::Amount
@@ -310,15 +308,7 @@ impl ParameterTarget {
             },
             // Hosted plug-in parameters are always normalized 0..=1.
             Self::PluginParameter { .. } => (0.0, 1.0),
-            Self::MixerChannel { parameter, .. } => match parameter {
-                MixerParameter::Gain => (0.0, 1.0),
-                MixerParameter::Pan => (-1.0, 1.0),
-                MixerParameter::Width => (0.0, 2.0),
-                MixerParameter::LowDb | MixerParameter::MidDb | MixerParameter::HighDb => {
-                    (-12.0, 12.0)
-                }
-                MixerParameter::Send { .. } => (0.0, 0.95),
-            },
+            Self::MixerChannel { parameter, .. } => parameter.range(),
             Self::Clip { parameter, .. } | Self::SampleDefaults { parameter } => match parameter {
                 ClipParameter::Gain => (0.0, 1.0),
                 ClipParameter::Pan => (-1.0, 1.0),
