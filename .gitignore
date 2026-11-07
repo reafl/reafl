@@ -3,3 +3,4 @@
 settings.json
 /ref
 ai_scripts/out/
+*.log
