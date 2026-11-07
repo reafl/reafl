@@ -28,15 +28,14 @@ impl PulseForgeApp {
             egui::FontId::proportional(9.0),
             egui::Color32::from_gray(150),
         );
-        let instrument = self.selected_instrument;
+
         let visible_end = absolute_start.saturating_add(VISIBLE_PIANO_STEPS);
-        let notes: Vec<(usize, f32, u8)> = self.project.tracks[self.selected_clip]
-            .notes
+        let notes: Vec<(usize, f32, u8)> = self
+            .active_notes()
             .iter()
             .enumerate()
             .filter(|(_, note)| {
-                note.instrument_id == instrument
-                    && note.start_step < visible_end
+                note.start_step < visible_end
                     && note.start_step.saturating_add(note.duration_steps) > absolute_start
             })
             .map(|(index, note)| {
@@ -93,7 +92,9 @@ impl PulseForgeApp {
             if let Some((index, start)) = target
                 && (start - position).abs() <= 1.0
             {
-                let note = &mut self.project.tracks[self.selected_clip].notes[index];
+                let Some(note) = self.active_notes_mut().and_then(|notes| notes.get_mut(index)) else {
+                    return;
+                };
                 if repeats_mode {
                     note.repeat_count =
                         ((f32::from(velocity) / 127.0 * 32.0).round() as u8).min(32);

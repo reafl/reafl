@@ -146,11 +146,11 @@ impl PulseForgeApp {
                 .floor()
                 .max(0.0) as usize;
             let pitch = PIANO_MIN_PITCH + (PIANO_ROWS - 1 - row.min(PIANO_ROWS - 1)) as u8;
-            let hovered_note = self.project.tracks[self.selected_clip]
-                .notes
+            let hovered_note = self
+                .active_notes()
                 .iter()
                 .find(|note| {
-                    if note.instrument_id != self.selected_instrument || note.pitch != pitch {
+                    if note.pitch != pitch {
                         return false;
                     }
                     let start_x = grid_rect.left()
