@@ -289,7 +289,7 @@ impl PulseForgeApp {
                     egui::Sense::click(),
                 );
                 if clip_response.double_clicked()
-                    && matches!(&clip.source, ClipSource::Audio { .. })
+                    && clip.is_audio()
                 {
                     self.sample_clip_window = Some((lane_id, clip_index));
                 }
@@ -319,7 +319,7 @@ impl PulseForgeApp {
                         },
                     },
                 ];
-                if matches!(&clip.source, ClipSource::Pattern { .. }) {
+                if clip.is_note_clip() {
                     clip_menu_items.push(MenuItem::Folder {
                         label: "Pattern".to_owned(),
                         items: vec![MenuItem::Action {
@@ -345,11 +345,10 @@ impl PulseForgeApp {
                     items: clip_menu_items,
                 };
                 clip_response.context_menu(|ui| clip_context_action = clip_menu.show(ui));
-                let color = match &clip.source {
-                    ClipSource::Pattern { pattern_id } => lane_color(*pattern_id),
-                    ClipSource::Audio { .. } => {
-                        active_theme(context).color(active_theme(context).note)
-                    }
+                let color = if clip.is_audio() {
+                    active_theme(context).color(active_theme(context).note)
+                } else {
+                    lane_color(lane_id)
                 };
                 // Clips in the multi-selection are drawn lifted as well, so a
                 // range selected with ctrl reads as one block.
@@ -367,7 +366,6 @@ impl PulseForgeApp {
                     painter,
                     clip_rect,
                     clip,
-                    &self.project.tracks,
                     clip_visible_start,
                     clip_visible_end,
                     geo.step_width,
@@ -387,17 +385,13 @@ impl PulseForgeApp {
                     ),
                     egui::StrokeKind::Inside,
                 );
-                let name = match &clip.source {
-                    ClipSource::Pattern { pattern_id } => self
-                        .project
-                        .tracks
-                        .get(*pattern_id)
-                        .map_or_else(|| "Pattern".to_owned(), |pattern| pattern.name.clone()),
-                    ClipSource::Audio { path } => std::path::Path::new(path)
+                let name = match &clip.audio_path {
+                    Some(path) => std::path::Path::new(path)
                         .file_stem()
                         .and_then(|name| name.to_str())
                         .unwrap_or("Audio")
                         .to_owned(),
+                    None => clip.name.clone(),
                 };
                 painter.text(
                     clip_rect.left_center() + egui::vec2(8.0, 0.0),
