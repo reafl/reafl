@@ -4,7 +4,7 @@ use crate::*;
 
 impl PulseForgeApp {
     pub(crate) fn render_plugin_windows(&mut self, context: &egui::Context) {
-        for instrument_id in 0..self.project.instruments.len() {
+        for instrument_id in 0..self.project.tracks.len() {
             let mut open = self.open_instrument_plugins.contains(&instrument_id);
             egui::Window::new(self.instrument_window_title(instrument_id))
                 .id(egui::Id::new(("instrument_plugin_window", instrument_id)))
@@ -29,11 +29,11 @@ impl PulseForgeApp {
         let open_effects: Vec<_> = self.open_effect_plugins.iter().copied().collect();
         for (channel, slot) in open_effects {
             let mut open = true;
-            let channel_name = if channel == self.project.lanes.len() {
+            let channel_name = if channel == self.project.tracks.len() {
                 "MASTER".to_owned()
             } else {
                 self.project
-                    .lanes
+                    .tracks
                     .get(channel)
                     .map_or_else(|| "Mixer".to_owned(), |lane| lane.name.clone())
             };
@@ -51,7 +51,7 @@ impl PulseForgeApp {
             .resizable(true)
             .show(context, |ui| self.render_effect_plugin(channel, slot, ui));
             if !open
-                || channel > self.project.lanes.len()
+                || channel > self.project.tracks.len()
                 || self.effect_slot_name(channel, slot).is_none()
             {
                 self.open_effect_plugins.remove(&(channel, slot));

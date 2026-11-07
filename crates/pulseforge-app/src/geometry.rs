@@ -20,20 +20,18 @@ pub(crate) fn rack_step_span(start: u64, end: u64) -> (u64, u64) {
     (start.min(end), start.max(end))
 }
 
-pub(crate) fn clip_sources_match(left: &ClipSource, right: &ClipSource) -> bool {
-    match (left, right) {
-        (
-            ClipSource::Pattern {
-                pattern_id: left_id,
-            },
-            ClipSource::Pattern {
-                pattern_id: right_id,
-            },
-        ) => left_id == right_id,
-        (ClipSource::Audio { path: left_path }, ClipSource::Audio { path: right_path }) => {
-            left_path == right_path
-        }
-        _ => false,
+/// The placement that reproduces a clip, used when a clip is dragged, copied or
+/// re-dropped on the timeline.
+///
+/// # Parameters
+///
+/// - `clip`: the clip to reproduce.
+pub(crate) fn clip_placement(clip: &Clip) -> ClipPlacement {
+    match &clip.audio_path {
+        Some(path) => ClipPlacement::Audio { path: path.clone() },
+        None => ClipPlacement::Notes {
+            length_steps: clip.length_steps.max(1),
+        },
     }
 }
 

@@ -24,7 +24,7 @@ impl PulseForgeApp {
                 ui.checkbox(&mut effect.enabled, "Enabled");
                 ui.checkbox(&mut effect.locked, "Locked");
                 let mix_target = ParameterTarget::InsertEffect {
-                    channel_id: channel,
+                    track_id: channel,
                     slot_id,
                     parameter: EffectParameter::Mix,
                 };
@@ -43,18 +43,18 @@ impl PulseForgeApp {
             }
             return;
         }
-        let lane_count = self.project.lanes.len();
-        let channel_label = if channel == lane_count {
+        let track_count = self.project.tracks.len();
+        let channel_label = if channel == track_count {
             "MASTER".to_owned()
-        } else if let Some(lane) = self.project.lanes.get(channel) {
+        } else if let Some(lane) = self.project.tracks.get(channel) {
             lane.name.clone()
         } else {
             ui.colored_label(egui::Color32::LIGHT_RED, "Mixer channel no longer exists.");
             return;
         };
-        let slots = if channel == lane_count {
+        let slots = if channel == track_count {
             &mut self.project.master.inserts
-        } else if let Some(lane) = self.project.lanes.get_mut(channel) {
+        } else if let Some(lane) = self.project.tracks.get_mut(channel) {
             &mut lane.inserts
         } else {
             ui.colored_label(egui::Color32::LIGHT_RED, "Mixer channel no longer exists.");
@@ -115,12 +115,15 @@ impl PulseForgeApp {
         ui.separator();
         match target {
             PluginTarget::Instrument(instrument_id) => {
-                let Some(instrument) = self.project.instruments.get(instrument_id) else {
-                    ui.colored_label(egui::Color32::LIGHT_RED, "Instrument no longer exists.");
+                let Some(track) = self.project.tracks.get(instrument_id) else {
+                    ui.colored_label(egui::Color32::LIGHT_RED, "Track no longer exists.");
                     return;
                 };
-                ui.label(format!("Choose a plug-in for {}", instrument.name));
-                let current = instrument.synth_kind;
+                ui.label(format!("Choose a plug-in for {}", track.name));
+                let current = track
+                    .generator()
+                    .and_then(|generator| generator.kind.synth_kind())
+                    .unwrap_or(SynthKind::Sine);
                 for kind in SynthKind::BUILTIN {
                     if !matches(synth_kind_label(kind)) {
                         continue;
@@ -133,11 +136,12 @@ impl PulseForgeApp {
                         // the wrapper window cannot claim the slot.
                         let host_id = pulseforge_core::hosted::instrument_host_id(instrument_id);
                         self.unload_host(host_id);
-                        let instrument = &mut self.project.instruments[instrument_id];
-                        instrument.synth_kind = kind;
-                        instrument.plugin_path.clear();
-                        instrument.enabled = true;
-                        instrument.synth_enabled = kind != SynthKind::SamplePlayer;
+                        let track = &mut self.project.tracks[instrument_id];
+                        track.enabled = true;
+                        if let Some(generator) = track.generator_mut() {
+                            generator.kind = GeneratorKind::Synth(kind);
+                            generator.plugin_path.clear();
+                        }
                         self.open_instrument_plugins.insert(instrument_id);
                         self.plugin_selector_target = None;
                         self.sync_project();
@@ -152,9 +156,10 @@ impl PulseForgeApp {
                     }
                     let active = self
                         .project
-                        .instruments
+                        .tracks
                         .get(instrument_id)
-                        .is_some_and(|instrument| instrument.plugin_path == plugin.path);
+                        .and_then(|track| track.generator())
+                        .is_some_and(|generator| generator.plugin_path == plugin.path);
                     if ui
                         .selectable_label(active, plugin.label())
                         .on_hover_text(&plugin.path)
@@ -163,14 +168,16 @@ impl PulseForgeApp {
                         let host_id = pulseforge_core::hosted::instrument_host_id(instrument_id);
                         let path = plugin.path.clone();
                         self.load_host(host_id, &path, true);
-                        let instrument = &mut self.project.instruments[instrument_id];
-                        instrument.plugin_path = plugin.path.clone();
-                        instrument.name = plugin.name.clone();
-                        // An external generator must not keep the built-in voice
-                        // it had before, otherwise it renders as that synth.
-                        instrument.synth_kind = SynthKind::External;
-                        instrument.synth_enabled = true;
-                        instrument.enabled = true;
+                        let track = &mut self.project.tracks[instrument_id];
+                        track.name = plugin.name.clone();
+                        track.enabled = true;
+                        if let Some(generator) = track.generator_mut() {
+                            generator.plugin_path = plugin.path.clone();
+                            // An external generator must not keep the built-in
+                            // voice it had before, otherwise it renders as that
+                            // synth.
+                            generator.kind = GeneratorKind::Synth(SynthKind::External);
+                        }
                         self.open_instrument_plugins.insert(instrument_id);
                         self.plugin_selector_target = None;
                         self.sync_project();

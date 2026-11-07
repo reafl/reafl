@@ -4,19 +4,18 @@ use super::*;
 
 impl AudioEngine {
     pub(crate) fn update_instrument_controls(&mut self, position: f64) {
-        self.instrument_controls.resize(
-            self.project.instruments.len(),
-            InstrumentControls::default(),
-        );
-        for instrument_id in 0..self.project.instruments.len() {
-            let instrument = &self.project.instruments[instrument_id];
-            let mut values = instrument_controls(instrument, self.project.bpm);
+        self.instrument_controls
+            .resize(self.project.tracks.len(), InstrumentControls::default());
+        for track_id in 0..self.project.tracks.len() {
+            let Some(generator) = self.project.tracks[track_id].generator() else {
+                self.instrument_controls[track_id] = InstrumentControls::default();
+                continue;
+            };
+            let mut values = instrument_controls(generator, self.project.bpm);
             let automated = |parameter, base_value| {
-                self.automated_value(
-                    ParameterTarget::Instrument {
-                        instrument_id,
-                        parameter,
-                    },
+                self.resolve_track_value(
+                    track_id,
+                    TrackParameter::Generator(parameter),
                     base_value,
                     position,
                 )
@@ -35,7 +34,7 @@ impl AudioEngine {
             // automation ramps are audible as ramps, not steps. The blend
             // factor is derived from the same smoothing time as the gains.
             if self.smoothing_enabled && self.controls_snapped {
-                let previous = self.instrument_controls[instrument_id];
+                let previous = self.instrument_controls[track_id];
                 let blend = self.control_smoothing_blend();
                 values = InstrumentControls {
                     gain: blend(previous.gain, values.gain),
@@ -50,7 +49,7 @@ impl AudioEngine {
                     fm_index: blend(previous.fm_index, values.fm_index),
                 };
             }
-            self.instrument_controls[instrument_id] = values;
+            self.instrument_controls[track_id] = values;
         }
         self.controls_snapped = true;
     }
@@ -81,9 +80,9 @@ impl AudioEngine {
                         slot.set_parameter(parameter_id, value);
                     }
                 }
-                ParameterTarget::MixerChannel {
-                    channel_id,
-                    parameter,
+                ParameterTarget::Track {
+                    track_id: channel_id,
+                    parameter: TrackParameter::Mixer(parameter),
                 } => {
                     let base = self.project.parameter_value(target).unwrap_or(
                         if matches!(parameter, MixerParameter::Pan) {
@@ -122,25 +121,25 @@ impl AudioEngine {
                             // of them can be automated.
                             let stored = self.mixer_eq_bands(channel_id).unwrap_or_default();
                             let low = self.automated_value(
-                                ParameterTarget::MixerChannel {
-                                    channel_id,
-                                    parameter: MixerParameter::LowDb,
+                                ParameterTarget::Track {
+                                    track_id: channel_id,
+                                    parameter: TrackParameter::Mixer(MixerParameter::LowDb),
                                 },
                                 stored.low_db,
                                 position,
                             );
                             let mid = self.automated_value(
-                                ParameterTarget::MixerChannel {
-                                    channel_id,
-                                    parameter: MixerParameter::MidDb,
+                                ParameterTarget::Track {
+                                    track_id: channel_id,
+                                    parameter: TrackParameter::Mixer(MixerParameter::MidDb),
                                 },
                                 stored.mid_db,
                                 position,
                             );
                             let high = self.automated_value(
-                                ParameterTarget::MixerChannel {
-                                    channel_id,
-                                    parameter: MixerParameter::HighDb,
+                                ParameterTarget::Track {
+                                    track_id: channel_id,
+                                    parameter: TrackParameter::Mixer(MixerParameter::HighDb),
                                 },
                                 stored.high_db,
                                 position,
@@ -170,7 +169,7 @@ impl AudioEngine {
                     }
                 }
                 ParameterTarget::Clip {
-                    lane_id,
+                    track_id,
                     clip_id,
                     parameter,
                 } => {
@@ -180,8 +179,8 @@ impl AudioEngine {
                     let value = self.automated_value(target, base, position);
                     let Some(clip) = self
                         .project
-                        .lanes
-                        .get_mut(lane_id)
+                        .tracks
+                        .get_mut(track_id)
                         .and_then(|lane| lane.clips.get_mut(clip_id))
                     else {
                         continue;
@@ -288,9 +287,9 @@ impl AudioEngine {
                 }
                 // Parameters that live on the instrument and are read when a
                 // note is played are written straight onto the project.
-                ParameterTarget::Instrument {
-                    instrument_id,
-                    parameter,
+                ParameterTarget::Track {
+                    track_id,
+                    parameter: TrackParameter::Generator(parameter),
                 } if matches!(
                     parameter,
                     InstrumentParameter::Waveform
@@ -312,7 +311,12 @@ impl AudioEngine {
                     } else {
                         value
                     };
-                    let Some(instrument) = self.project.instruments.get_mut(instrument_id) else {
+                    let Some(instrument) = self
+                        .project
+                        .tracks
+                        .get_mut(track_id)
+                        .and_then(Track::generator_mut)
+                    else {
                         continue;
                     };
                     match parameter {
@@ -343,7 +347,7 @@ impl AudioEngine {
                         _ => {}
                     }
                 }
-                ParameterTarget::Instrument { .. } | ParameterTarget::InsertEffect { .. } => {}
+                ParameterTarget::Track { .. } | ParameterTarget::InsertEffect { .. } => {}
             }
         }
     }
@@ -370,8 +374,8 @@ impl AudioEngine {
         let mut curve_total: Option<f32> = None;
         let mut relative_total = 0.0;
         let mut additive = 0.0;
-        for &track_id in lane_ids {
-            let Some(track) = self.project.automation_tracks.get(track_id) else {
+        for &lane_id in lane_ids {
+            let Some(track) = self.project.automation_tracks.get(lane_id) else {
                 continue;
             };
             if position < track.start_step as f64
@@ -399,7 +403,7 @@ impl AudioEngine {
             let delta = match &track.source {
                 AutomationSource::Curve | AutomationSource::RelativeCurve => 0.0,
                 AutomationSource::MidiEnvelope {
-                    instrument_id,
+                    track_id: source,
                     attack,
                     decay,
                     sustain,
@@ -407,14 +411,8 @@ impl AudioEngine {
                     base,
                     depth,
                 } => {
-                    let level = self.midi_envelope_level(
-                        track_id,
-                        *instrument_id,
-                        *attack,
-                        *decay,
-                        *sustain,
-                        *release,
-                    );
+                    let level = self
+                        .midi_envelope_level(lane_id, *source, *attack, *decay, *sustain, *release);
                     let multiplier = if track.modulation_points.is_empty() {
                         1.0
                     } else {
@@ -429,7 +427,7 @@ impl AudioEngine {
                     base,
                     depth,
                 } => {
-                    let phase = self.lfo_phase(track_id, *rate, *retrigger, position);
+                    let phase = self.lfo_phase(lane_id, *rate, *retrigger, position);
                     let multiplier = if track.modulation_points.is_empty() {
                         1.0
                     } else {
@@ -445,7 +443,7 @@ impl AudioEngine {
                 } => {
                     // One held value per rate cycle, seeded so two lanes read
                     // different noise.
-                    let phase = self.lfo_phase(track_id, *rate, false, position);
+                    let phase = self.lfo_phase(lane_id, *rate, false, position);
                     let multiplier = if track.modulation_points.is_empty() {
                         1.0
                     } else {
@@ -482,7 +480,7 @@ impl AudioEngine {
                 AutomationSource::Peak { base, depth, .. } => {
                     // The follower was advanced once for this control block by
                     // `update_peak_followers`, so reading it here is cheap.
-                    let level = self.peak_levels.get(track_id).copied().unwrap_or(0.0);
+                    let level = self.peak_levels.get(lane_id).copied().unwrap_or(0.0);
                     let multiplier = if track.modulation_points.is_empty() {
                         1.0
                     } else {
@@ -497,6 +495,58 @@ impl AudioEngine {
         target.denormalize_value(normalized.clamp(0.0, 1.0))
     }
 
+    /// Resolves a track control at a position, honouring group automation.
+    ///
+    /// # Parameters
+    ///
+    /// - `track_id`: the track the control belongs to.
+    /// - `parameter`: which control to resolve.
+    /// - `base_value`: the stored value, used when no lane drives it.
+    /// - `position`: transport position in steps.
+    ///
+    /// # Returns
+    ///
+    /// The track's own lane if it has one, else the lane of the nearest
+    /// ancestor group that carries the parameter, else `base_value`. This
+    /// mirrors [`Project::effective_track_value`] but keeps the engine's
+    /// index-based lookup, so generated sources still see their runtime state.
+    pub(crate) fn resolve_track_value(
+        &self,
+        track_id: usize,
+        parameter: TrackParameter,
+        base_value: f32,
+        position: f64,
+    ) -> f32 {
+        let own = ParameterTarget::Track {
+            track_id,
+            parameter,
+        };
+        if self.automation_index.contains_key(&own) {
+            return self.automated_value(own, base_value, position);
+        }
+        for ancestor in Track::ancestors(&self.project.tracks, track_id) {
+            let Some(group) = self.project.tracks.get(ancestor) else {
+                continue;
+            };
+            if !group.is_group() || !group.supports(parameter) {
+                continue;
+            }
+            let inherited = ParameterTarget::Track {
+                track_id: ancestor,
+                parameter,
+            };
+            if !self.automation_index.contains_key(&inherited) {
+                continue;
+            }
+            let group_base = self
+                .project
+                .track_parameter_value(ancestor, parameter)
+                .unwrap_or(base_value);
+            return self.automated_value(inherited, group_base, position);
+        }
+        base_value
+    }
+
     /// Stored equaliser of a mixer channel, the master included.
     ///
     /// # Parameters
@@ -507,10 +557,10 @@ impl AudioEngine {
     ///
     /// The channel's three bands, or `None` when the channel no longer exists.
     pub(crate) fn mixer_eq_bands(&self, channel_id: usize) -> Option<crate::project::ThreeBandEq> {
-        if channel_id == self.project.lanes.len() {
+        if channel_id == self.project.tracks.len() {
             Some(self.project.master.eq)
         } else {
-            self.project.lanes.get(channel_id).map(|lane| lane.eq)
+            self.project.tracks.get(channel_id).map(|lane| lane.eq)
         }
     }
 
@@ -536,9 +586,9 @@ impl AudioEngine {
                     _ => continue,
                 };
             let peaks = if post_fx {
-                &self.lane_peak_post
+                &self.track_peak_post
             } else {
-                &self.lane_peak_pre
+                &self.track_peak_pre
             };
             let raw = peaks
                 .get(channel_id)
@@ -565,8 +615,8 @@ impl AudioEngine {
             }
         }
         // Start a fresh block maximum for the next control block.
-        self.lane_peak_pre.fill(0.0);
-        self.lane_peak_post.fill(0.0);
+        self.track_peak_pre.fill(0.0);
+        self.track_peak_post.fill(0.0);
     }
 
     pub(crate) fn lfo_phase(
@@ -596,28 +646,28 @@ impl AudioEngine {
 
     pub(crate) fn midi_envelope_level(
         &self,
-        track_id: usize,
-        instrument_id: usize,
+        lane_id: usize,
+        source: usize,
         attack: TimeValue,
         decay: TimeValue,
         sustain: f32,
         release: TimeValue,
     ) -> f32 {
-        let Some(state) = self.automation_runtime.get(track_id) else {
+        let Some(state) = self.automation_runtime.get(lane_id) else {
             return 0.0;
         };
         let Some(start_frame) = state.start_frame else {
             return 0.0;
         };
-        let Some(track) = self.project.automation_tracks.get(track_id) else {
+        let Some(track) = self.project.automation_tracks.get(lane_id) else {
             return 0.0;
         };
         if !matches!(
             track.source,
             AutomationSource::MidiEnvelope {
-                instrument_id: source_id,
+                track_id: source_id,
                 ..
-            } if source_id == instrument_id
+            } if source_id == source
         ) {
             return 0.0;
         }
@@ -641,24 +691,28 @@ impl AudioEngine {
         (state.release_level * (1.0 - release_elapsed / release_seconds)).clamp(0.0, 1.0)
     }
 
-    pub(crate) fn trigger_automation(&mut self, instrument_id: usize) {
+    /// Retriggers every lane that listens to notes on `channel_id`.
+    ///
+    /// # Parameters
+    ///
+    /// - `channel_id`: the track whose note started.
+    pub(crate) fn trigger_automation(&mut self, channel_id: usize) {
         self.automation_runtime.resize(
             self.project.automation_tracks.len(),
             AutomationRuntime::default(),
         );
-        for (track_id, track) in self.project.automation_tracks.iter().enumerate() {
-            match &track.source {
+        for (lane_id, lane) in self.project.automation_tracks.iter().enumerate() {
+            match &lane.source {
                 AutomationSource::MidiEnvelope {
-                    instrument_id: source_id,
+                    track_id: source_id,
                     ..
-                } if *source_id == instrument_id => {
-                    if self.position_steps < track.start_step
-                        || self.position_steps
-                            >= track.start_step.saturating_add(track.length_steps)
+                } if *source_id == channel_id => {
+                    if self.position_steps < lane.start_step
+                        || self.position_steps >= lane.start_step.saturating_add(lane.length_steps)
                     {
                         continue;
                     }
-                    self.automation_runtime[track_id] = AutomationRuntime {
+                    self.automation_runtime[lane_id] = AutomationRuntime {
                         start_frame: Some(self.rendered_frames),
                         ..AutomationRuntime::default()
                     };
@@ -666,9 +720,9 @@ impl AudioEngine {
                 AutomationSource::Lfo {
                     retrigger: true, ..
                 } => {
-                    if matches!(track.target, ParameterTarget::Instrument { instrument_id: id, .. } if id == instrument_id)
+                    if matches!(lane.target, ParameterTarget::Track { track_id: id, .. } if id == channel_id)
                     {
-                        self.automation_runtime[track_id] = AutomationRuntime {
+                        self.automation_runtime[lane_id] = AutomationRuntime {
                             start_frame: Some(self.rendered_frames),
                             ..AutomationRuntime::default()
                         };
@@ -679,11 +733,16 @@ impl AudioEngine {
         }
     }
 
-    pub(crate) fn release_automation(&mut self, instrument_id: usize) {
-        for track_id in 0..self.project.automation_tracks.len() {
-            let source = self.project.automation_tracks[track_id].source.clone();
+    /// Releases every envelope lane that listens to notes on `channel_id`.
+    ///
+    /// # Parameters
+    ///
+    /// - `channel_id`: the track whose note ended.
+    pub(crate) fn release_automation(&mut self, channel_id: usize) {
+        for lane_id in 0..self.project.automation_tracks.len() {
+            let source = self.project.automation_tracks[lane_id].source.clone();
             let AutomationSource::MidiEnvelope {
-                instrument_id: source_id,
+                track_id: source_id,
                 attack,
                 decay,
                 sustain,
@@ -693,12 +752,12 @@ impl AudioEngine {
             else {
                 continue;
             };
-            if source_id != instrument_id {
+            if source_id != channel_id {
                 continue;
             }
             let level =
-                self.midi_envelope_level(track_id, instrument_id, attack, decay, sustain, release);
-            let state = &mut self.automation_runtime[track_id];
+                self.midi_envelope_level(lane_id, channel_id, attack, decay, sustain, release);
+            let state = &mut self.automation_runtime[lane_id];
             state.release_frame = Some(self.rendered_frames);
             state.release_level = level;
         }

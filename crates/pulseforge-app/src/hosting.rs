@@ -83,17 +83,19 @@ impl PulseForgeApp {
 
     /// Plug-in state stored in the project for a host id, if any.
     pub(crate) fn stored_plugin_state(&self, id: u64) -> Option<Vec<u8>> {
-        for (instrument_id, instrument) in self.project.instruments.iter().enumerate() {
+        for (instrument_id, track) in self.project.tracks.iter().enumerate() {
             if pulseforge_core::hosted::instrument_host_id(instrument_id) == id {
-                return Some(instrument.plugin_state.clone());
+                return track
+                    .generator()
+                    .map(|generator| generator.plugin_state.clone());
             }
         }
-        let lane_count = self.project.lanes.len();
-        for channel in 0..=lane_count {
-            let slots = if channel == lane_count {
+        let track_count = self.project.tracks.len();
+        for channel in 0..=track_count {
+            let slots = if channel == track_count {
                 &self.project.master.inserts
             } else {
-                &self.project.lanes[channel].inserts
+                &self.project.tracks[channel].inserts
             };
             for (slot, effect) in slots.iter().enumerate() {
                 if pulseforge_core::hosted::effect_host_id(channel, slot) == id {
@@ -231,11 +233,11 @@ impl PulseForgeApp {
     /// Asks every hosted plug-in for its opaque state and stores it in the
     /// project, so a reload restores exactly what the user had.
     pub(crate) fn capture_plugin_states(&mut self) {
-        for instrument_id in 0..self.project.instruments.len() {
-            if self.project.instruments[instrument_id]
-                .plugin_path
-                .is_empty()
-            {
+        for instrument_id in 0..self.project.tracks.len() {
+            let has_bundle = self.project.tracks[instrument_id]
+                .generator()
+                .is_some_and(|generator| !generator.plugin_path.is_empty());
+            if !has_bundle {
                 continue;
             }
             let id = pulseforge_core::hosted::instrument_host_id(instrument_id);
@@ -244,15 +246,17 @@ impl PulseForgeApp {
                 .get_mut(&id)
                 .and_then(pulseforge_hosting::HostedUi::save_state)
             {
-                self.project.instruments[instrument_id].plugin_state = state;
+                if let Some(generator) = self.project.tracks[instrument_id].generator_mut() {
+                    generator.plugin_state = state;
+                }
             }
         }
-        let lane_count = self.project.lanes.len();
-        for channel in 0..=lane_count {
-            let slot_count = if channel == lane_count {
+        let track_count = self.project.tracks.len();
+        for channel in 0..=track_count {
+            let slot_count = if channel == track_count {
                 self.project.master.inserts.len()
             } else {
-                self.project.lanes[channel].inserts.len()
+                self.project.tracks[channel].inserts.len()
             };
             for slot in 0..slot_count {
                 let has_plugin = self
@@ -276,10 +280,10 @@ impl PulseForgeApp {
 
     /// Plug-in path of an insert slot, when it holds a hosted bundle.
     pub(crate) fn effect_slot_path(&self, channel: usize, slot: usize) -> Option<String> {
-        let slots = if channel == self.project.lanes.len() {
+        let slots = if channel == self.project.tracks.len() {
             &self.project.master.inserts
         } else {
-            &self.project.lanes.get(channel)?.inserts
+            &self.project.tracks.get(channel)?.inserts
         };
         let path = &slots.get(slot)?.plugin_path;
         (!path.is_empty()).then(|| path.clone())

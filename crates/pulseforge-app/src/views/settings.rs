@@ -293,7 +293,7 @@ impl PulseForgeApp {
         if ui.button("Apply height to all tracks").clicked() {
             let height = self.settings.default_track_height;
             self.push_history();
-            for lane in &mut self.project.lanes {
+            for lane in &mut self.project.tracks {
                 lane.height = height;
             }
             self.sync_project();

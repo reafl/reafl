@@ -82,7 +82,7 @@ impl PulseForgeApp {
                             .clicked()
                         {
                             track.source = project::AutomationSource::MidiEnvelope {
-                                instrument_id: 0,
+                                track_id: 0,
                                 attack: project::TimeValue {
                                     amount: 5.0,
                                     unit: project::TimeUnit::Milliseconds,
@@ -234,7 +234,7 @@ impl PulseForgeApp {
                     project::AutomationSource::Curve | project::AutomationSource::RelativeCurve => {
                     }
                     project::AutomationSource::MidiEnvelope {
-                        instrument_id,
+                        track_id: instrument_id,
                         attack,
                         decay,
                         sustain,
@@ -242,15 +242,12 @@ impl PulseForgeApp {
                         base,
                         depth,
                     } => {
-                        if !self.project.instruments.is_empty() {
-                            *instrument_id =
-                                (*instrument_id).min(self.project.instruments.len() - 1);
+                        if !self.project.tracks.is_empty() {
+                            *instrument_id = (*instrument_id).min(self.project.tracks.len() - 1);
                             egui::ComboBox::from_id_salt(("automation_env_instrument", track_id))
-                                .selected_text(&self.project.instruments[*instrument_id].name)
+                                .selected_text(&self.project.tracks[*instrument_id].name)
                                 .show_ui(ui, |ui| {
-                                    for (id, instrument) in
-                                        self.project.instruments.iter().enumerate()
-                                    {
+                                    for (id, instrument) in self.project.tracks.iter().enumerate() {
                                         if ui
                                             .selectable_value(instrument_id, id, &instrument.name)
                                             .changed()
@@ -506,19 +503,19 @@ impl PulseForgeApp {
                         base,
                         depth,
                     } => {
-                        let master_id = self.project.lanes.len();
+                        let master_id = self.project.tracks.len();
                         *channel_id = (*channel_id).min(master_id);
                         ui.horizontal(|ui| {
                             ui.label("Track");
                             let selected = if *channel_id == master_id {
                                 "Master".to_owned()
                             } else {
-                                self.project.lanes[*channel_id].name.clone()
+                                self.project.tracks[*channel_id].name.clone()
                             };
-                            egui::ComboBox::from_id_salt(("automation_peak_channel", track_id))
+                            egui::ComboBox::from_id_salt(("automation_peak_channel", *channel_id))
                                 .selected_text(selected)
                                 .show_ui(ui, |ui| {
-                                    for (id, lane) in self.project.lanes.iter().enumerate() {
+                                    for (id, lane) in self.project.tracks.iter().enumerate() {
                                         ui.selectable_value(channel_id, id, &lane.name);
                                     }
                                     ui.selectable_value(channel_id, master_id, "Master");
@@ -580,15 +577,15 @@ impl PulseForgeApp {
                 } else if track.source.is_live() {
                     let channel = match &track.source {
                         project::AutomationSource::Peak {
-                            channel_id,
+                            channel_id: track_id,
                             post_fx,
                             ..
                         } => {
-                            let master_id = self.project.lanes.len();
-                            let name = if *channel_id == master_id {
+                            let master_id = self.project.tracks.len();
+                            let name = if *track_id == master_id {
                                 "Master".to_owned()
                             } else {
-                                self.project.lanes.get(*channel_id).map_or_else(
+                                self.project.tracks.get(*track_id).map_or_else(
                                     || "a missing track".to_owned(),
                                     |lane| lane.name.clone(),
                                 )

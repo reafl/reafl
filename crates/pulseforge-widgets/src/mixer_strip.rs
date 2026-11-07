@@ -22,8 +22,8 @@ use crate::power::power_switch;
 
 /// What one mixer strip is bound to.
 pub struct MixerStrip<'a> {
-    /// Index into `project.lanes`, or the master index.
-    pub channel_id: usize,
+    /// Index into `project.tracks`, or the master index.
+    pub track_id: usize,
     /// Channel name, edited in place when present.
     pub name: Option<&'a mut String>,
     /// Whether the channel row is pinned.
@@ -91,7 +91,7 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
     let channel_color = if strip.is_master {
         egui::Color32::WHITE
     } else {
-        lane_color(strip.channel_id)
+        lane_color(strip.track_id)
     };
     let strip_width = if strip.collapsed { 96.0 } else { 206.0 };
     // A non-zero height keeps every strip in the horizontal row aligned at the
@@ -100,11 +100,11 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
     // Any part of the strip selects the channel. The hit test uses the rect
     // recorded last frame so it can be registered *before* the widgets it
     // contains; a later registration would swallow their clicks.
-    let bg_rect_id = egui::Id::new(("mixer_strip_rect", strip.channel_id));
+    let bg_rect_id = egui::Id::new(("mixer_strip_rect", strip.track_id));
     if let Some(rect) = ui.data(|data| data.get_temp::<egui::Rect>(bg_rect_id)) {
         let background = ui.interact(
             rect,
-            egui::Id::new(("mixer_strip_hit", strip.channel_id)),
+            egui::Id::new(("mixer_strip_hit", strip.track_id)),
             egui::Sense::click(),
         );
         if background.clicked() {
@@ -190,7 +190,7 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                             if power_response.clicked() {
                                 result
                                     .actions
-                                    .push(ContextAction::ToggleChannelEnabled(strip.channel_id));
+                                    .push(ContextAction::ToggleChannelEnabled(strip.track_id));
                             }
                             tooltip(ui, &power_response, "Power - shift locks, ctrl solos");
 
@@ -198,7 +198,7 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                                 "MASTER".to_owned()
                             } else {
                                 strip.name.as_deref().map_or_else(
-                                    || format!("Insert {}", strip.channel_id + 1),
+                                    || format!("Insert {}", strip.track_id + 1),
                                     |name| name.clone(),
                                 )
                             };
@@ -237,7 +237,7 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                                                 "Pin channel"
                                             }
                                             .to_owned(),
-                                            action: ContextAction::ToggleLanePin(strip.channel_id),
+                                            action: ContextAction::ToggleLanePin(strip.track_id),
                                         },
                                         MenuItem::Action {
                                             label: if strip.enabled {
@@ -247,7 +247,7 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                                             }
                                             .to_owned(),
                                             action: ContextAction::ToggleChannelEnabled(
-                                                strip.channel_id,
+                                                strip.track_id,
                                             ),
                                         },
                                         MenuItem::Separator,
@@ -256,7 +256,7 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                                             items: vec![MenuItem::Action {
                                                 label: "Disconnect all cables".to_owned(),
                                                 action: ContextAction::DisconnectChannel(
-                                                    strip.channel_id,
+                                                    strip.track_id,
                                                 ),
                                             }],
                                         },
@@ -265,7 +265,7 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                                             items: vec![MenuItem::Action {
                                                 label: "Select channel".to_owned(),
                                                 action: ContextAction::SelectChannel(
-                                                    strip.channel_id,
+                                                    strip.track_id,
                                                 ),
                                             }],
                                         },
@@ -304,17 +304,21 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                         };
                         let pair_width = fader_width + 6.0 + 13.0;
                         let pad = ((strip_width - pair_width) * 0.5).max(0.0);
-                        let gain_target = ParameterTarget::MixerChannel {
-                            channel_id: strip.channel_id,
-                            parameter: project::MixerParameter::Gain,
+                        let gain_target = ParameterTarget::Track {
+                            track_id: strip.track_id,
+                            parameter: project::TrackParameter::Mixer(
+                                project::MixerParameter::Gain,
+                            ),
                         };
-                        let pan_target = ParameterTarget::MixerChannel {
-                            channel_id: strip.channel_id,
-                            parameter: project::MixerParameter::Pan,
+                        let pan_target = ParameterTarget::Track {
+                            track_id: strip.track_id,
+                            parameter: project::TrackParameter::Mixer(project::MixerParameter::Pan),
                         };
-                        let width_target = ParameterTarget::MixerChannel {
-                            channel_id: strip.channel_id,
-                            parameter: project::MixerParameter::Width,
+                        let width_target = ParameterTarget::Track {
+                            track_id: strip.track_id,
+                            parameter: project::TrackParameter::Mixer(
+                                project::MixerParameter::Width,
+                            ),
                         };
                         ui.horizontal(|ui| {
                             ui.add_space(pad);
@@ -375,7 +379,7 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                             // Ten slots can be taller than the strip, so the
                             // list scrolls and every insert stays reachable.
                             egui::ScrollArea::vertical()
-                                .id_salt(("mixer_inserts", strip.channel_id))
+                                .id_salt(("mixer_inserts", strip.track_id))
                                 .max_height(150.0)
                                 // A fixed height keeps every strip the same size
                                 // whether or not it carries inserts.
@@ -383,7 +387,7 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                                 .show(ui, |ui| {
                                     for (index, label, enabled, solo, locked) in rows {
                                         let open =
-                                            strip.open_inserts.contains(&(strip.channel_id, index));
+                                            strip.open_inserts.contains(&(strip.track_id, index));
                                         ui.horizontal(|ui| {
                                     let intent = power_switch(
                                         ui,
@@ -399,7 +403,7 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                                     );
                                     if intent.any() {
                                         result.actions.push(ContextAction::ToggleInsertEnabled {
-                                            channel: strip.channel_id,
+                                            channel: strip.track_id,
                                             slot: index,
                                             intent,
                                         });
@@ -423,13 +427,13 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                                     );
                                     if slot_button.clicked() {
                                         result.actions.push(ContextAction::OpenInsertWindow {
-                                            channel: strip.channel_id,
+                                            channel: strip.track_id,
                                             slot: index,
                                         });
                                     }
                                     if slot_button.double_clicked() {
                                         result.actions.push(ContextAction::OpenInsertPicker {
-                                            channel: strip.channel_id,
+                                            channel: strip.track_id,
                                             slot: index,
                                         });
                                     }
@@ -444,14 +448,14 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                                                 MenuItem::Action {
                                                     label: "Change effect".to_owned(),
                                                     action: ContextAction::OpenInsertPicker {
-                                                        channel: strip.channel_id,
+                                                        channel: strip.track_id,
                                                         slot: index,
                                                     },
                                                 },
                                                 MenuItem::Action {
                                                     label: "Open window".to_owned(),
                                                     action: ContextAction::OpenInsertWindow {
-                                                        channel: strip.channel_id,
+                                                        channel: strip.track_id,
                                                         slot: index,
                                                     },
                                                 },
@@ -459,7 +463,7 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                                                 MenuItem::Action {
                                                     label: "Clear insert".to_owned(),
                                                     action: ContextAction::ClearInsert {
-                                                        channel: strip.channel_id,
+                                                        channel: strip.track_id,
                                                         slot: index,
                                                     },
                                                 },
@@ -485,12 +489,11 @@ pub fn mixer_strip(ui: &mut egui::Ui, mut strip: MixerStrip<'_>) -> MixerStripRe
                             draw_eq_curve(ui, *strip.eq);
                             // Each band is its own automation target, so the
                             // channel EQ is automatable like the fader.
-                            let eq_target = |parameter: project::MixerParameter| {
-                                ParameterTarget::MixerChannel {
-                                    channel_id: strip.channel_id,
-                                    parameter,
-                                }
-                            };
+                            let eq_target =
+                                |parameter: project::MixerParameter| ParameterTarget::Track {
+                                    track_id: strip.track_id,
+                                    parameter: project::TrackParameter::Mixer(parameter),
+                                };
                             ui.horizontal(|ui| {
                                 result.changed |=
                                     ValueControl::knob("LOW", &mut strip.eq.low_db, -12.0..=12.0)

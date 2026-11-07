@@ -87,7 +87,7 @@ impl AudioOutput {
             return Err("The default audio device reports zero output channels.".to_owned());
         }
 
-        let meters = Arc::new(Mutex::new(vec![0.0; project.lanes.len() + 1]));
+        let meters = Arc::new(Mutex::new(vec![0.0; project.tracks.len() + 1]));
         let peaks = Arc::new(Mutex::new(vec![0.0; project.automation_tracks.len()]));
         let project_updates = Arc::new(Mutex::new(None));
         let retired_projects = Arc::new(Mutex::new(Vec::new()));

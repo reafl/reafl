@@ -13,7 +13,7 @@ use pulseforge_core::project;
 ///
 /// - `ui`: the parent layout.
 /// - `slot`: the insert slot whose parameters are edited.
-/// - `channel_id`: mixer channel owning the slot.
+/// - `track_id`: mixer channel owning the slot.
 /// - `slot_id`: insert slot index.
 ///
 /// # Returns
@@ -22,7 +22,7 @@ use pulseforge_core::project;
 pub fn render_effect_parameters(
     ui: &mut egui::Ui,
     slot: &mut InsertFxSlot,
-    channel_id: usize,
+    track_id: usize,
     slot_id: usize,
 ) -> bool {
     let mut changed = false;
@@ -31,7 +31,7 @@ pub fn render_effect_parameters(
             changed |= Knob::new("MIX", 0.0, 1.0, "")
                 .with_default(0.5)
                 .automates(ParameterTarget::InsertEffect {
-                    channel_id,
+                    track_id,
                     slot_id,
                     parameter: EffectParameter::Mix,
                 })
@@ -41,7 +41,7 @@ pub fn render_effect_parameters(
                     changed |= Knob::new("LOW", -12.0, 12.0, " dB")
                         .with_default(0.0)
                         .automates(ParameterTarget::InsertEffect {
-                            channel_id,
+                            track_id,
                             slot_id,
                             parameter: EffectParameter::LowDb,
                         })
@@ -49,7 +49,7 @@ pub fn render_effect_parameters(
                     changed |= Knob::new("MID", -12.0, 12.0, " dB")
                         .with_default(0.0)
                         .automates(ParameterTarget::InsertEffect {
-                            channel_id,
+                            track_id,
                             slot_id,
                             parameter: EffectParameter::MidDb,
                         })
@@ -57,7 +57,7 @@ pub fn render_effect_parameters(
                     changed |= Knob::new("HIGH", -12.0, 12.0, " dB")
                         .with_default(0.0)
                         .automates(ParameterTarget::InsertEffect {
-                            channel_id,
+                            track_id,
                             slot_id,
                             parameter: EffectParameter::HighDb,
                         })
@@ -67,7 +67,7 @@ pub fn render_effect_parameters(
                     changed |= Knob::new("DECAY", 0.0, 1.0, "")
                         .with_default(0.35)
                         .automates(ParameterTarget::InsertEffect {
-                            channel_id,
+                            track_id,
                             slot_id,
                             parameter: EffectParameter::Amount,
                         })
@@ -75,7 +75,7 @@ pub fn render_effect_parameters(
                     changed |= Knob::new("ROOM", 0.0, 1.0, "")
                         .with_default(0.55)
                         .automates(ParameterTarget::InsertEffect {
-                            channel_id,
+                            track_id,
                             slot_id,
                             parameter: EffectParameter::RoomSize,
                         })
@@ -85,12 +85,12 @@ pub fn render_effect_parameters(
                     changed |= Knob::new("WET", 0.0, 1.0, "")
                         .with_default(0.35)
                         .automates(ParameterTarget::InsertEffect {
-                            channel_id,
+                            track_id,
                             slot_id,
                             parameter: EffectParameter::Amount,
                         })
                         .show(ui, &mut slot.amount);
-                    egui::ComboBox::from_id_salt(("effect_time_unit", channel_id, slot_id))
+                    egui::ComboBox::from_id_salt(("effect_time_unit", track_id, slot_id))
                         .selected_text(match slot.time_unit {
                             project::TimeUnit::Steps => "Steps",
                             project::TimeUnit::Milliseconds => "ms",
@@ -117,7 +117,7 @@ pub fn render_effect_parameters(
                             changed |= Knob::new("TIME", 0.01, 16.0, " steps")
                                 .with_default(1.0)
                                 .automates(ParameterTarget::InsertEffect {
-                                    channel_id,
+                                    track_id,
                                     slot_id,
                                     parameter: EffectParameter::TimeSeconds,
                                 })
@@ -127,7 +127,7 @@ pub fn render_effect_parameters(
                             changed |= Knob::new("TIME", 10.0, 2_000.0, " ms")
                                 .with_default(320.0)
                                 .automates(ParameterTarget::InsertEffect {
-                                    channel_id,
+                                    track_id,
                                     slot_id,
                                     parameter: EffectParameter::TimeSeconds,
                                 })
@@ -138,7 +138,7 @@ pub fn render_effect_parameters(
                     changed |= Knob::new("FEEDBACK", 0.0, 0.94, "")
                         .with_default(0.35)
                         .automates(ParameterTarget::InsertEffect {
-                            channel_id,
+                            track_id,
                             slot_id,
                             parameter: EffectParameter::Feedback,
                         })
@@ -148,7 +148,7 @@ pub fn render_effect_parameters(
                     changed |= Knob::new("AMOUNT", 0.0, 1.0, "")
                         .with_default(0.35)
                         .automates(ParameterTarget::InsertEffect {
-                            channel_id,
+                            track_id,
                             slot_id,
                             parameter: EffectParameter::Amount,
                         })
@@ -156,7 +156,7 @@ pub fn render_effect_parameters(
                     changed |= Knob::new("RATE", 0.05, 8.0, " Hz")
                         .with_default(0.8)
                         .automates(ParameterTarget::InsertEffect {
-                            channel_id,
+                            track_id,
                             slot_id,
                             parameter: EffectParameter::RateHz,
                         })
@@ -164,7 +164,7 @@ pub fn render_effect_parameters(
                     changed |= Knob::new("DEPTH", 0.0, 1.0, "")
                         .with_default(0.5)
                         .automates(ParameterTarget::InsertEffect {
-                            channel_id,
+                            track_id,
                             slot_id,
                             parameter: EffectParameter::Depth,
                         })
@@ -174,7 +174,7 @@ pub fn render_effect_parameters(
                     changed |= Knob::new("DRIVE", 0.0, 1.0, "")
                         .with_default(0.5)
                         .automates(ParameterTarget::InsertEffect {
-                            channel_id,
+                            track_id,
                             slot_id,
                             parameter: EffectParameter::Drive,
                         })

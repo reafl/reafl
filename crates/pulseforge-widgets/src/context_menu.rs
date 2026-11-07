@@ -82,6 +82,8 @@ pub enum ContextAction {
     OpenPluginSettings,
     /// Starts an inline rename in the channel rack.
     RenameInstrument(usize),
+    /// Wraps a track in a new folder.
+    GroupTrack(usize),
     /// Removes an instrument from the project.
     RemoveInstrument(usize),
     /// Sets or clears an instrument's custom colour.

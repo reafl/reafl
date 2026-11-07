@@ -77,9 +77,10 @@ impl PulseForgeApp {
         }
         let path = self
             .project
-            .instruments
+            .tracks
             .get(instrument_id)
-            .map(|instrument| instrument.plugin_path.clone())
+            .and_then(|track| track.generator())
+            .map(|generator| generator.plugin_path.clone())
             .unwrap_or_default();
         let format = self
             .external_plugins

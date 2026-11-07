@@ -37,7 +37,12 @@ impl PulseForgeApp {
     /// The two groups sit side by side so the page stays short instead of
     /// turning into a long vertical strip.
     pub(crate) fn render_plugin_routing(&mut self, ui: &mut egui::Ui, instrument_id: usize) {
-        let Some(instrument) = self.project.instruments.get_mut(instrument_id) else {
+        let Some(instrument) = self
+            .project
+            .tracks
+            .get_mut(instrument_id)
+            .and_then(Track::generator_mut)
+        else {
             return;
         };
         ui.columns(2, |columns| {
@@ -64,9 +69,9 @@ impl PulseForgeApp {
                     ui.end_row();
                     ui.label("Voices");
                     let mut voices = f32::from(instrument.voices.voice_count);
-                    let voices_target = ParameterTarget::Instrument {
-                        instrument_id,
-                        parameter: InstrumentParameter::VoiceCount,
+                    let voices_target = ParameterTarget::Track {
+                        track_id: instrument_id,
+                        parameter: TrackParameter::Generator(InstrumentParameter::VoiceCount),
                     };
                     let voices_response = ui.add(
                         egui::DragValue::new(&mut voices)
@@ -93,9 +98,9 @@ impl PulseForgeApp {
                 .num_columns(2)
                 .show(right, |ui| {
                     ui.label("Mode");
-                    let arp_mode = ParameterTarget::Instrument {
-                        instrument_id,
-                        parameter: InstrumentParameter::ArpMode,
+                    let arp_mode = ParameterTarget::Track {
+                        track_id: instrument_id,
+                        parameter: TrackParameter::Generator(InstrumentParameter::ArpMode),
                     };
                     // The combo and its automation button share one grid cell.
                     ui.horizontal(|ui| {
@@ -120,9 +125,9 @@ impl PulseForgeApp {
                     ui.label("Gate");
                     let mut gate = instrument.arpeggio.gate;
                     let gate_edit = ValueControl::new("", &mut gate, 0.05..=1.0)
-                        .automates(ParameterTarget::Instrument {
-                            instrument_id,
-                            parameter: InstrumentParameter::ArpGate,
+                        .automates(ParameterTarget::Track {
+                            track_id: instrument_id,
+                            parameter: TrackParameter::Generator(InstrumentParameter::ArpGate),
                         })
                         .show(ui);
                     if gate_edit.changed {
@@ -136,9 +141,9 @@ impl PulseForgeApp {
                         "",
                         &mut octaves,
                         1.0..=8.0,
-                        ParameterTarget::Instrument {
-                            instrument_id,
-                            parameter: InstrumentParameter::ArpOctaves,
+                        ParameterTarget::Track {
+                            track_id: instrument_id,
+                            parameter: TrackParameter::Generator(InstrumentParameter::ArpOctaves),
                         },
                     ) {
                         instrument.arpeggio.octaves = octaves.round().clamp(1.0, 8.0) as u8;
@@ -151,9 +156,9 @@ impl PulseForgeApp {
                 instrument_id,
                 "Rate",
                 &mut arp_rate,
-                Some(ParameterTarget::Instrument {
-                    instrument_id,
-                    parameter: InstrumentParameter::ArpRate,
+                Some(ParameterTarget::Track {
+                    track_id: instrument_id,
+                    parameter: TrackParameter::Generator(InstrumentParameter::ArpRate),
                 }),
             ) {
                 instrument.arpeggio.rate = arp_rate;

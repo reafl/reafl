@@ -3,6 +3,17 @@
 use crate::*;
 
 impl PulseForgeApp {
+    /// Handles a press in the piano grid, starting the gesture the current tool
+    /// implies.
+    ///
+    /// # Parameters
+    ///
+    /// - `tick`: pressed position in sixteenths from the clip start.
+    /// - `pitch`: pitch under the pointer.
+    /// - `hit_pitch`: pitch of the note that was hit, if any.
+    /// - `pointer`: pointer position in screen space.
+    /// - `grid_rect`: rectangle of the grid.
+    /// - `step_width`: width of one step in points.
     pub(crate) fn start_piano_gesture(
         &mut self,
         tick: u64,
@@ -13,19 +24,23 @@ impl PulseForgeApp {
         step_width: f32,
     ) {
         let step = tick / 16;
+        let track = self.selected_instrument;
+        let clip_index = self.resolve_active_clip().unwrap_or(0);
         self.push_history();
-        let pattern = &mut self.project.patterns[self.selected_pattern];
         match self.piano_tool {
             PianoTool::Pen => {
-                if let Some((index, note)) = pattern.notes.iter().enumerate().find(|(_, note)| {
-                    note.instrument_id == self.selected_instrument
-                        && note.pitch == hit_pitch
-                        && tick >= note.start_tick()
-                        && tick < note.start_tick().saturating_add(note.duration_ticks())
-                }) {
+                let hit = {
+                    let notes = self.active_notes();
+                    notes.iter().enumerate().find(|(_, note)| {
+                        note.pitch == hit_pitch
+                            && tick >= note.start_tick()
+                            && tick < note.start_tick().saturating_add(note.duration_ticks())
+                    })
+                };
+                if let Some((index, note)) = hit.map(|(index, note)| (index, *note)) {
                     self.selection = Some(Selection::Note {
-                        pattern: self.selected_pattern,
-                        instrument: note.instrument_id,
+                        track,
+                        clip: clip_index,
                         pitch: note.pitch,
                         start_step: note.start_step,
                     });
@@ -62,23 +77,28 @@ impl PulseForgeApp {
                         });
                     }
                 } else {
-                    let note_index = pattern.notes.len();
-                    let mut note = PianoNote {
-                        instrument_id: self.selected_instrument,
-                        duration_steps: 1,
+                    let default_duration = self.note_length_steps.max(1).saturating_mul(16);
+                    let mut note = ClipNote {
                         pitch,
                         velocity: self.settings.default_velocity,
+                        duration_steps: 1,
                         repeat_count: self.note_repeat_count,
                         repeat_ticks: self.note_repeat_ticks,
                         repeat_decay: self.note_repeat_decay,
-                        ..PianoNote::default()
+                        ..ClipNote::default()
                     };
                     note.set_start_tick(tick);
-                    note.set_duration_ticks(self.note_length_steps.max(1).saturating_mul(16));
-                    pattern.notes.push(note);
+                    note.set_duration_ticks(default_duration);
+                    let note_index = match self.active_notes_mut() {
+                        Some(notes) => {
+                            notes.push(note);
+                            notes.len() - 1
+                        }
+                        None => return,
+                    };
                     self.selection = Some(Selection::Note {
-                        pattern: self.selected_pattern,
-                        instrument: self.selected_instrument,
+                        track,
+                        clip: clip_index,
                         pitch,
                         start_step: tick / 16,
                     });
@@ -86,34 +106,37 @@ impl PulseForgeApp {
                         pitch,
                         start_tick: tick,
                         note_index,
-                        default_duration_ticks: self.note_length_steps.max(1).saturating_mul(16),
+                        default_duration_ticks: default_duration,
                     });
                 }
             }
             PianoTool::Brush => {
                 // The brush paints notes at the hovered pitch, like FL's paint
                 // tool, instead of toggling step-sequencer rows.
-                let exists = pattern.notes.iter().position(|note| {
-                    note.instrument_id == self.selected_instrument
-                        && note.pitch == pitch
-                        && note.start_step == step
-                });
-                let note_index = match exists {
+                let existing = self
+                    .active_notes()
+                    .iter()
+                    .position(|note| note.pitch == pitch && note.start_step == step);
+                let note_index = match existing {
                     Some(index) => index,
                     None => {
-                        let mut note = PianoNote {
-                            instrument_id: self.selected_instrument,
+                        let mut note = ClipNote {
                             pitch,
-                            duration_steps: 1,
                             velocity: self.settings.default_velocity,
+                            duration_steps: 1,
                             repeat_count: self.note_repeat_count,
                             repeat_ticks: self.note_repeat_ticks,
                             repeat_decay: self.note_repeat_decay,
-                            ..PianoNote::default()
+                            ..ClipNote::default()
                         };
                         note.set_start_tick(tick);
-                        pattern.notes.push(note);
-                        pattern.notes.len() - 1
+                        match self.active_notes_mut() {
+                            Some(notes) => {
+                                notes.push(note);
+                                notes.len() - 1
+                            }
+                            None => return,
+                        }
                     }
                 };
                 self.piano_gesture = Some(PianoGesture::Draw {
@@ -126,22 +149,17 @@ impl PulseForgeApp {
             PianoTool::Select => {
                 // Clicking a note selects it, clicking empty space clears the
                 // selection; shift and ctrl extend it.
-                let hit = {
-                    let notes = &self.project.patterns[self.selected_pattern].notes;
-                    notes.iter().position(|note| {
-                        note.instrument_id == self.selected_instrument
-                            && note.pitch == hit_pitch
-                            && tick >= note.start_tick()
-                            && tick < note.start_tick().saturating_add(note.duration_ticks())
-                    })
-                };
+                let hit = self.active_notes().iter().enumerate().find(|(_, note)| {
+                    note.pitch == hit_pitch
+                        && tick >= note.start_tick()
+                        && tick < note.start_tick().saturating_add(note.duration_ticks())
+                });
                 let additive = self.selection_modifiers();
-                match hit {
-                    Some(index) => {
-                        let note = self.project.patterns[self.selected_pattern].notes[index];
+                match hit.map(|(index, note)| (index, *note)) {
+                    Some((_index, note)) => {
                         self.select_note(
-                            index,
-                            note.instrument_id,
+                            0,
+                            track,
                             note.pitch,
                             note.start_step,
                             additive.0,
@@ -169,9 +187,15 @@ impl PulseForgeApp {
             }
             PianoTool::Cut => self.cut_note_at(tick, pitch),
         }
-        let _ = (pointer, grid_rect);
     }
 
+    /// Extends the running gesture to a new grid position.
+    ///
+    /// # Parameters
+    ///
+    /// - `tick`: pointer position in sixteenths.
+    /// - `pitch`: pitch under the pointer.
+    /// - `_pointer`: pointer position in screen space, unused by the edits.
     pub(crate) fn update_piano_gesture(&mut self, tick: u64, pitch: u8, _pointer: egui::Pos2) {
         let step = tick / 16;
         match self.piano_gesture {
@@ -181,9 +205,9 @@ impl PulseForgeApp {
                 note_index,
                 default_duration_ticks,
             }) => {
-                if let Some(note) = self.project.patterns[self.selected_pattern]
-                    .notes
-                    .get_mut(note_index)
+                if let Some(note) = self
+                    .active_notes_mut()
+                    .and_then(|notes| notes.get_mut(note_index))
                 {
                     let end_tick = tick.max(start_tick);
                     note.set_duration_ticks(if end_tick == start_tick {
@@ -203,9 +227,9 @@ impl PulseForgeApp {
             }) => {
                 let delta_tick = tick as i128 - pointer_tick as i128;
                 let delta_pitch = i16::from(pitch) - i16::from(pointer_pitch);
-                if let Some(note) = self.project.patterns[self.selected_pattern]
-                    .notes
-                    .get_mut(note_index)
+                if let Some(note) = self
+                    .active_notes_mut()
+                    .and_then(|notes| notes.get_mut(note_index))
                 {
                     note.set_start_tick((origin_tick as i128 + delta_tick).max(0) as u64);
                     note.pitch = (i16::from(origin_pitch) + delta_pitch).clamp(0, 127) as u8;
@@ -216,9 +240,9 @@ impl PulseForgeApp {
                 origin_duration_ticks,
                 pointer_tick,
             }) => {
-                if let Some(note) = self.project.patterns[self.selected_pattern]
-                    .notes
-                    .get_mut(note_index)
+                if let Some(note) = self
+                    .active_notes_mut()
+                    .and_then(|notes| notes.get_mut(note_index))
                 {
                     let delta = tick as i128 - pointer_tick as i128;
                     note.set_duration_ticks(
@@ -232,9 +256,9 @@ impl PulseForgeApp {
                 origin_duration_ticks,
                 pointer_tick,
             }) => {
-                if let Some(note) = self.project.patterns[self.selected_pattern]
-                    .notes
-                    .get_mut(note_index)
+                if let Some(note) = self
+                    .active_notes_mut()
+                    .and_then(|notes| notes.get_mut(note_index))
                 {
                     let (start_tick, duration_ticks) = resize_note_start(
                         origin_start_tick,
@@ -266,21 +290,22 @@ impl PulseForgeApp {
             | Some(PianoGesture::ResizeStart { note_index, .. }) => Some(note_index),
             _ => None,
         };
-        if let Some(note) = note_index.and_then(|index| {
-            self.project.patterns[self.selected_pattern]
-                .notes
-                .get(index)
+        let dragged = note_index.and_then(|index| {
+            self.active_notes_mut()
+                .and_then(|notes| notes.get(index))
                 .copied()
-        }) {
+        });
+        if let Some(note) = dragged {
             self.selection = Some(Selection::Note {
-                pattern: self.selected_pattern,
-                instrument: note.instrument_id,
+                track: self.selected_instrument,
+                clip: self.resolve_active_clip().unwrap_or(0),
                 pitch: note.pitch,
                 start_step: note.start_step,
             });
         }
     }
 
+    /// Commits the running gesture: joins notes and re-sorts the clip.
     pub(crate) fn finish_piano_gesture(&mut self) {
         if let Some(PianoGesture::Join {
             pitch,
@@ -291,37 +316,47 @@ impl PulseForgeApp {
             self.join_notes(pitch, start_step.min(end_step), start_step.max(end_step));
         }
         if self.piano_gesture.is_some() {
-            self.project.patterns[self.selected_pattern]
-                .notes
-                .sort_by_key(|note| (note.start_step, note.pitch, note.instrument_id));
+            if let Some(notes) = self.active_notes_mut() {
+                notes.sort_by_key(|note| (note.start_step, note.pitch));
+            }
             self.sync_project();
         }
         self.piano_gesture = None;
     }
 
+    /// Removes the note under the pointer.
+    ///
+    /// # Parameters
+    ///
+    /// - `tick`: position in sixteenths.
+    /// - `pitch`: pitch to erase.
     pub(crate) fn remove_note_at(&mut self, tick: u64, pitch: u8) {
-        let notes = &mut self.project.patterns[self.selected_pattern].notes;
+        let clip_index = self.resolve_active_clip().unwrap_or(0);
+        let track = self.selected_instrument;
+        let selection = self.selection;
+        let Some(notes) = self.active_notes_mut() else {
+            return;
+        };
         let selected_note_was_removed = notes.iter().any(|note| {
-            note.instrument_id == self.selected_instrument
-                && note.pitch == pitch
+            note.pitch == pitch
                 && tick >= note.start_tick()
                 && tick < note.start_tick().saturating_add(note.duration_ticks())
-                && self.selection
+                && selection
                     == Some(Selection::Note {
-                        pattern: self.selected_pattern,
-                        instrument: note.instrument_id,
+                        track,
+                        clip: clip_index,
                         pitch: note.pitch,
                         start_step: note.start_step,
                     })
         });
         let before = notes.len();
         notes.retain(|note| {
-            !(note.instrument_id == self.selected_instrument
-                && note.pitch == pitch
+            !(note.pitch == pitch
                 && tick >= note.start_tick()
                 && tick < note.start_tick().saturating_add(note.duration_ticks()))
         });
-        if notes.len() != before {
+        let removed = notes.len() != before;
+        if removed {
             if selected_note_was_removed {
                 self.selection = None;
             }
@@ -329,11 +364,18 @@ impl PulseForgeApp {
         }
     }
 
+    /// Splits the note under the pointer in two.
+    ///
+    /// # Parameters
+    ///
+    /// - `tick`: split position in sixteenths.
+    /// - `pitch`: pitch to cut.
     pub(crate) fn cut_note_at(&mut self, tick: u64, pitch: u8) {
-        let notes = &mut self.project.patterns[self.selected_pattern].notes;
+        let Some(notes) = self.active_notes_mut() else {
+            return;
+        };
         let Some(index) = notes.iter().position(|note| {
-            note.instrument_id == self.selected_instrument
-                && note.pitch == pitch
+            note.pitch == pitch
                 && tick > note.start_tick()
                 && tick < note.start_tick().saturating_add(note.duration_ticks())
         }) else {
@@ -350,14 +392,22 @@ impl PulseForgeApp {
         self.sync_project();
     }
 
+    /// Merges every note of `pitch` between two steps into one.
+    ///
+    /// # Parameters
+    ///
+    /// - `pitch`: pitch to merge.
+    /// - `start`: first tick of the range.
+    /// - `end`: last tick of the range.
     pub(crate) fn join_notes(&mut self, pitch: u8, start: u64, end: u64) {
-        let notes = &mut self.project.patterns[self.selected_pattern].notes;
+        let Some(notes) = self.active_notes_mut() else {
+            return;
+        };
         let mut matching: Vec<_> = notes
             .iter()
             .copied()
             .filter(|note| {
-                note.instrument_id == self.selected_instrument
-                    && note.pitch == pitch
+                note.pitch == pitch
                     && note.start_tick() <= end
                     && note.start_tick().saturating_add(note.duration_ticks()) >= start
             })
@@ -374,8 +424,7 @@ impl PulseForgeApp {
             .unwrap_or(merged_start + 16);
         let template = matching[0];
         notes.retain(|note| {
-            !(note.instrument_id == self.selected_instrument
-                && note.pitch == pitch
+            !(note.pitch == pitch
                 && note.start_tick() <= end
                 && note.start_tick().saturating_add(note.duration_ticks()) >= start)
         });
@@ -383,9 +432,11 @@ impl PulseForgeApp {
         merged.set_start_tick(merged_start);
         merged.set_duration_ticks(merged_end.saturating_sub(merged_start).max(1));
         notes.push(merged);
+        let track = self.selected_instrument;
+        let clip = self.resolve_active_clip().unwrap_or(0);
         self.selection = Some(Selection::Note {
-            pattern: self.selected_pattern,
-            instrument: template.instrument_id,
+            track,
+            clip,
             pitch: template.pitch,
             start_step: merged_start / 16,
         });

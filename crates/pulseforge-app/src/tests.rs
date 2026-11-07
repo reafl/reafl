@@ -1,8 +1,15 @@
 //! Unit tests for the editor state and its helpers.
 
 use crate::*;
-use pulseforge_core::project::StepHit;
 use pulseforge_widgets::fader_math::*;
+
+/// Parameter target of a generator control on a track.
+fn generator_target(track_id: usize, parameter: InstrumentParameter) -> ParameterTarget {
+    ParameterTarget::Track {
+        track_id,
+        parameter: TrackParameter::Generator(parameter),
+    }
+}
 
 #[test]
 fn preset_names_become_safe_file_stems() {
@@ -27,47 +34,34 @@ fn fader_curve_round_trips_and_snaps_to_silence() {
 }
 
 #[test]
-fn envelope_preview_finds_step_sequencer_hits() {
+fn envelope_preview_finds_clip_notes() {
     let mut project = Project::default();
-    project.patterns[0].step_hits = vec![
-        StepHit {
-            instrument_id: 0,
-            step: 2,
-        },
-        StepHit {
-            instrument_id: 0,
-            step: 4,
-        },
-    ];
-    project.lanes[0].clips = vec![ArrangementClip {
+    project.tracks[1].clips = vec![Clip {
         start_step: 0,
         length_steps: 8,
-        source: ClipSource::Pattern { pattern_id: 0 },
-        offset_steps: 0,
-        ..ArrangementClip::default()
+        notes: vec![ClipNote::new(2, 60, 100, 1), ClipNote::new(4, 60, 100, 1)],
+        ..Clip::default()
     }];
-    let found = automation_note_at(&project.lanes, &project.patterns, 0, 4.5);
-    assert_eq!(found, Some((4.0, 1.0)));
-    assert!(automation_note_at(&project.lanes, &project.patterns, 0, 1.0).is_none());
-    assert!(automation_note_at(&project.lanes, &project.patterns, 1, 4.5).is_none());
+    assert_eq!(
+        automation_note_at(&project.tracks[1], 4.5),
+        Some((4.0, 1.0))
+    );
+    assert!(automation_note_at(&project.tracks[1], 1.0).is_none());
+    // A folder owns no notes of its own.
+    assert!(automation_note_at(&project.tracks[0], 4.5).is_none());
 }
 
 #[test]
-fn automation_source_preview_reacts_to_step_hits() {
+fn automation_source_preview_reacts_to_clip_notes() {
     let mut project = Project::default();
-    project.patterns[0].step_hits = vec![StepHit {
-        instrument_id: 0,
-        step: 0,
-    }];
-    project.lanes[0].clips = vec![ArrangementClip {
+    project.tracks[1].clips = vec![Clip {
         start_step: 0,
         length_steps: 16,
-        source: ClipSource::Pattern { pattern_id: 0 },
-        offset_steps: 0,
-        ..ArrangementClip::default()
+        notes: vec![ClipNote::new(0, 60, 100, 1)],
+        ..Clip::default()
     }];
     let source = project::AutomationSource::MidiEnvelope {
-        instrument_id: 0,
+        track_id: 1,
         attack: project::TimeValue {
             amount: 0.0,
             unit: project::TimeUnit::Steps,
@@ -84,20 +78,8 @@ fn automation_source_preview_reacts_to_step_hits() {
         base: 0.0,
         depth: 1.0,
     };
-    let target = ParameterTarget::Instrument {
-        instrument_id: 0,
-        parameter: InstrumentParameter::Gain,
-    };
-    let level = automation_source_preview(
-        &source,
-        target,
-        &project.lanes,
-        &project.patterns,
-        120.0,
-        0,
-        0.25,
-        0.0,
-    );
+    let target = generator_target(1, InstrumentParameter::Gain);
+    let level = automation_source_preview(&source, target, &project.tracks, 120.0, 0, 0.25, 0.0);
     assert!(level > 0.9, "envelope preview stayed at {level}");
 }
 
@@ -105,10 +87,7 @@ fn automation_source_preview_reacts_to_step_hits() {
 fn collapsed_tracks_hide_their_automation_rows() {
     let mut project = Project::default();
     project.automation_tracks.push(AutomationTrack {
-        target: ParameterTarget::Instrument {
-            instrument_id: 0,
-            parameter: InstrumentParameter::Gain,
-        },
+        target: generator_target(1, InstrumentParameter::Gain),
         ..AutomationTrack::default()
     });
     let expanded = arrangement_layout(&project);
@@ -118,7 +97,7 @@ fn collapsed_tracks_hide_their_automation_rows() {
             .any(|span| matches!(span.row, ArrangementRow::Automation(0)))
     );
 
-    project.lanes[0].automation_collapsed = true;
+    project.tracks[1].automation_collapsed = true;
     let collapsed = arrangement_layout(&project);
     assert!(
         !collapsed
@@ -131,8 +110,8 @@ fn collapsed_tracks_hide_their_automation_rows() {
 #[test]
 fn row_heights_offset_and_hit_test_together() {
     let mut project = Project::default();
-    project.lanes[0].height = 100.0;
-    project.lanes[1].height = 40.0;
+    project.tracks[0].height = 100.0;
+    project.tracks[1].height = 40.0;
     let spans = arrangement_layout(&project);
     assert!((spans[0].height - 100.0).abs() < f32::EPSILON);
     assert!((spans[1].top - 100.0).abs() < f32::EPSILON);
@@ -144,18 +123,15 @@ fn row_heights_offset_and_hit_test_together() {
 }
 
 #[test]
-fn arrangement_rows_group_automation_under_its_mixer_lane() {
+fn arrangement_rows_group_automation_under_its_track() {
     let mut project = Project::default();
     project.automation_tracks.push(AutomationTrack {
-        target: ParameterTarget::Instrument {
-            instrument_id: 0,
-            parameter: InstrumentParameter::Gain,
-        },
+        target: generator_target(0, InstrumentParameter::Gain),
         ..AutomationTrack::default()
     });
     project.automation_tracks.push(AutomationTrack {
         target: ParameterTarget::InsertEffect {
-            channel_id: 2,
+            track_id: 2,
             slot_id: 0,
             parameter: EffectParameter::Mix,
         },
@@ -169,7 +145,6 @@ fn arrangement_rows_group_automation_under_its_mixer_lane() {
     assert!(matches!(rows[1], ArrangementRow::Automation(0)));
     assert!(matches!(rows[2], ArrangementRow::Lane(1)));
     assert!(matches!(rows[3], ArrangementRow::Lane(2)));
-    assert!(matches!(rows[4], ArrangementRow::Automation(1)));
 }
 
 #[test]
@@ -246,10 +221,7 @@ fn lane_preview_follows_automation_of_its_own_rate() {
     use project::{AutomationLaneParameter, AutomationSource, TimeUnit, TimeValue};
     let mut project = Project::default();
     project.automation_tracks.push(AutomationTrack {
-        target: ParameterTarget::Instrument {
-            instrument_id: 0,
-            parameter: InstrumentParameter::Gain,
-        },
+        target: generator_target(1, InstrumentParameter::Gain),
         source: AutomationSource::Lfo {
             shape: project::LfoShape::Sine,
             rate: TimeValue {
@@ -294,10 +266,7 @@ fn peak_lane_drives_another_lane_parameter() {
     use project::{AutomationLaneParameter, AutomationSource, TimeUnit, TimeValue};
     let mut project = Project::default();
     project.automation_tracks.push(AutomationTrack {
-        target: ParameterTarget::Instrument {
-            instrument_id: 0,
-            parameter: InstrumentParameter::Gain,
-        },
+        target: generator_target(1, InstrumentParameter::Gain),
         source: AutomationSource::Lfo {
             shape: project::LfoShape::Sine,
             rate: TimeValue {
@@ -369,30 +338,9 @@ fn peak_source_preview_uses_the_live_level() {
         base: 0.25,
         depth: 0.5,
     };
-    let target = ParameterTarget::Instrument {
-        instrument_id: 0,
-        parameter: InstrumentParameter::Gain,
-    };
-    let silent = automation_source_preview(
-        &source,
-        target,
-        &project.lanes,
-        &project.patterns,
-        120.0,
-        0,
-        0.0,
-        0.0,
-    );
-    let loud = automation_source_preview(
-        &source,
-        target,
-        &project.lanes,
-        &project.patterns,
-        120.0,
-        0,
-        0.0,
-        1.0,
-    );
+    let target = generator_target(0, InstrumentParameter::Gain);
+    let silent = automation_source_preview(&source, target, &project.tracks, 120.0, 0, 0.0, 0.0);
+    let loud = automation_source_preview(&source, target, &project.tracks, 120.0, 0, 0.0, 1.0);
     assert!((silent - 0.25).abs() < 1e-4, "silent level gave {silent}");
     assert!((loud - 0.75).abs() < 1e-4, "full level gave {loud}");
 }

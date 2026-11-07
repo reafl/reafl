@@ -2,45 +2,6 @@
 
 use super::*;
 
-pub(crate) fn instrument_parameter_options(kind: SynthKind) -> Vec<InstrumentParameter> {
-    let mut parameters = vec![InstrumentParameter::Gain, InstrumentParameter::Pan];
-    match kind {
-        SynthKind::Ms20 => parameters.extend([
-            InstrumentParameter::CutoffHz,
-            InstrumentParameter::Resonance,
-        ]),
-        SynthKind::JunoPoly => parameters.extend([
-            InstrumentParameter::CutoffHz,
-            InstrumentParameter::Resonance,
-            InstrumentParameter::PulseWidth,
-            InstrumentParameter::SubLevel,
-        ]),
-        SynthKind::M1Workstation => {
-            parameters.extend([InstrumentParameter::Tone, InstrumentParameter::Decay])
-        }
-        SynthKind::FmSynth => {
-            parameters.extend([InstrumentParameter::FmRatio, InstrumentParameter::FmIndex])
-        }
-        SynthKind::Sine
-        | SynthKind::SamplePlayer
-        | SynthKind::SignalGenerator
-        | SynthKind::External => {}
-    }
-    // Enums are automatable as integers, so they are offered like any other
-    // parameter. The waveform only exists for the signal generator.
-    if matches!(kind, SynthKind::SignalGenerator) {
-        parameters.push(InstrumentParameter::Waveform);
-    }
-    parameters.extend([
-        InstrumentParameter::ArpMode,
-        InstrumentParameter::ArpGate,
-        InstrumentParameter::ArpOctaves,
-        InstrumentParameter::ArpRate,
-        InstrumentParameter::VoiceCount,
-    ]);
-    parameters
-}
-
 pub(crate) fn synth_kind_label(kind: SynthKind) -> &'static str {
     match kind {
         SynthKind::External => "External plug-in",
@@ -114,11 +75,11 @@ pub(crate) fn effect_parameter_options(name: &str) -> Vec<EffectParameter> {
 /// The lane name, `"Master"` for the master bus, or a placeholder when the
 /// channel no longer exists.
 pub(crate) fn channel_name(project: &Project, channel: usize) -> String {
-    if channel == project.lanes.len() {
+    if channel == project.tracks.len() {
         "Master".to_owned()
     } else {
         project
-            .lanes
+            .tracks
             .get(channel)
             .map_or_else(|| "Mixer".to_owned(), |lane| lane.name.clone())
     }
@@ -126,47 +87,36 @@ pub(crate) fn channel_name(project: &Project, channel: usize) -> String {
 
 pub(crate) fn parameter_target_label(project: &Project, target: ParameterTarget) -> String {
     match target {
-        ParameterTarget::Instrument {
-            instrument_id,
+        ParameterTarget::Track {
+            track_id,
             parameter,
         } => format!(
-            "{} · {}",
-            project
-                .instruments
-                .get(instrument_id)
-                .map_or("Instrument", |instrument| instrument.name.as_str()),
+            "{} \u{00B7} {}",
+            if track_id == project.tracks.len() {
+                "Master".to_owned()
+            } else {
+                project
+                    .tracks
+                    .get(track_id)
+                    .map_or_else(|| "Track".to_owned(), |track| track.name.clone())
+            },
             parameter.label()
         ),
         ParameterTarget::PluginParameter {
             host_id,
             parameter_id,
         } => format!("Plug-in {host_id} \u{00B7} parameter {parameter_id}"),
-        ParameterTarget::MixerChannel {
-            channel_id,
-            parameter,
-        } => format!(
-            "{} \u{00B7} {}",
-            if channel_id == project.lanes.len() {
-                "Master".to_owned()
-            } else {
-                project
-                    .lanes
-                    .get(channel_id)
-                    .map_or_else(|| "Mixer".to_owned(), |lane| lane.name.clone())
-            },
-            parameter.label()
-        ),
         ParameterTarget::Tempo => "Tempo".to_owned(),
         ParameterTarget::Clip {
-            lane_id,
+            track_id,
             clip_id,
             parameter,
         } => format!(
             "{} \u{00B7} clip {} \u{00B7} {}",
             project
-                .lanes
-                .get(lane_id)
-                .map_or("Track", |lane| lane.name.as_str()),
+                .tracks
+                .get(track_id)
+                .map_or("Track", |track| track.name.as_str()),
             clip_id + 1,
             parameter.label()
         ),
@@ -178,24 +128,24 @@ pub(crate) fn parameter_target_label(project: &Project, target: ParameterTarget)
             parameter,
         } => format!("Auto {track_id:02} · {}", parameter.label()),
         ParameterTarget::InsertEffect {
-            channel_id,
+            track_id,
             slot_id,
             parameter,
         } => {
-            let channel_name = if channel_id == project.lanes.len() {
+            let channel_name = if track_id == project.tracks.len() {
                 "Master"
             } else {
                 project
-                    .lanes
-                    .get(channel_id)
+                    .tracks
+                    .get(track_id)
                     .map_or("Mixer channel", |lane| lane.name.as_str())
             };
-            let slot_name = if channel_id == project.lanes.len() {
+            let slot_name = if track_id == project.tracks.len() {
                 project.master.inserts.get(slot_id)
             } else {
                 project
-                    .lanes
-                    .get(channel_id)
+                    .tracks
+                    .get(track_id)
                     .and_then(|lane| lane.inserts.get(slot_id))
             }
             .map_or("FX", |slot| slot.name.as_str());

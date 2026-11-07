@@ -115,7 +115,7 @@ impl PulseForgeApp {
                 }
             }
             ShortcutAction::TogglePatternPlayback => {
-                self.selected_pattern_playback = !self.selected_pattern_playback;
+                self.selected_clip_playback = !self.selected_clip_playback;
             }
             ShortcutAction::ToggleMetronome => {
                 self.metronome = !self.metronome;
@@ -157,7 +157,14 @@ impl PulseForgeApp {
             ShortcutAction::DeleteSelection => self.delete_selected_clip(),
             ShortcutAction::RenameTrack => self.begin_rename_track(),
             ShortcutAction::RouteToFreeInsert => {
-                self.route_instrument_to_next_insert(self.selected_instrument);
+                // Tracks are their own mixer channels now, so the shortcut
+                // wraps the selected track in a folder instead of routing it to
+                // a free insert.
+                let track = self.selected_instrument;
+                if self.project.group_track(track).is_some() {
+                    self.sync_project();
+                    self.status = "Grouped the selected track.".to_owned();
+                }
             }
             ShortcutAction::ClearSelection => self.selection = None,
             ShortcutAction::ResetPan => {

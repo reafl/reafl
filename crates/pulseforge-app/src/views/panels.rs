@@ -24,11 +24,11 @@ impl PulseForgeApp {
                 "Drag outputs to inputs · hover a cable for level · right-click to disconnect",
             );
         });
-        let lane_count = self.project.lanes.len();
-        let channel_count = lane_count + 1;
-        let mut order = vec![lane_count];
-        let mut lanes: Vec<_> = (0..lane_count).collect();
-        lanes.sort_by_key(|lane| !self.project.lanes[*lane].pinned);
+        let track_count = self.project.tracks.len();
+        let channel_count = track_count + 1;
+        let mut order = vec![track_count];
+        let mut lanes: Vec<_> = (0..track_count).collect();
+        lanes.sort_by_key(|lane| !self.project.tracks[*lane].pinned);
         order.extend(lanes);
         let canvas_height = 48.0 + channel_count as f32 * 38.0;
         let (rect, response) = ui.allocate_exact_size(
@@ -54,10 +54,10 @@ impl PulseForgeApp {
             egui::Color32::from_gray(155),
         );
         let channel_name = |index: usize, project: &Project| {
-            if index == project.lanes.len() {
+            if index == project.tracks.len() {
                 "MASTER".to_owned()
             } else {
-                project.lanes[index].name.clone()
+                project.tracks[index].name.clone()
             }
         };
         let mut node_y = vec![0.0; channel_count];
@@ -65,7 +65,7 @@ impl PulseForgeApp {
             node_y[channel] = rect.top() + 48.0 + row as f32 * 38.0;
         }
         let channel_color = |index: usize, project: &Project| {
-            if index == project.lanes.len() {
+            if index == project.tracks.len() {
                 egui::Color32::WHITE
             } else {
                 lane_color(index)
@@ -230,9 +230,9 @@ impl PulseForgeApp {
             // The send level uses the shared knob widget, so it drags, resets and
             // offers its context menu exactly like every other parameter.
             let mut value = self.project.sends[source][destination];
-            let send_target = ParameterTarget::MixerChannel {
-                channel_id: source,
-                parameter: project::MixerParameter::Send { destination },
+            let send_target = ParameterTarget::Track {
+                track_id: source,
+                parameter: TrackParameter::Mixer(project::MixerParameter::Send { destination }),
             };
             ui.scope_builder(egui::UiBuilder::new().max_rect(knob_rect), |ui| {
                 if Knob::new("", 0.0, 0.95, "")
@@ -269,11 +269,11 @@ impl PulseForgeApp {
                     channel_name(*destination, &self.project)
                 ));
                 let mut gain = self.project.sends[*source][*destination];
-                let send_target = ParameterTarget::MixerChannel {
-                    channel_id: *source,
-                    parameter: project::MixerParameter::Send {
+                let send_target = ParameterTarget::Track {
+                    track_id: *source,
+                    parameter: TrackParameter::Mixer(project::MixerParameter::Send {
                         destination: *destination,
-                    },
+                    }),
                 };
                 let response = ui.add(
                     egui::Slider::new(&mut gain, 0.0..=0.95)
@@ -346,13 +346,13 @@ impl PulseForgeApp {
                     egui::ComboBox::from_id_salt(("route", channel))
                         .selected_text(
                             self.project
-                                .instruments
+                                .tracks
                                 .get(instrument)
                                 .map_or("Instrument", |item| item.name.as_str())
                                 .to_owned(),
                         )
                         .show_ui(ui, |ui| {
-                            for (id, item) in self.project.instruments.iter().enumerate() {
+                            for (id, item) in self.project.tracks.iter().enumerate() {
                                 ui.selectable_value(&mut instrument, id, &item.name);
                             }
                         });
@@ -423,20 +423,19 @@ impl PulseForgeApp {
     pub(crate) fn selection_label(&self) -> String {
         match self.selection {
             Some(Selection::Note {
-                pattern,
-                instrument,
+                track,
+                clip,
                 pitch,
                 start_step,
             }) => self
                 .project
-                .patterns
-                .get(pattern)
-                .and_then(|pattern| {
-                    pattern.notes.iter().find(|note| {
-                        note.instrument_id == instrument
-                            && note.pitch == pitch
-                            && note.start_step == start_step
-                    })
+                .tracks
+                .get(track)
+                .and_then(|track| track.clips.get(clip))
+                .and_then(|clip| {
+                    clip.notes
+                        .iter()
+                        .find(|note| note.pitch == pitch && note.start_step == start_step)
                 })
                 .map_or_else(
                     || "note".to_owned(),
@@ -444,33 +443,28 @@ impl PulseForgeApp {
                 ),
             Some(Selection::Instrument(instrument)) => self
                 .project
-                .instruments
+                .tracks
                 .get(instrument)
                 .map_or_else(|| "instrument".to_owned(), |item| item.name.clone()),
-            Some(Selection::Clip { lane, clip }) => self
+            Some(Selection::Clip { track: lane, clip }) => self
                 .project
-                .lanes
+                .tracks
                 .get(lane)
                 .and_then(|lane| lane.clips.get(clip))
                 .map_or_else(
                     || "clip".to_owned(),
-                    |item| match &item.source {
-                        ClipSource::Pattern { pattern_id } => {
-                            self.project.patterns.get(*pattern_id).map_or_else(
-                                || "pattern clip".to_owned(),
-                                |pattern| pattern.name.clone(),
-                            )
-                        }
-                        ClipSource::Audio { path } => std::path::Path::new(path)
+                    |item| match &item.audio_path {
+                        Some(path) => std::path::Path::new(path)
                             .file_stem()
                             .and_then(|stem| stem.to_str())
                             .unwrap_or("audio clip")
                             .to_owned(),
+                        None => item.name.clone(),
                     },
                 ),
             Some(Selection::MixerChannel(channel)) => self
                 .project
-                .lanes
+                .tracks
                 .get(channel)
                 .map_or_else(|| "MASTER".to_owned(), |lane| lane.name.clone()),
             Some(Selection::Automation(track)) => self

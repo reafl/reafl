@@ -1,16 +1,16 @@
-﻿//! The mixer strips and the channel inspector.
+//! The mixer strips and the channel inspector.
 
 use crate::*;
 
 impl PulseForgeApp {
     /// Adds a mixer channel (and its arrangement lane) and selects it.
     pub(crate) fn add_mixer_channel(&mut self) {
-        let old_master_id = self.project.lanes.len();
-        self.project.add_lane();
+        let old_master_id = self.project.tracks.len();
+        self.project.add_track();
         if self.automation_channel_id == old_master_id {
             self.automation_channel_id = old_master_id + 1;
         }
-        self.selected_lane = self.project.lanes.len() - 1;
+        self.selected_lane = self.project.tracks.len() - 1;
         self.selected_mixer_channel = self.selected_lane;
         self.sync_project();
     }
@@ -46,13 +46,13 @@ impl PulseForgeApp {
                 ),
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
-                    let master_id = self.project.lanes.len();
+                    let master_id = self.project.tracks.len();
                     let master_meter = self.meter_level(master_id);
                     let open_inserts = self.open_effect_plugins.clone();
                     let result = mixer_strip(
                         ui,
                         MixerStrip {
-                            channel_id: master_id,
+                            track_id: master_id,
                             name: None,
                             pinned: None,
                             gain: &mut self.project.master.gain,
@@ -101,21 +101,21 @@ impl PulseForgeApp {
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
-                                let mut order: Vec<_> = (0..self.project.lanes.len()).collect();
-                                order.sort_by_key(|lane| !self.project.lanes[*lane].pinned);
+                                let mut order: Vec<_> = (0..self.project.tracks.len()).collect();
+                                order.sort_by_key(|lane| !self.project.tracks[*lane].pinned);
                                 let mut any_changed = false;
                                 let mut actions = Vec::new();
                                 for lane_id in order {
                                     let meter = self.meter_level(lane_id);
                                     let open_inserts = self.open_effect_plugins.clone();
                                     let result = {
-                                        let lane = &mut self.project.lanes[lane_id];
+                                        let lane = &mut self.project.tracks[lane_id];
                                         let (enabled, locked, solo) =
                                             (lane.enabled, lane.locked, lane.solo);
                                         mixer_strip(
                                             ui,
                                             MixerStrip {
-                                                channel_id: lane_id,
+                                                track_id: lane_id,
                                                 name: Some(&mut lane.name),
                                                 pinned: Some(&mut lane.pinned),
                                                 gain: &mut lane.gain,
@@ -186,7 +186,7 @@ impl PulseForgeApp {
                                     match load_chain_preset(&name) {
                                         Ok(preset) => {
                                             if let Some(lane) =
-                                                self.project.lanes.get_mut(channel)
+                                                self.project.tracks.get_mut(channel)
                                             {
                                                 for (slot, loaded) in
                                                     lane.inserts.iter_mut().zip(preset)
@@ -218,15 +218,15 @@ impl PulseForgeApp {
     }
 
     pub(crate) fn render_mixer_inspector(&mut self, ui: &mut egui::Ui) {
-        let channel = self.selected_mixer_channel.min(self.project.lanes.len());
-        let name = if channel == self.project.lanes.len() {
+        let channel = self.selected_mixer_channel.min(self.project.tracks.len());
+        let name = if channel == self.project.tracks.len() {
             "MASTER".to_owned()
         } else {
-            self.project.lanes[channel].name.clone()
+            self.project.tracks[channel].name.clone()
         };
-        ui.heading(format!("Track Â· {name}"));
+        ui.heading(format!("Track · {name}"));
         ui.separator();
-        let is_master = channel == self.project.lanes.len();
+        let is_master = channel == self.project.tracks.len();
         // Level and pan live on the strips, so the inspector shows what a strip
         // cannot: EQ, stereo width and the insert chain, on one page.
         let (eq, inserts, width) = if is_master {
@@ -236,7 +236,7 @@ impl PulseForgeApp {
                 None,
             )
         } else {
-            let lane = &mut self.project.lanes[channel];
+            let lane = &mut self.project.tracks[channel];
             (&mut lane.eq, &mut lane.inserts, Some(&mut lane.width))
         };
         let mut changed = false;
@@ -244,9 +244,9 @@ impl PulseForgeApp {
         draw_eq_curve(ui, *eq);
         // The inspector edits the same bands as the strip, so it offers the
         // same automation targets.
-        let eq_target = |parameter: project::MixerParameter| ParameterTarget::MixerChannel {
-            channel_id: channel,
-            parameter,
+        let eq_target = |parameter: project::MixerParameter| ParameterTarget::Track {
+            track_id: channel,
+            parameter: TrackParameter::Mixer(parameter),
         };
         ui.horizontal(|ui| {
             changed |= Knob::new("LOW", -12.0, 12.0, " dB")
@@ -320,7 +320,7 @@ impl PulseForgeApp {
                         self.status = "All insert slots are occupied.".to_owned();
                     }
                 }
-                if ui.button("Choose pluginâ€¦").clicked() {
+                if ui.button("Choose plugin…").clicked() {
                     self.plugin_selector_target = Some(PluginTarget::Effect { channel, slot: 0 });
                 }
             });
@@ -331,10 +331,10 @@ impl PulseForgeApp {
                     } else {
                         &slot.name
                     };
-                    if ui.button(format!("{} Â· {name}", slot_id + 1)).clicked() {
+                    if ui.button(format!("{} · {name}", slot_id + 1)).clicked() {
                         self.open_effect_plugins.insert((channel, slot_id));
                     }
-                    if ui.small_button("Selectâ€¦").clicked() {
+                    if ui.small_button("Select…").clicked() {
                         self.plugin_selector_target = Some(PluginTarget::Effect {
                             channel,
                             slot: slot_id,
@@ -400,7 +400,7 @@ impl PulseForgeApp {
             let slots: &[InsertFxSlot] = if is_master {
                 &self.project.master.inserts
             } else {
-                &self.project.lanes[channel].inserts
+                &self.project.tracks[channel].inserts
             };
             match save_chain_preset(&name, slots) {
                 Ok(name) => {

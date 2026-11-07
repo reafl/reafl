@@ -36,13 +36,10 @@ impl PulseForgeApp {
     ) {
         let Some(source_path) = self
             .project
-            .lanes
+            .tracks
             .get(lane)
             .and_then(|lane| lane.clips.get(clip))
-            .and_then(|clip| match &clip.source {
-                ClipSource::Audio { path } => Some(path.clone()),
-                ClipSource::Pattern { .. } => None,
-            })
+            .and_then(|clip| clip.audio_path.clone())
         else {
             ui.colored_label(
                 egui::Color32::LIGHT_RED,
@@ -130,13 +127,13 @@ impl PulseForgeApp {
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new("This clip").strong());
                 let clip_target = |parameter: project::ClipParameter| ParameterTarget::Clip {
-                    lane_id: lane,
+                    track_id: lane,
                     clip_id: clip,
                     parameter,
                 };
                 if let Some(clip) = self
                     .project
-                    .lanes
+                    .tracks
                     .get_mut(lane)
                     .and_then(|lane| lane.clips.get_mut(clip))
                 {

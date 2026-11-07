@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use super::device::*;
 use super::params::*;
 use super::piano::*;
+use super::track::*;
+use super::track_param::*;
 
 /// Continuous and integer parameters of an instrument.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -133,6 +135,22 @@ impl MixerParameter {
             Self::Send { .. } => "Send",
         }
     }
+
+    /// Lowest and highest value this parameter accepts.
+    ///
+    /// # Returns
+    ///
+    /// The range of the control; send levels are bounded below the unity gain
+    /// of the destination channel.
+    pub fn range(self) -> (f32, f32) {
+        match self {
+            Self::Gain => (0.0, 1.0),
+            Self::Pan => (-1.0, 1.0),
+            Self::Width => (0.0, 2.0),
+            Self::LowDb | Self::MidDb | Self::HighDb => (-12.0, 12.0),
+            Self::Send { .. } => (0.0, 0.95),
+        }
+    }
 }
 
 /// Playback controls of an audio clip, and of the sample defaults every clip
@@ -208,18 +226,18 @@ impl AutomationLaneParameter {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ParameterTarget {
-    /// A parameter of a channel-rack instrument.
-    Instrument {
-        /// Index into [`Project::instruments`](super::arrangement::Project::instruments).
-        instrument_id: usize,
-        /// Which instrument parameter.
-        parameter: InstrumentParameter,
+    /// A generator, MIDI FX or mixer control of a track.
+    Track {
+        /// Index into [`Project::tracks`](super::arrangement::Project::tracks).
+        track_id: TrackId,
+        /// Which control of the track.
+        parameter: TrackParameter,
     },
     /// A parameter of one insert slot.
     InsertEffect {
-        /// Mixer channel, or the master index for the master bus.
-        channel_id: usize,
-        /// Slot index inside the channel's insert chain.
+        /// Track owning the insert chain, or the master index for the master bus.
+        track_id: TrackId,
+        /// Slot index inside the track's insert chain.
         slot_id: usize,
         /// Which effect parameter.
         parameter: EffectParameter,
@@ -231,13 +249,6 @@ pub enum ParameterTarget {
         /// Parameter index inside the plug-in.
         parameter_id: u32,
     },
-    /// A mixer channel's own volume or pan.
-    MixerChannel {
-        /// Mixer channel, or the master index for the master bus.
-        channel_id: usize,
-        /// Which mixer control.
-        parameter: MixerParameter,
-    },
     /// A parameter of another automation lane's source.
     AutomationLane {
         /// Index into [`Project::automation_tracks`](super::arrangement::Project::automation_tracks).
@@ -245,11 +256,11 @@ pub enum ParameterTarget {
         /// Which lane source parameter.
         parameter: AutomationLaneParameter,
     },
-    /// A playback control of one arrangement clip.
+    /// A playback control of one clip.
     Clip {
-        /// Arrangement lane the clip sits on.
-        lane_id: usize,
-        /// Index of the clip inside the lane.
+        /// Track the clip sits on.
+        track_id: TrackId,
+        /// Index of the clip inside the track.
         clip_id: usize,
         /// Which clip control.
         parameter: ClipParameter,
@@ -265,9 +276,9 @@ pub enum ParameterTarget {
 
 impl Default for ParameterTarget {
     fn default() -> Self {
-        Self::Instrument {
-            instrument_id: 0,
-            parameter: InstrumentParameter::Gain,
+        Self::Track {
+            track_id: 0,
+            parameter: TrackParameter::Mixer(MixerParameter::Gain),
         }
     }
 }
@@ -276,25 +287,7 @@ impl ParameterTarget {
     /// Lowest and highest value this parameter accepts.
     pub fn range(self) -> (f32, f32) {
         match self {
-            Self::Instrument { parameter, .. } => match parameter {
-                InstrumentParameter::Gain => (0.0, 1.0),
-                InstrumentParameter::Pan => (-1.0, 1.0),
-                InstrumentParameter::CutoffHz => (40.0, 16_000.0),
-                InstrumentParameter::Resonance => (0.0, 0.9),
-                InstrumentParameter::PulseWidth => (0.05, 0.95),
-                InstrumentParameter::SubLevel | InstrumentParameter::FmIndex => (0.0, 1.0),
-                InstrumentParameter::Tone => (0.0, 1.0),
-                InstrumentParameter::Decay => (0.05, 4.0),
-                InstrumentParameter::FmRatio => (0.25, 16.0),
-                // Enums are addressed as integers, so their range is the index.
-                InstrumentParameter::Waveform => (0.0, (SignalWaveform::ALL.len() - 1) as f32),
-                InstrumentParameter::ArpMode => (0.0, (ArpMode::ALL.len() - 1) as f32),
-                InstrumentParameter::ArpGate => (0.01, 1.0),
-                InstrumentParameter::ArpOctaves => (1.0, 8.0),
-                InstrumentParameter::ArpRate => (0.1, 64.0),
-                InstrumentParameter::SynthNote => (0.0, 127.0),
-                InstrumentParameter::VoiceCount => (1.0, 64.0),
-            },
+            Self::Track { parameter, .. } => parameter.range(),
             Self::InsertEffect { parameter, .. } => match parameter {
                 EffectParameter::Mix
                 | EffectParameter::Amount
@@ -310,15 +303,6 @@ impl ParameterTarget {
             },
             // Hosted plug-in parameters are always normalized 0..=1.
             Self::PluginParameter { .. } => (0.0, 1.0),
-            Self::MixerChannel { parameter, .. } => match parameter {
-                MixerParameter::Gain => (0.0, 1.0),
-                MixerParameter::Pan => (-1.0, 1.0),
-                MixerParameter::Width => (0.0, 2.0),
-                MixerParameter::LowDb | MixerParameter::MidDb | MixerParameter::HighDb => {
-                    (-12.0, 12.0)
-                }
-                MixerParameter::Send { .. } => (0.0, 0.95),
-            },
             Self::Clip { parameter, .. } | Self::SampleDefaults { parameter } => match parameter {
                 ClipParameter::Gain => (0.0, 1.0),
                 ClipParameter::Pan => (-1.0, 1.0),

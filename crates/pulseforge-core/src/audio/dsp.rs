@@ -1,4 +1,4 @@
-﻿//! Free DSP helpers: oscillators, EQ, sample interpolation and WAV I/O.
+//! Free DSP helpers: oscillators, EQ, sample interpolation and WAV I/O.
 
 use std::{
     f32::consts::TAU,
@@ -12,8 +12,7 @@ use crate::{
     hosted::effect_host_id,
     plugins::BuiltinEffect,
     project::{
-        ClipSource, Instrument, LfoShape, PianoNote, Project, SignalWaveform, SynthKind, TimeUnit,
-        TimeValue,
+        Clip, Generator, LfoShape, Project, SignalWaveform, SynthKind, TimeUnit, TimeValue, Track,
     },
 };
 
@@ -51,10 +50,60 @@ pub(crate) fn update_effect_chain(
     }
 }
 
-pub(crate) fn instrument_controls(instrument: &Instrument, bpm: f32) -> InstrumentControls {
-    let (cutoff_hz, resonance) = match instrument.synth_kind {
-        SynthKind::Ms20 => (instrument.ms20_cutoff_hz, instrument.ms20_resonance),
-        SynthKind::JunoPoly => (instrument.juno_cutoff_hz, instrument.juno_resonance),
+/// True when a track should sound: its power switch is on and, if anything is
+/// soloed, solo applies to the whole folder subtree.
+///
+/// Soloing is tree aware so a folder behaves like a console group: soloing a
+/// child keeps its ancestors in the signal path (they still need to sum and
+/// process the child's audio), and soloing a folder lets every descendant
+/// through. A track is silenced when its own power switch is off or when any
+/// ancestor folder is off, which also drops its sends.
+///
+/// # Parameters
+///
+/// - `project`: the project the track belongs to.
+/// - `track_id`: the track to test.
+/// - `solo_active`: whether any track is soloed, hoisted by the caller so a
+///   block scans the track list once.
+pub(crate) fn track_audible(project: &Project, track_id: usize, solo_active: bool) -> bool {
+    let Some(track) = project.tracks.get(track_id) else {
+        return false;
+    };
+    let ancestors = Track::ancestors(&project.tracks, track_id);
+    if !track.enabled
+        || ancestors.iter().any(|ancestor| {
+            project
+                .tracks
+                .get(*ancestor)
+                .is_some_and(|group| !group.enabled)
+        })
+    {
+        return false;
+    }
+    if !solo_active {
+        return true;
+    }
+    if track.solo
+        || ancestors.iter().any(|ancestor| {
+            project
+                .tracks
+                .get(*ancestor)
+                .is_some_and(|group| group.solo)
+        })
+    {
+        return true;
+    }
+    // A folder is still in the path when one of its descendants is soloed: the
+    // child is audible, but the folder has to keep summing and processing it.
+    Track::descendants(&project.tracks, track_id)
+        .iter()
+        .any(|child| project.tracks.get(*child).is_some_and(|child| child.solo))
+}
+
+pub(crate) fn instrument_controls(instrument: &Generator, bpm: f32) -> InstrumentControls {
+    let (cutoff_hz, resonance) = match instrument.kind.synth_kind() {
+        Some(SynthKind::Ms20) => (instrument.ms20_cutoff_hz, instrument.ms20_resonance),
+        Some(SynthKind::JunoPoly) => (instrument.juno_cutoff_hz, instrument.juno_resonance),
         _ => (1_800.0, 0.2),
     };
     InstrumentControls {
@@ -106,39 +155,12 @@ pub(crate) fn lfo_wave(shape: LfoShape, phase: f32) -> f32 {
     }
 }
 
-/// True when two clip sources resolve to the same cached audio runtime, so a
-/// project update can keep the loaded sample in place instead of reloading.
-/// Queues every repeat of `note` that lands on `local_tick`.
-///
-/// Repeats wrap inside the pattern length, so a note repeat never escapes its
-/// pattern even when the note sits at the very end.
-pub(crate) fn push_note_triggers(
-    events: &mut Vec<TriggerEvent>,
-    note: &PianoNote,
-    local_tick: u64,
-    lane_id: usize,
-    pattern_length_steps: u64,
-) {
-    let pattern_ticks = pattern_length_steps.saturating_mul(16).max(16);
-    for (offset, velocity) in note.trigger_offsets() {
-        let tick = note.start_tick().saturating_add(offset) % pattern_ticks;
-        if tick == local_tick {
-            let mut triggered = *note;
-            triggered.velocity = velocity;
-            events.push(TriggerEvent::Note {
-                note: triggered,
-                lane_id,
-            });
-        }
-    }
-}
-
-pub(crate) fn clip_routes_match(left: &ClipSource, right: &ClipSource) -> bool {
-    match (left, right) {
-        (ClipSource::Pattern { pattern_id: left }, ClipSource::Pattern { pattern_id: right }) => {
-            left == right
-        }
-        (ClipSource::Audio { path: left }, ClipSource::Audio { path: right }) => left == right,
+/// True when two clips resolve to the same cached audio runtime, so a project
+/// update can keep the loaded sample in place instead of reloading.
+pub(crate) fn clip_routes_match(left: &Clip, right: &Clip) -> bool {
+    match (&left.audio_path, &right.audio_path) {
+        (Some(left), Some(right)) => left == right,
+        (None, None) => true,
         _ => false,
     }
 }
@@ -282,23 +304,26 @@ pub fn read_wav(path: &str) -> Result<SampleData, String> {
 pub fn render_project_to_wav(project: &Project, path: &str) -> Result<u64, String> {
     const SAMPLE_RATE: u32 = 44_100;
     let mut engine = AudioEngine::new(project.clone(), SAMPLE_RATE);
-    for (instrument_id, instrument) in engine.project.instruments.iter().enumerate() {
-        if !instrument.sample_path.trim().is_empty() {
-            engine.instrument_samples[instrument_id] = Some(read_wav(&instrument.sample_path)?);
+    for (track_id, track) in engine.project.tracks.iter().enumerate() {
+        let Some(generator) = track.generator() else {
+            continue;
+        };
+        if !generator.sample_path.trim().is_empty() {
+            engine.instrument_samples[track_id] = Some(read_wav(&generator.sample_path)?);
         }
     }
-    for (lane_id, lane) in engine.project.lanes.iter().enumerate() {
-        for (clip_index, clip) in lane.clips.iter().enumerate() {
-            if let ClipSource::Audio { path } = &clip.source {
-                engine.audio_clips[lane_id][clip_index].sample = Some(Arc::new(read_wav(path)?));
+    for (track_id, track) in engine.project.tracks.iter().enumerate() {
+        for (clip_index, clip) in track.clips.iter().enumerate() {
+            if let Some(path) = &clip.audio_path {
+                engine.audio_clips[track_id][clip_index].sample = Some(Arc::new(read_wav(path)?));
             }
         }
     }
     let end_step = engine
         .project
-        .lanes
+        .tracks
         .iter()
-        .flat_map(|lane| &lane.clips)
+        .flat_map(|track| &track.clips)
         .map(|clip| clip.start_step.saturating_add(clip.length_steps))
         .max()
         .ok_or_else(|| "Add an arrangement clip before rendering.".to_owned())?;

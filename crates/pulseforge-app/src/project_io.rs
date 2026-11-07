@@ -24,7 +24,7 @@ impl PulseForgeApp {
     pub(crate) fn adopt_project(&mut self, mut project: Project, path: &str) {
         project.normalize();
         self.project = project;
-        self.selected_pattern = 0;
+        self.selected_clip = 0;
         self.selected_instrument = 0;
         self.selected_lane = 0;
         self.selected_mixer_channel = 0;
@@ -63,11 +63,11 @@ impl PulseForgeApp {
             } => match (result, purpose) {
                 (Ok(sample), SampleUse::Instrument(instrument_id)) => {
                     let frames = sample.frames.len();
-                    if self.send_audio(AudioCommand::LoadInstrumentSample {
-                        instrument_id,
+                    if self.send_audio(AudioCommand::LoadTrackSample {
+                        track_id: instrument_id,
                         sample,
                     }) {
-                        self.status = format!("Loaded {frames} frames into the instrument.");
+                        self.status = format!("Loaded {frames} frames into the track.");
                     }
                 }
                 (Ok(sample), SampleUse::Clip) => {
@@ -107,22 +107,26 @@ impl PulseForgeApp {
             self.unload_host(id);
         }
         let mut jobs = Vec::new();
-        for instrument_id in 0..self.project.instruments.len() {
-            let instrument = &self.project.instruments[instrument_id];
-            if instrument.synth_kind == SynthKind::External && !instrument.plugin_path.is_empty() {
+        for instrument_id in 0..self.project.tracks.len() {
+            let Some(generator) = self.project.tracks[instrument_id].generator() else {
+                continue;
+            };
+            if generator.kind.synth_kind() == Some(SynthKind::External)
+                && !generator.plugin_path.is_empty()
+            {
                 jobs.push((
                     pulseforge_core::hosted::instrument_host_id(instrument_id),
-                    instrument.plugin_path.clone(),
+                    generator.plugin_path.clone(),
                     true,
                 ));
             }
         }
-        let lane_count = self.project.lanes.len();
-        for channel in 0..=lane_count {
-            let slots = if channel == lane_count {
+        let track_count = self.project.tracks.len();
+        for channel in 0..=track_count {
+            let slots = if channel == track_count {
                 &self.project.master.inserts
             } else {
-                &self.project.lanes[channel].inserts
+                &self.project.tracks[channel].inserts
             };
             for (slot_index, slot) in slots.iter().enumerate() {
                 if !slot.enabled || slot.plugin_path.is_empty() {
@@ -141,11 +145,11 @@ impl PulseForgeApp {
     }
 
     pub(crate) fn load_instrument_samples(&mut self) {
-        for instrument_id in 0..self.project.instruments.len() {
-            if !self.project.instruments[instrument_id]
-                .sample_path
-                .is_empty()
-            {
+        for instrument_id in 0..self.project.tracks.len() {
+            let has_path = self.project.tracks[instrument_id]
+                .generator()
+                .is_some_and(|generator| !generator.sample_path.is_empty());
+            if has_path {
                 self.load_instrument_sample(instrument_id);
             }
         }
@@ -215,7 +219,7 @@ impl PulseForgeApp {
                     }
                 };
                 let event = AudioCommand::MidiNote {
-                    instrument_id,
+                    track_id: instrument_id,
                     note: message[1],
                     velocity: message[2],
                     on: kind == 0x90 && message[2] > 0,

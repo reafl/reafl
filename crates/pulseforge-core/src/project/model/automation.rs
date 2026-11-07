@@ -39,10 +39,10 @@ pub enum AutomationSource {
     /// value rather than replacing it. Values run from `-1` to `1`, so the lane
     /// can pull a parameter down as well as push it up.
     RelativeCurve,
-    /// An envelope driven by one instrument's MIDI notes.
+    /// An envelope driven by one track's MIDI notes.
     MidiEnvelope {
-        /// Instrument whose notes retrigger the envelope.
-        instrument_id: usize,
+        /// Track whose notes retrigger the envelope.
+        track_id: usize,
         /// Attack time.
         attack: TimeValue,
         /// Decay time.
@@ -236,10 +236,7 @@ impl Default for AutomationTrack {
     fn default() -> Self {
         Self {
             name: "Automation".to_owned(),
-            target: ParameterTarget::Instrument {
-                instrument_id: 0,
-                parameter: InstrumentParameter::Gain,
-            },
+            target: ParameterTarget::default(),
             start_step: 0,
             length_steps: 64,
             points: Vec::new(),

@@ -60,7 +60,8 @@ impl PulseForgeApp {
         let ruler_painter = ui.painter_at(ruler_rect);
         let absolute_start = self.piano_pan_steps;
         let visible_end = absolute_start.saturating_add(visible_steps);
-        let pattern = &self.project.patterns[self.selected_pattern];
+        let empty_clip = Clip::default();
+        let pattern = self.active_clip().unwrap_or(&empty_clip);
 
         for row in 0..PIANO_ROWS {
             let pitch = PIANO_MIN_PITCH + (PIANO_ROWS - 1 - row) as u8;
@@ -157,8 +158,7 @@ impl PulseForgeApp {
             }
         }
         for note in pattern.notes.iter().filter(|note| {
-            note.instrument_id == self.selected_instrument
-                && note.start_step < visible_end
+            note.start_step < visible_end
                 && note.start_step.saturating_add(note.duration_steps) > absolute_start
                 && note.pitch >= PIANO_MIN_PITCH
                 && usize::from(note.pitch - PIANO_MIN_PITCH) < PIANO_ROWS
@@ -180,8 +180,8 @@ impl PulseForgeApp {
             );
             painter.rect_filled(rect, 3.0, lane_color(self.selected_instrument));
             if self.is_selected(Selection::Note {
-                pattern: self.selected_pattern,
-                instrument: note.instrument_id,
+                track: self.selected_instrument,
+                clip: self.selected_clip,
                 pitch: note.pitch,
                 start_step: note.start_step,
             }) {
@@ -340,24 +340,22 @@ impl PulseForgeApp {
     ) {
         let (low_tick, high_tick) = (from_tick.min(to_tick), from_tick.max(to_tick));
         let (low_pitch, high_pitch) = (from_pitch.min(to_pitch), from_pitch.max(to_pitch));
-        let instrument = self.selected_instrument;
-        let hits: Vec<Selection> = self.project.patterns[self.selected_pattern]
-            .notes
+        let hits: Vec<Selection> = self
+            .active_notes()
             .iter()
             .filter(|note| {
                 // A note is selected when the band overlaps its body, not only
                 // when it starts inside, which is what users expect from a box.
                 let start = note.start_tick();
                 let end = start.saturating_add(note.duration_ticks().max(1));
-                note.instrument_id == instrument
-                    && end > low_tick
+                end > low_tick
                     && start <= high_tick
                     && note.pitch >= low_pitch
                     && note.pitch <= high_pitch
             })
             .map(|note| Selection::Note {
-                pattern: self.selected_pattern,
-                instrument: note.instrument_id,
+                track: self.selected_instrument,
+                clip: self.selected_clip,
                 pitch: note.pitch,
                 start_step: note.start_step,
             })
@@ -372,7 +370,7 @@ impl PulseForgeApp {
 
     /// Selects every note starting inside `[start, end)` steps.
     pub(crate) fn select_notes_in_range(&mut self, start: u64, end: u64) {
-        let Some(pattern) = self.project.patterns.get(self.selected_pattern) else {
+        let Some(pattern) = self.active_clip() else {
             return;
         };
         let hits: Vec<Selection> = pattern
@@ -380,8 +378,8 @@ impl PulseForgeApp {
             .iter()
             .filter(|note| note.start_step >= start && note.start_step < end)
             .map(|note| Selection::Note {
-                pattern: self.selected_pattern,
-                instrument: note.instrument_id,
+                track: self.selected_instrument,
+                clip: self.selected_clip,
                 pitch: note.pitch,
                 start_step: note.start_step,
             })

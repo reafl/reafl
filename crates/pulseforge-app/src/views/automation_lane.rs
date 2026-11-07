@@ -152,8 +152,7 @@ impl PulseForgeApp {
         // the engine's follower is read here and drawn as it moves.
         let lane_peak_level = self.peak_level(track_id);
         let project = &mut self.project;
-        let lanes = &project.lanes;
-        let patterns = &project.patterns;
+        let lanes = &project.tracks;
         let bpm = project.bpm;
         let snap_ticks = project.snap_ticks;
         let Some(track) = project.automation_tracks.get_mut(track_id) else {
@@ -314,7 +313,7 @@ impl PulseForgeApp {
             // A peak lane has no stored shape: it follows the audio of a mixer
             // track, so the clip stays blank and carries a caption saying what
             // it listens to.
-            let (channel_id, post_fx) = match &track.source {
+            let (track_id, post_fx) = match &track.source {
                 project::AutomationSource::Peak {
                     channel_id,
                     post_fx,
@@ -323,11 +322,11 @@ impl PulseForgeApp {
                 _ => (0, true),
             };
             let master_id = lanes.len();
-            let channel_name = if channel_id == master_id {
+            let channel_name = if track_id == master_id {
                 "Master".to_owned()
             } else {
                 lanes
-                    .get(channel_id)
+                    .get(track_id)
                     .map_or_else(|| "a missing track".to_owned(), |lane| lane.name.clone())
             };
             let side = if post_fx { "post FX" } else { "pre FX" };
@@ -403,7 +402,6 @@ impl PulseForgeApp {
                     &column_source,
                     target,
                     lanes,
-                    patterns,
                     bpm,
                     track.start_step,
                     step,

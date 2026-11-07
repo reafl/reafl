@@ -1,22 +1,61 @@
-//! The channel rack and its step sequencer.
+//! The channel rack: one row per source track, with its step lane.
 
 use crate::*;
 
 impl PulseForgeApp {
+    /// Draws the channel rack and its step lanes.
+    ///
+    /// # Parameters
+    ///
+    /// - `ui`: parent UI.
+    /// - `context`: egui context, used for pointer input.
     pub(crate) fn render_channel_rack(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
         profile_scope!("render_channel_rack");
         ui.horizontal(|ui| {
-            ui.label("Pattern");
-            let pattern_name = &self.project.patterns[self.selected_pattern].name;
-            egui::ComboBox::from_id_salt("channel_pattern")
-                .selected_text(pattern_name)
+            ui.label("Track");
+            let track_name = self
+                .project
+                .tracks
+                .get(self.selected_instrument)
+                .map_or("—", |track| track.name.as_str())
+                .to_owned();
+            egui::ComboBox::from_id_salt("rack_track")
+                .selected_text(track_name)
                 .show_ui(ui, |ui| {
-                    for (id, pattern) in self.project.patterns.iter().enumerate() {
-                        ui.selectable_value(&mut self.selected_pattern, id, &pattern.name);
+                    for (id, track) in self.project.tracks.iter().enumerate() {
+                        if track.is_group() {
+                            continue;
+                        }
+                        ui.selectable_value(&mut self.selected_instrument, id, &track.name);
+                    }
+                });
+            ui.label("Clip");
+            let clip_names: Vec<String> = self
+                .project
+                .tracks
+                .get(self.selected_instrument)
+                .map(|track| {
+                    track
+                        .clips
+                        .iter()
+                        .enumerate()
+                        .map(|(index, clip)| format!("{}: {}", index + 1, clip.name))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let selected_clip_name = clip_names
+                .get(self.selected_clip)
+                .cloned()
+                .unwrap_or_else(|| "—".to_owned());
+            egui::ComboBox::from_id_salt("rack_clip")
+                .selected_text(selected_clip_name)
+                .show_ui(ui, |ui| {
+                    for (index, name) in clip_names.iter().enumerate() {
+                        ui.selectable_value(&mut self.selected_clip, index, name);
                     }
                 });
             ui.label("Length (steps)");
-            let mut length = self.project.patterns[self.selected_pattern].length_steps;
+            let mut length = self.active_clip().map_or(16, |clip| clip.length_steps);
             if ui
                 .add(
                     egui::DragValue::new(&mut length)
@@ -25,17 +64,15 @@ impl PulseForgeApp {
                 )
                 .changed()
             {
-                self.project.patterns[self.selected_pattern].length_steps = length.max(1);
+                if let Some(clip) = self.active_clip_mut() {
+                    clip.length_steps = length.max(1);
+                }
                 self.sync_project();
             }
-            if ui.button("+ Instrument").clicked() {
-                let id = self.project.instruments.len();
-                self.project.instruments.push(Instrument {
-                    name: format!("Instrument {}", id + 1),
-                    default_mixer_lane: self.selected_lane.min(self.project.lanes.len() - 1),
-                    ..Instrument::default()
-                });
+            if ui.button("+ Track").clicked() {
+                let id = self.project.add_track();
                 self.selected_instrument = id;
+                self.selected_clip = 0;
                 self.selection = Some(Selection::Instrument(id));
                 self.sync_project();
             }
@@ -48,18 +85,21 @@ impl PulseForgeApp {
 
         let start = self.pattern_pan_steps;
         let end = start.saturating_add(VISIBLE_PATTERN_STEPS);
-        let instrument_count = self.project.instruments.len();
-        for instrument_id in 0..instrument_count {
+        let track_count = self.project.tracks.len();
+        for track_id in 0..track_count {
+            if self.project.tracks[track_id].is_group() {
+                continue;
+            }
             ui.horizontal(|ui| {
                 // Name and plug-in button are one control: clicking toggles the
-                // plug-in window, right-clicking opens the channel menu.
-                let instrument_color = self.instrument_color(instrument_id);
+                // plug-in window, right-clicking opens the track menu.
+                let track_color = self.instrument_color(track_id);
                 let (enabled, locked, solo) = {
-                    let item = &self.project.instruments[instrument_id];
-                    (item.enabled, item.locked, item.solo)
+                    let track = &self.project.tracks[track_id];
+                    (track.enabled, track.locked, track.solo)
                 };
-                let is_open = self.open_instrument_plugins.contains(&instrument_id);
-                let rename_here = self.renaming_instrument == Some(instrument_id);
+                let is_open = self.open_instrument_plugins.contains(&track_id);
+                let rename_here = self.renaming_instrument == Some(track_id);
                 if rename_here {
                     let buffer = &mut self.rename_buffer;
                     let response = ui.add_sized(
@@ -79,25 +119,25 @@ impl PulseForgeApp {
                         self.renaming_instrument = None;
                     }
                 } else {
-                    let label = egui::RichText::new(&self.project.instruments[instrument_id].name)
-                        .color(instrument_color);
+                    let label =
+                        egui::RichText::new(&self.project.tracks[track_id].name).color(track_color);
                     let response = ui.add_sized(
                         [110.0, 25.0],
                         egui::Button::new(label)
                             .fill(if is_open {
-                                instrument_color.gamma_multiply(0.35)
+                                track_color.gamma_multiply(0.35)
                             } else {
                                 egui::Color32::from_gray(32)
                             })
                             .sense(egui::Sense::click_and_drag()),
                     );
                     if response.clicked() {
-                        self.selected_instrument = instrument_id;
-                        self.selection = Some(Selection::Instrument(instrument_id));
+                        self.selected_instrument = track_id;
+                        self.selection = Some(Selection::Instrument(track_id));
                         if is_open {
-                            self.open_instrument_plugins.remove(&instrument_id);
+                            self.open_instrument_plugins.remove(&track_id);
                         } else {
-                            self.open_instrument_plugins.insert(instrument_id);
+                            self.open_instrument_plugins.insert(track_id);
                         }
                     }
                     if response.drag_started() {
@@ -107,11 +147,15 @@ impl PulseForgeApp {
                         items: vec![
                             MenuItem::Action {
                                 label: "Rename".to_owned(),
-                                action: ContextAction::RenameInstrument(instrument_id),
+                                action: ContextAction::RenameInstrument(track_id),
                             },
                             MenuItem::Action {
                                 label: "Remove".to_owned(),
-                                action: ContextAction::RemoveInstrument(instrument_id),
+                                action: ContextAction::RemoveInstrument(track_id),
+                            },
+                            MenuItem::Action {
+                                label: "Group in a folder".to_owned(),
+                                action: ContextAction::GroupTrack(track_id),
                             },
                             MenuItem::Folder {
                                 label: "Colour".to_owned(),
@@ -119,35 +163,35 @@ impl PulseForgeApp {
                                     MenuItem::Action {
                                         label: "Default".to_owned(),
                                         action: ContextAction::SetInstrumentColor {
-                                            instrument: instrument_id,
+                                            instrument: track_id,
                                             color: None,
                                         },
                                     },
                                     MenuItem::Action {
                                         label: "Teal".to_owned(),
                                         action: ContextAction::SetInstrumentColor {
-                                            instrument: instrument_id,
+                                            instrument: track_id,
                                             color: Some([112, 208, 190]),
                                         },
                                     },
                                     MenuItem::Action {
                                         label: "Amber".to_owned(),
                                         action: ContextAction::SetInstrumentColor {
-                                            instrument: instrument_id,
+                                            instrument: track_id,
                                             color: Some([230, 178, 92]),
                                         },
                                     },
                                     MenuItem::Action {
                                         label: "Rose".to_owned(),
                                         action: ContextAction::SetInstrumentColor {
-                                            instrument: instrument_id,
+                                            instrument: track_id,
                                             color: Some([226, 120, 140]),
                                         },
                                     },
                                     MenuItem::Action {
                                         label: "Violet".to_owned(),
                                         action: ContextAction::SetInstrumentColor {
-                                            instrument: instrument_id,
+                                            instrument: track_id,
                                             color: Some([160, 140, 230]),
                                         },
                                     },
@@ -156,7 +200,7 @@ impl PulseForgeApp {
                             MenuItem::Separator,
                             MenuItem::Action {
                                 label: "Choose plug-in?".to_owned(),
-                                action: ContextAction::OpenInstrumentPicker(instrument_id),
+                                action: ContextAction::OpenInstrumentPicker(track_id),
                             },
                         ],
                     };
@@ -173,7 +217,7 @@ impl PulseForgeApp {
                     rect,
                     3.0,
                     if enabled {
-                        instrument_color.gamma_multiply(0.45)
+                        track_color.gamma_multiply(0.45)
                     } else {
                         egui::Color32::from_gray(30)
                     },
@@ -206,18 +250,21 @@ impl PulseForgeApp {
                 }
                 tooltip(ui, &response, "Power - shift locks, ctrl solos");
                 if response.clicked() {
-                    self.toggle_instrument_switch(instrument_id);
+                    self.toggle_instrument_switch(track_id);
                 }
-                let instrument = &mut self.project.instruments[instrument_id];
-                let mut gain = instrument.gain;
-                let mut pan = instrument.pan;
-                let gain_target = ParameterTarget::Instrument {
-                    instrument_id,
-                    parameter: InstrumentParameter::Gain,
+                let (mut gain, mut pan) = self
+                    .project
+                    .tracks
+                    .get(track_id)
+                    .and_then(|track| track.generator())
+                    .map_or((0.8, 0.0), |generator| (generator.gain, generator.pan));
+                let gain_target = ParameterTarget::Track {
+                    track_id,
+                    parameter: TrackParameter::Generator(InstrumentParameter::Gain),
                 };
-                let pan_target = ParameterTarget::Instrument {
-                    instrument_id,
-                    parameter: InstrumentParameter::Pan,
+                let pan_target = ParameterTarget::Track {
+                    track_id,
+                    parameter: TrackParameter::Generator(InstrumentParameter::Pan),
                 };
                 let gain_changed = Knob::new("VOL", 0.0, 1.0, "")
                     .compact()
@@ -229,16 +276,20 @@ impl PulseForgeApp {
                     .with_default(0.0)
                     .automates(pan_target)
                     .show(ui, &mut pan);
-                if gain_changed {
-                    self.project.instruments[instrument_id].gain = gain;
+                if gain_changed || pan_changed {
+                    if let Some(generator) = self
+                        .project
+                        .tracks
+                        .get_mut(track_id)
+                        .and_then(|track| track.generator_mut())
+                    {
+                        generator.gain = gain;
+                        generator.pan = pan;
+                    }
                     self.sync_project();
                 }
-                if pan_changed {
-                    self.project.instruments[instrument_id].pan = pan;
-                    self.sync_project();
-                }
-                let pattern_id = self.selected_pattern;
-                let pattern_length = self.project.patterns[pattern_id].length_steps;
+                let clip_index = self.resolve_active_clip().unwrap_or(0);
+                let clip_length = self.active_clip().map_or(16, |clip| clip.length_steps);
                 // A fixed column keeps every row aligned; the rack window's scroll
                 // area handles overflow instead of squeezing the steps.
                 let step_width = STEP_COLUMN_WIDTH;
@@ -249,11 +300,15 @@ impl PulseForgeApp {
                 );
                 let painter = ui.painter_at(grid_rect);
                 for step in start..end {
-                    let active = self.project.has_step_note(pattern_id, instrument_id, step);
-                    let color = if step >= pattern_length {
+                    let active = self
+                        .project
+                        .tracks
+                        .get(track_id)
+                        .is_some_and(|track| step_is_active(track, clip_index, step));
+                    let color = if step >= clip_length {
                         egui::Color32::from_gray(19)
                     } else if active {
-                        lane_color(instrument_id)
+                        lane_color(track_id)
                     } else if step % 4 == 0 {
                         egui::Color32::from_gray(62)
                     } else {
@@ -303,38 +358,35 @@ impl PulseForgeApp {
                     );
                     if primary_pressed || secondary_pressed {
                         let enabled = primary_pressed;
-                        self.selected_instrument = instrument_id;
-                        self.selection = Some(Selection::Instrument(instrument_id));
-                        self.set_pattern_hit_for(pattern_id, instrument_id, step, enabled);
+                        self.selected_instrument = track_id;
+                        self.selected_clip = clip_index;
+                        self.selection = Some(Selection::Instrument(track_id));
+                        self.set_step_hit(track_id, clip_index, step, enabled);
                         self.rack_gesture = Some(RackGesture {
-                            pattern_id,
-                            instrument_id,
+                            track_id,
+                            clip_id: clip_index,
                             enabled,
                             last_step: step,
                         });
                     } else if (primary_down || secondary_down)
                         && grid_response.hovered()
                         && let Some(mut gesture) = self.rack_gesture
-                        && gesture.pattern_id == pattern_id
-                        && gesture.instrument_id == instrument_id
+                        && gesture.track_id == track_id
+                        && gesture.clip_id == clip_index
                         && gesture.last_step != step
                     {
                         let (first_step, last_step) = rack_step_span(gesture.last_step, step);
                         for painted_step in first_step..=last_step {
-                            self.set_pattern_hit_for(
-                                pattern_id,
-                                instrument_id,
-                                painted_step,
-                                gesture.enabled,
-                            );
+                            self.set_step_hit(track_id, clip_index, painted_step, gesture.enabled);
                         }
                         gesture.last_step = step;
                         self.rack_gesture = Some(gesture);
                     }
                 }
                 if ui.small_button("Piano").clicked() {
-                    self.selected_instrument = instrument_id;
-                    self.selection = Some(Selection::Instrument(instrument_id));
+                    self.selected_instrument = track_id;
+                    self.selected_clip = clip_index;
+                    self.selection = Some(Selection::Instrument(track_id));
                     self.windows.piano_roll = true;
                 }
             });
@@ -367,51 +419,75 @@ impl PulseForgeApp {
                 self.pattern_pan_steps = self.pattern_pan_steps.saturating_add_signed(direction);
             }
         });
-        ui.label("Left-drag paints steps on; right-drag paints off. Patterns are sparse and have no fixed step limit.");
+        ui.label(
+            "Left-drag paints steps on; right-drag paints off. Each row writes into the selected clip of its track.",
+        );
     }
 
-    /// Toggles one step of the step sequencer.
+    /// Toggles one step of a track's clip.
     ///
-    /// Steps are real C5 notes, which is what the rack draws and what the piano
-    /// roll shows; writing `step_hits` instead left the buttons looking dead.
-    pub(crate) fn set_pattern_hit_for(
+    /// # Parameters
+    ///
+    /// - `track_id`: the track whose clip is edited.
+    /// - `clip_index`: clip slot on that track.
+    /// - `step`: step inside the clip.
+    /// - `enabled`: `true` to add the hit, `false` to remove it.
+    ///
+    /// # Returns
+    ///
+    /// `true` when the clip changed.
+    pub(crate) fn set_step_hit(
         &mut self,
-        pattern_id: usize,
-        instrument_id: usize,
+        track_id: usize,
+        clip_index: usize,
         step: u64,
         enabled: bool,
     ) -> bool {
         let velocity = self.settings.default_velocity.clamp(1, 127);
-        let pattern = &mut self.project.patterns[pattern_id];
-        if enabled && step >= pattern.length_steps {
-            // Activating a step outside the range grows the pattern, so the range
+        let Some(clip) = self
+            .project
+            .tracks
+            .get_mut(track_id)
+            .and_then(|track| track.clips.get_mut(clip_index))
+        else {
+            return false;
+        };
+        if enabled && step >= clip.length_steps {
+            // Activating a step outside the range grows the clip, so the range
             // always covers what the user painted.
-            pattern.length_steps = step + 1;
+            clip.length_steps = step + 1;
         }
-        let existing = pattern.notes.iter().position(|note| {
-            note.instrument_id == instrument_id
-                && note.pitch == project::STEP_SEQUENCER_PITCH
-                && note.start_step == step
+        let existing = clip.notes.iter().position(|note| {
+            note.pitch == project::STEP_SEQUENCER_PITCH && note.start_step == step
         });
         match (enabled, existing) {
             (true, None) => {
-                let mut note = PianoNote {
-                    instrument_id,
-                    pitch: project::STEP_SEQUENCER_PITCH,
-                    duration_steps: 1,
-                    velocity,
-                    ..PianoNote::default()
-                };
+                let mut note = ClipNote::new(step, project::STEP_SEQUENCER_PITCH, velocity, 1);
                 note.set_start_tick(step.saturating_mul(16));
                 note.set_duration_ticks(16);
-                pattern.notes.push(note);
+                clip.notes.push(note);
                 true
             }
             (false, Some(index)) => {
-                pattern.notes.remove(index);
+                clip.notes.remove(index);
                 true
             }
             _ => false,
         }
     }
+}
+
+/// True when a track's clip holds a step-sequencer note at `step`.
+///
+/// # Parameters
+///
+/// - `track`: the track to inspect.
+/// - `clip_index`: clip slot on that track.
+/// - `step`: step to test.
+fn step_is_active(track: &Track, clip_index: usize, step: u64) -> bool {
+    track.clips.get(clip_index).is_some_and(|clip| {
+        clip.notes
+            .iter()
+            .any(|note| note.pitch == project::STEP_SEQUENCER_PITCH && note.start_step == step)
+    })
 }

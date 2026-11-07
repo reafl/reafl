@@ -10,6 +10,17 @@ impl Project {
             .any(|track| track.enabled && track.target == target)
     }
 
+    /// The enabled lane driving `target`, if any.
+    ///
+    /// # Parameters
+    ///
+    /// - `target`: the parameter address to look up.
+    pub fn automation_track_for(&self, target: ParameterTarget) -> Option<usize> {
+        self.automation_tracks
+            .iter()
+            .position(|track| track.enabled && track.target == target)
+    }
+
     /// Resolves a parameter at a transport position.
     ///
     /// # Parameters
@@ -134,34 +145,16 @@ impl Project {
             // Hosted values are injected by the UI layer, which owns the
             // plug-in instance; the engine keeps the automation curve.
             ParameterTarget::PluginParameter { .. } => None,
-            ParameterTarget::MixerChannel {
-                channel_id,
+            ParameterTarget::Track {
+                track_id,
                 parameter,
-            } => {
-                let (gain, pan, width, eq) = if channel_id == self.lanes.len() {
-                    (self.master.gain, self.master.pan, 1.0, self.master.eq)
-                } else {
-                    let lane = self.lanes.get(channel_id)?;
-                    (lane.gain, lane.pan, lane.width, lane.eq)
-                };
-                Some(match parameter {
-                    MixerParameter::Gain => gain,
-                    MixerParameter::Pan => pan,
-                    MixerParameter::Width => width,
-                    MixerParameter::LowDb => eq.low_db,
-                    MixerParameter::MidDb => eq.mid_db,
-                    MixerParameter::HighDb => eq.high_db,
-                    MixerParameter::Send { destination } => {
-                        *self.sends.get(channel_id)?.get(destination)?
-                    }
-                })
-            }
+            } => self.track_parameter_value(track_id, parameter),
             ParameterTarget::Clip {
-                lane_id,
+                track_id,
                 clip_id,
                 parameter,
             } => {
-                let clip = self.lanes.get(lane_id)?.clips.get(clip_id)?;
+                let clip = self.tracks.get(track_id)?.clips.get(clip_id)?;
                 Some(match parameter {
                     ClipParameter::Gain => clip.sample_gain,
                     ClipParameter::Pan => clip.sample_pan,
@@ -174,46 +167,6 @@ impl Project {
                 ClipParameter::Pitch => self.sample_pitch,
             }),
             ParameterTarget::Tempo => Some(self.bpm),
-            ParameterTarget::Instrument {
-                instrument_id,
-                parameter,
-            } => {
-                let instrument = self.instruments.get(instrument_id)?;
-                Some(match parameter {
-                    InstrumentParameter::Gain => instrument.gain,
-                    InstrumentParameter::Pan => instrument.pan,
-                    InstrumentParameter::CutoffHz => match instrument.synth_kind {
-                        SynthKind::Ms20 => instrument.ms20_cutoff_hz,
-                        SynthKind::JunoPoly => instrument.juno_cutoff_hz,
-                        _ => return None,
-                    },
-                    InstrumentParameter::Resonance => match instrument.synth_kind {
-                        SynthKind::Ms20 => instrument.ms20_resonance,
-                        SynthKind::JunoPoly => instrument.juno_resonance,
-                        _ => return None,
-                    },
-                    InstrumentParameter::PulseWidth => instrument.juno_pulse_width,
-                    InstrumentParameter::SubLevel => instrument.juno_sub_level,
-                    InstrumentParameter::Tone => instrument.m1_tone,
-                    InstrumentParameter::Decay => TimeValue {
-                        amount: match instrument.m1_decay_unit {
-                            TimeUnit::Steps => instrument.m1_decay_steps,
-                            TimeUnit::Milliseconds => instrument.m1_decay * 1_000.0,
-                        },
-                        unit: instrument.m1_decay_unit,
-                    }
-                    .seconds(self.bpm),
-                    InstrumentParameter::FmRatio => instrument.fm_ratio,
-                    InstrumentParameter::FmIndex => instrument.fm_index,
-                    InstrumentParameter::Waveform => instrument.signal_waveform.index() as f32,
-                    InstrumentParameter::ArpMode => instrument.arpeggio.mode.index() as f32,
-                    InstrumentParameter::ArpGate => instrument.arpeggio.gate,
-                    InstrumentParameter::ArpOctaves => f32::from(instrument.arpeggio.octaves),
-                    InstrumentParameter::ArpRate => instrument.arpeggio.rate.amount,
-                    InstrumentParameter::SynthNote => f32::from(instrument.synth_note),
-                    InstrumentParameter::VoiceCount => f32::from(instrument.voices.voice_count),
-                })
-            }
             ParameterTarget::AutomationLane {
                 track_id,
                 parameter,
@@ -280,14 +233,14 @@ impl Project {
                 }
             }
             ParameterTarget::InsertEffect {
-                channel_id,
+                track_id,
                 slot_id,
                 parameter,
             } => {
-                let slots = if channel_id == self.lanes.len() {
+                let slots = if track_id == self.tracks.len() {
                     &self.master.inserts
                 } else {
-                    &self.lanes.get(channel_id)?.inserts
+                    &self.tracks.get(track_id)?.inserts
                 };
                 let slot = slots.get(slot_id)?;
                 Some(match parameter {
@@ -306,4 +259,162 @@ impl Project {
             }
         }
     }
+
+    /// The stored value of one track control, without automation.
+    ///
+    /// # Parameters
+    ///
+    /// - `track_id`: index into [`Project::tracks`], or `tracks.len()` for the
+    ///   master bus (mixer controls only).
+    /// - `parameter`: which control to read.
+    ///
+    /// # Returns
+    ///
+    /// The value, or `None` when the track is missing or the parameter does not
+    /// exist on it (for example a generator control on a group).
+    pub fn track_parameter_value(&self, track_id: usize, parameter: TrackParameter) -> Option<f32> {
+        let is_master = track_id == self.tracks.len();
+        if is_master {
+            let TrackParameter::Mixer(parameter) = parameter else {
+                return None;
+            };
+            return Some(match parameter {
+                MixerParameter::Gain => self.master.gain,
+                MixerParameter::Pan => self.master.pan,
+                MixerParameter::Width => 1.0,
+                MixerParameter::LowDb => self.master.eq.low_db,
+                MixerParameter::MidDb => self.master.eq.mid_db,
+                MixerParameter::HighDb => self.master.eq.high_db,
+                MixerParameter::Send { destination } => {
+                    *self.sends.get(track_id)?.get(destination)?
+                }
+            });
+        }
+        let track = self.tracks.get(track_id)?;
+        match parameter {
+            TrackParameter::Mixer(parameter) => Some(match parameter {
+                MixerParameter::Gain => track.gain,
+                MixerParameter::Pan => track.pan,
+                MixerParameter::Width => track.width,
+                MixerParameter::LowDb => track.eq.low_db,
+                MixerParameter::MidDb => track.eq.mid_db,
+                MixerParameter::HighDb => track.eq.high_db,
+                MixerParameter::Send { destination } => {
+                    *self.sends.get(track_id)?.get(destination)?
+                }
+            }),
+            TrackParameter::MidiFx(parameter) => Some(match parameter {
+                MidiFxParameter::Transpose => track.midi_fx.transpose as f32,
+                MidiFxParameter::VelocityScale => track.midi_fx.velocity_scale,
+            }),
+            TrackParameter::Generator(parameter) => {
+                let generator = track.generator()?;
+                generator_parameter_value(generator, parameter, self.bpm)
+            }
+        }
+    }
+
+    /// The value a track actually uses at a transport position.
+    ///
+    /// # Parameters
+    ///
+    /// - `track_id`: index into [`Project::tracks`].
+    /// - `parameter`: which control to resolve.
+    /// - `step`: transport position in steps.
+    ///
+    /// # Returns
+    ///
+    /// Resolution order: the track's own automation lane, then the lane of the
+    /// nearest ancestor group that has this parameter, then the stored value.
+    /// This is the single evaluation path shared by the engine and the UI, so
+    /// drawn curves and rendered audio cannot drift apart.
+    pub fn effective_track_value(
+        &self,
+        track_id: usize,
+        parameter: TrackParameter,
+        step: f64,
+    ) -> Option<f32> {
+        let base = self.track_parameter_value(track_id, parameter)?;
+        let own = ParameterTarget::Track {
+            track_id,
+            parameter,
+        };
+        if self.has_automation(own) {
+            return Some(self.automated_value(own, base, step));
+        }
+        for ancestor in Track::ancestors(&self.tracks, track_id) {
+            if !self
+                .tracks
+                .get(ancestor)
+                .is_some_and(|track| track.is_group())
+            {
+                continue;
+            }
+            if !self.tracks[ancestor].supports(parameter) {
+                continue;
+            }
+            let inherited = ParameterTarget::Track {
+                track_id: ancestor,
+                parameter,
+            };
+            if self.has_automation(inherited) {
+                let group_base = self.track_parameter_value(ancestor, parameter)?;
+                return Some(self.automated_value(inherited, group_base, step));
+            }
+        }
+        Some(base)
+    }
+}
+
+/// Reads one generator control.
+///
+/// # Parameters
+///
+/// - `generator`: the generator to read.
+/// - `parameter`: which control to read.
+/// - `bpm`: tempo, needed to convert musical decay times to seconds.
+///
+/// # Returns
+///
+/// The value, or `None` when the current model has no such control.
+fn generator_parameter_value(
+    generator: &Generator,
+    parameter: InstrumentParameter,
+    bpm: f32,
+) -> Option<f32> {
+    if !generator.supports(parameter) {
+        return None;
+    }
+    Some(match parameter {
+        InstrumentParameter::Gain => generator.gain,
+        InstrumentParameter::Pan => generator.pan,
+        InstrumentParameter::CutoffHz => match generator.kind.synth_kind() {
+            Some(SynthKind::JunoPoly) => generator.juno_cutoff_hz,
+            _ => generator.ms20_cutoff_hz,
+        },
+        InstrumentParameter::Resonance => match generator.kind.synth_kind() {
+            Some(SynthKind::JunoPoly) => generator.juno_resonance,
+            _ => generator.ms20_resonance,
+        },
+        InstrumentParameter::PulseWidth => generator.juno_pulse_width,
+        InstrumentParameter::SubLevel => generator.juno_sub_level,
+        InstrumentParameter::Tone => generator.m1_tone,
+        InstrumentParameter::Decay => TimeValue {
+            amount: match generator.m1_decay_unit {
+                TimeUnit::Steps => generator.m1_decay_steps,
+                TimeUnit::Milliseconds => generator.m1_decay * 1_000.0,
+            },
+            unit: generator.m1_decay_unit,
+        }
+        .seconds(bpm),
+        InstrumentParameter::FmRatio => generator.fm_ratio,
+        InstrumentParameter::FmIndex => generator.fm_index,
+        InstrumentParameter::Waveform => generator.signal_waveform.index() as f32,
+        InstrumentParameter::ArpMode => generator.arpeggio.mode.index() as f32,
+        InstrumentParameter::ArpGate => generator.arpeggio.gate,
+        InstrumentParameter::ArpOctaves => f32::from(generator.arpeggio.octaves),
+        InstrumentParameter::ArpRate => generator.arpeggio.rate.amount,
+        InstrumentParameter::SynthNote => f32::from(generator.synth_note),
+        InstrumentParameter::VoiceCount => f32::from(generator.voices.voice_count),
+    })
 }

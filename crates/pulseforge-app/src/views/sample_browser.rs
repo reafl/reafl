@@ -85,26 +85,26 @@ impl PulseForgeApp {
 
     /// Assigns a built-in drum sample to the selected instrument.
     pub(crate) fn load_default_sample_into_selected(&mut self, kind: DefaultSample) {
-        let instrument_id = self
-            .selected_instrument
-            .min(self.project.instruments.len() - 1);
+        let instrument_id = self.selected_instrument.min(self.project.tracks.len() - 1);
         self.push_history();
-        let instrument = &mut self.project.instruments[instrument_id];
-        instrument.default_sample = kind;
-        instrument.sample_path.clear();
-        instrument.name = default_sample_label(kind).to_owned();
+        let track = &mut self.project.tracks[instrument_id];
+        track.name = default_sample_label(kind).to_owned();
+        if let Some(generator) = track.generator_mut() {
+            generator.kind = GeneratorKind::Sample(kind);
+            generator.sample_path.clear();
+        }
         self.sync_project();
         self.load_instrument_samples();
         self.status = format!("{} loaded.", default_sample_label(kind));
     }
 
     pub(crate) fn load_sample_into_selected(&mut self, path: &str) {
-        let instrument_id = self
-            .selected_instrument
-            .min(self.project.instruments.len() - 1);
+        let instrument_id = self.selected_instrument.min(self.project.tracks.len() - 1);
         self.push_history();
-        self.project.instruments[instrument_id].sample_path = path.to_owned();
-        self.project.instruments[instrument_id].default_sample = DefaultSample::None;
+        if let Some(generator) = self.project.tracks[instrument_id].generator_mut() {
+            generator.sample_path = path.to_owned();
+            generator.kind = GeneratorKind::Sample(DefaultSample::None);
+        }
         self.sync_project();
         self.load_instrument_sample(instrument_id);
     }

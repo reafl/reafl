@@ -16,8 +16,8 @@ use pulseforge_profiling::SlotCounters;
 pub const HOST_BLOCK: usize = 64;
 
 /// Stable host id for an instrument's plug-in slot.
-pub fn instrument_host_id(instrument_id: usize) -> u64 {
-    instrument_id as u64
+pub fn instrument_host_id(track_id: usize) -> u64 {
+    track_id as u64
 }
 
 /// Stable host id for one insert slot on one mixer lane.

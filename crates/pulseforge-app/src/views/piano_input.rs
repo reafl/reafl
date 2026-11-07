@@ -146,23 +146,19 @@ impl PulseForgeApp {
                 .floor()
                 .max(0.0) as usize;
             let pitch = PIANO_MIN_PITCH + (PIANO_ROWS - 1 - row.min(PIANO_ROWS - 1)) as u8;
-            let hovered_note = self.project.patterns[self.selected_pattern]
-                .notes
-                .iter()
-                .find(|note| {
-                    if note.instrument_id != self.selected_instrument || note.pitch != pitch {
-                        return false;
-                    }
-                    let start_x = grid_rect.left()
-                        + (note.start_tick() as f32 / 16.0 - self.piano_pan_steps as f32)
-                            * step_width;
-                    let end_x = grid_rect.left()
-                        + ((note.start_tick().saturating_add(note.duration_ticks())) as f32 / 16.0
-                            - self.piano_pan_steps as f32)
-                            * step_width;
-                    pointer.x >= start_x.max(grid_rect.left())
-                        && pointer.x <= end_x.min(grid_rect.right())
-                });
+            let hovered_note = self.active_notes().iter().find(|note| {
+                if note.pitch != pitch {
+                    return false;
+                }
+                let start_x = grid_rect.left()
+                    + (note.start_tick() as f32 / 16.0 - self.piano_pan_steps as f32) * step_width;
+                let end_x = grid_rect.left()
+                    + ((note.start_tick().saturating_add(note.duration_ticks())) as f32 / 16.0
+                        - self.piano_pan_steps as f32)
+                        * step_width;
+                pointer.x >= start_x.max(grid_rect.left())
+                    && pointer.x <= end_x.min(grid_rect.right())
+            });
             if let Some(note) = hovered_note {
                 let note_start_x = grid_rect.left()
                     + (note.start_tick() as f32 / 16.0 - self.piano_pan_steps as f32) * step_width;

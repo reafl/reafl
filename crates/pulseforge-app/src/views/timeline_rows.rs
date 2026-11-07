@@ -21,7 +21,7 @@ impl PulseForgeApp {
         geo: TimelineGeometry,
         rows: &[RowSpan],
     ) {
-        let lane_count = self.project.lanes.len();
+        let track_count = self.project.tracks.len();
         let mut automation_changed = false;
         let mut clip_context_action = None;
         let mut duplicate_clip_request = None;
@@ -52,7 +52,7 @@ impl PulseForgeApp {
             let ArrangementRow::Lane(lane_id) = row_kind else {
                 unreachable!()
             };
-            if lane_id >= lane_count {
+            if lane_id >= track_count {
                 continue;
             }
             let row = egui::Rect::from_min_size(
@@ -68,16 +68,16 @@ impl PulseForgeApp {
                     egui::Color32::from_gray(27)
                 },
             );
-            let collapsed = self.project.lanes[lane_id].automation_collapsed;
+            let collapsed = self.project.tracks[lane_id].automation_collapsed;
             painter.text(
                 egui::pos2(geo.rect.left() + 24.0, y + row_height * 0.5),
                 egui::Align2::LEFT_CENTER,
-                &self.project.lanes[lane_id].name,
+                &self.project.tracks[lane_id].name,
                 egui::FontId::proportional(13.0),
                 lane_color(lane_id),
             );
             let (lane_enabled, lane_locked, lane_solo) = {
-                let lane = &self.project.lanes[lane_id];
+                let lane = &self.project.tracks[lane_id];
                 (lane.enabled, lane.locked, lane.solo)
             };
             let has_automation = self
@@ -145,7 +145,7 @@ impl PulseForgeApp {
                     button_rect,
                     egui::Id::new(("lane_power", lane_id)),
                     &PowerSwitch {
-                        name: &self.project.lanes[lane_id].name,
+                        name: &self.project.tracks[lane_id].name,
                         enabled: lane_enabled,
                         locked: lane_locked,
                         solo: lane_solo,
@@ -155,21 +155,21 @@ impl PulseForgeApp {
                     },
                 );
                 if intent.toggle {
-                    self.project.lanes[lane_id].enabled = !lane_enabled;
+                    self.project.tracks[lane_id].enabled = !lane_enabled;
                 }
                 if intent.lock {
-                    self.project.lanes[lane_id].locked = !lane_locked;
+                    self.project.tracks[lane_id].locked = !lane_locked;
                 }
                 if intent.solo {
-                    self.project.lanes[lane_id].solo = !lane_solo;
+                    self.project.tracks[lane_id].solo = !lane_solo;
                 }
                 if intent.any() {
                     self.push_history();
                     self.sync_project();
                     self.status = format!(
                         "{} {}.",
-                        self.project.lanes[lane_id].name,
-                        if self.project.lanes[lane_id].enabled {
+                        self.project.tracks[lane_id].name,
+                        if self.project.tracks[lane_id].enabled {
                             "enabled"
                         } else {
                             "disabled"
@@ -250,7 +250,7 @@ impl PulseForgeApp {
             }
             if resize_response.dragged() {
                 let delta = context.input(|input| input.pointer.delta().y);
-                if let Some(track) = self.project.lanes.get_mut(lane_id) {
+                if let Some(track) = self.project.tracks.get_mut(lane_id) {
                     track.height = (track.height + delta).clamp(34.0, 260.0);
                 }
                 self.track_resize_dirty = true;
@@ -260,7 +260,7 @@ impl PulseForgeApp {
                 self.sync_project();
             }
 
-            for (clip_index, clip) in self.project.lanes[lane_id].clips.iter().enumerate() {
+            for (clip_index, clip) in self.project.tracks[lane_id].clips.iter().enumerate() {
                 let clip_end = clip.start_step.saturating_add(clip.length_steps);
                 if clip_end <= geo.start_step
                     || clip.start_step
@@ -288,9 +288,7 @@ impl PulseForgeApp {
                     egui::Id::new(("arrangement_clip", lane_id, clip_index)),
                     egui::Sense::click(),
                 );
-                if clip_response.double_clicked()
-                    && matches!(&clip.source, ClipSource::Audio { .. })
-                {
+                if clip_response.double_clicked() && clip.is_audio() {
                     self.sample_clip_window = Some((lane_id, clip_index));
                 }
                 if clip_response.clicked() {
@@ -300,7 +298,7 @@ impl PulseForgeApp {
                     }
                     self.selected_lane = lane_id;
                     self.selection = Some(Selection::Clip {
-                        lane: lane_id,
+                        track: lane_id,
                         clip: clip_index,
                     });
                 }
@@ -320,7 +318,7 @@ impl PulseForgeApp {
                         },
                     },
                 ];
-                if matches!(&clip.source, ClipSource::Pattern { .. }) {
+                if clip.is_note_clip() {
                     clip_menu_items.push(MenuItem::Folder {
                         label: "Pattern".to_owned(),
                         items: vec![MenuItem::Action {
@@ -346,16 +344,15 @@ impl PulseForgeApp {
                     items: clip_menu_items,
                 };
                 clip_response.context_menu(|ui| clip_context_action = clip_menu.show(ui));
-                let color = match &clip.source {
-                    ClipSource::Pattern { pattern_id } => lane_color(*pattern_id),
-                    ClipSource::Audio { .. } => {
-                        active_theme(context).color(active_theme(context).note)
-                    }
+                let color = if clip.is_audio() {
+                    active_theme(context).color(active_theme(context).note)
+                } else {
+                    lane_color(lane_id)
                 };
                 // Clips in the multi-selection are drawn lifted as well, so a
                 // range selected with ctrl reads as one block.
                 let selected = self.is_selected(Selection::Clip {
-                    lane: lane_id,
+                    track: lane_id,
                     clip: clip_index,
                 });
                 let lift = if selected {
@@ -369,7 +366,6 @@ impl PulseForgeApp {
                     painter,
                     clip_rect,
                     clip,
-                    &self.project.patterns,
                     clip_visible_start,
                     clip_visible_end,
                     geo.step_width,
@@ -389,17 +385,13 @@ impl PulseForgeApp {
                     ),
                     egui::StrokeKind::Inside,
                 );
-                let name = match &clip.source {
-                    ClipSource::Pattern { pattern_id } => self
-                        .project
-                        .patterns
-                        .get(*pattern_id)
-                        .map_or_else(|| "Pattern".to_owned(), |pattern| pattern.name.clone()),
-                    ClipSource::Audio { path } => std::path::Path::new(path)
+                let name = match &clip.audio_path {
+                    Some(path) => std::path::Path::new(path)
                         .file_stem()
                         .and_then(|name| name.to_str())
                         .unwrap_or("Audio")
                         .to_owned(),
+                    None => clip.name.clone(),
                 };
                 painter.text(
                     clip_rect.left_center() + egui::vec2(8.0, 0.0),

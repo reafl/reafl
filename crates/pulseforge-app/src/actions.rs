@@ -6,7 +6,7 @@ impl PulseForgeApp {
     pub(crate) fn apply_context_action(&mut self, action: ContextAction) {
         match action {
             ContextAction::ToggleLanePin(lane) => {
-                if let Some(lane) = self.project.lanes.get_mut(lane) {
+                if let Some(lane) = self.project.tracks.get_mut(lane) {
                     lane.pinned = !lane.pinned;
                 }
             }
@@ -14,16 +14,16 @@ impl PulseForgeApp {
                 disconnect_channel(&mut self.project.sends, channel);
             }
             ContextAction::SelectChannel(channel) => {
-                if channel <= self.project.lanes.len() {
+                if channel <= self.project.tracks.len() {
                     self.selected_mixer_channel = channel;
                     self.selection = Some(Selection::MixerChannel(channel));
-                    if channel < self.project.lanes.len() {
+                    if channel < self.project.tracks.len() {
                         self.selected_lane = channel;
                     }
                 }
             }
             ContextAction::DeleteClip { lane, clip } => {
-                if let Some(lane) = self.project.lanes.get_mut(lane)
+                if let Some(lane) = self.project.tracks.get_mut(lane)
                     && clip < lane.clips.len()
                 {
                     lane.clips.remove(clip);
@@ -47,17 +47,17 @@ impl PulseForgeApp {
                 let target = if up {
                     lane.checked_sub(1)
                 } else {
-                    Some(lane + 1).filter(|target| *target < self.project.lanes.len())
+                    Some(lane + 1).filter(|target| *target < self.project.tracks.len())
                 };
                 if let Some(target) = target {
                     self.push_history();
-                    self.project.move_lane(lane, target);
+                    self.project.move_track(lane, target);
                     self.selected_lane = target;
                     self.selection = Some(Selection::MixerChannel(target));
                 }
             }
             ContextAction::ToggleTrackAutomation(lane) => {
-                if let Some(track) = self.project.lanes.get_mut(lane) {
+                if let Some(track) = self.project.tracks.get_mut(lane) {
                     track.automation_collapsed = !track.automation_collapsed;
                 }
             }
@@ -80,7 +80,7 @@ impl PulseForgeApp {
             }
             ContextAction::NewAutomationForTrack(lane) => {
                 let target = ParameterTarget::InsertEffect {
-                    channel_id: lane,
+                    track_id: lane,
                     slot_id: 0,
                     parameter: EffectParameter::Mix,
                 };
@@ -89,7 +89,7 @@ impl PulseForgeApp {
                     name: format!(
                         "{} ? Insert 1 mix",
                         self.project
-                            .lanes
+                            .tracks
                             .get(lane)
                             .map_or("Track", |track| track.name.as_str())
                     ),
@@ -117,21 +117,20 @@ impl PulseForgeApp {
                 self.renaming_instrument = Some(instrument);
                 self.rename_buffer = self
                     .project
-                    .instruments
+                    .tracks
                     .get(instrument)
                     .map_or(String::new(), |item| item.name.clone());
                 return;
             }
             ContextAction::RemoveInstrument(instrument) => {
-                if self.project.instruments.len() > 1 && instrument < self.project.instruments.len()
-                {
+                if self.project.tracks.len() <= 1 || instrument >= self.project.tracks.len() {
+                    self.status = "A project needs at least one track.".to_owned();
+                } else {
                     self.push_history();
                     let host_id = pulseforge_core::hosted::instrument_host_id(instrument);
                     self.unload_host(host_id);
-                    self.project.instruments.remove(instrument);
-                    self.open_instrument_plugins.remove(&instrument);
-                    // Host ids are instrument indices, so every id above the
-                    // removed one shifts down.
+                    // Host ids are track indices, so every id above the removed
+                    // one shifts down.
                     let mut hosted = std::mem::take(&mut self.hosted);
                     let mut meta = std::mem::take(&mut self.hosted_meta);
                     fn renumber<T>(map: &mut std::collections::HashMap<u64, T>, removed: u64) {
@@ -151,51 +150,23 @@ impl PulseForgeApp {
                     self.hosted = hosted;
                     self.hosted_meta = meta;
                     self.attached_editor = None;
+                    // The project handles sends, parents and automation itself.
+                    self.project.remove_track(instrument);
+                    self.open_instrument_plugins =
+                        std::mem::take(&mut self.open_instrument_plugins)
+                            .into_iter()
+                            .filter_map(|id| match id.cmp(&instrument) {
+                                std::cmp::Ordering::Less => Some(id),
+                                std::cmp::Ordering::Equal => None,
+                                std::cmp::Ordering::Greater => Some(id - 1),
+                            })
+                            .collect();
                     self.selected_instrument = self
                         .selected_instrument
-                        .min(self.project.instruments.len() - 1);
+                        .min(self.project.tracks.len().saturating_sub(1));
+                    self.selected_clip = 0;
                     self.selection = None;
-                    // Every remaining reference to an instrument is by index, so
-                    // they all shift with the removal. A dangling id used to make
-                    // the engine and the automation UI index past the end.
-                    let shift = |route: &mut usize| {
-                        if *route == instrument {
-                            *route = instrument.saturating_sub(1);
-                        } else if *route > instrument {
-                            *route -= 1;
-                        }
-                    };
-                    for route in &mut self.project.midi_routes {
-                        shift(route);
-                    }
-                    if let Ok(mut routes) = self.midi_routes.lock() {
-                        for route in routes.iter_mut() {
-                            shift(route);
-                        }
-                    }
-                    self.project.automation_tracks.retain_mut(|track| {
-                        if let ParameterTarget::Instrument { instrument_id, .. } = &mut track.target
-                        {
-                            if *instrument_id == instrument {
-                                return false;
-                            }
-                            if *instrument_id > instrument {
-                                *instrument_id -= 1;
-                            }
-                        }
-                        if let project::AutomationSource::MidiEnvelope { instrument_id, .. } =
-                            &mut track.source
-                        {
-                            if *instrument_id == instrument {
-                                return false;
-                            }
-                            if *instrument_id > instrument {
-                                *instrument_id -= 1;
-                            }
-                        }
-                        true
-                    });
-                    let last = self.project.instruments.len().saturating_sub(1);
+                    let last = self.project.tracks.len().saturating_sub(1);
                     for route in &mut self.project.midi_routes {
                         *route = (*route).min(last);
                     }
@@ -204,12 +175,17 @@ impl PulseForgeApp {
                             *route = (*route).min(last);
                         }
                     }
+                }
+            }
+            ContextAction::GroupTrack(track) => {
+                if self.project.group_track(track).is_some() {
+                    self.status = "Grouped the track in a new folder.".to_owned();
                 } else {
-                    self.status = "A project needs at least one instrument.".to_owned();
+                    self.status = "That track no longer exists.".to_owned();
                 }
             }
             ContextAction::SetInstrumentColor { instrument, color } => {
-                if let Some(item) = self.project.instruments.get_mut(instrument) {
+                if let Some(item) = self.project.tracks.get_mut(instrument) {
                     item.color = color;
                 }
             }
@@ -221,8 +197,8 @@ impl PulseForgeApp {
             ContextAction::ToggleChannelEnabled(channel) => {
                 let solo = self.mod_ctrl;
                 let lock = self.mod_shift;
-                if channel < self.project.lanes.len() {
-                    let lane = &mut self.project.lanes[channel];
+                if channel < self.project.tracks.len() {
+                    let lane = &mut self.project.tracks[channel];
                     if lock {
                         lane.locked = !lane.locked;
                     } else if solo {
@@ -284,7 +260,7 @@ impl PulseForgeApp {
     }
 
     pub(crate) fn duplicate_selected_clip(&mut self) {
-        if let Some(Selection::Clip { lane, clip }) = self.selection {
+        if let Some(Selection::Clip { track: lane, clip }) = self.selection {
             self.duplicate_clip(lane, clip);
         } else {
             self.status = "Select an arrangement clip to duplicate.".to_owned();
@@ -292,8 +268,8 @@ impl PulseForgeApp {
     }
 
     pub(crate) fn delete_selected_clip(&mut self) {
-        if let Some(Selection::Clip { lane, clip }) = self.selection
-            && let Some(lane) = self.project.lanes.get_mut(lane)
+        if let Some(Selection::Clip { track: lane, clip }) = self.selection
+            && let Some(lane) = self.project.tracks.get_mut(lane)
             && clip < lane.clips.len()
         {
             lane.clips.remove(clip);
@@ -305,20 +281,17 @@ impl PulseForgeApp {
     pub(crate) fn duplicate_clip(&mut self, lane: usize, clip: usize) {
         let audio_path = self
             .project
-            .lanes
+            .tracks
             .get(lane)
             .and_then(|lane| lane.clips.get(clip))
-            .and_then(|clip| match &clip.source {
-                ClipSource::Audio { path } => Some(path.clone()),
-                ClipSource::Pattern { .. } => None,
-            });
+            .and_then(|clip| clip.audio_path.clone());
         let Some(duplicate_id) = self.project.duplicate_clip_after(lane, clip) else {
             self.status = "That arrangement clip is no longer available.".to_owned();
             return;
         };
         self.selected_lane = lane;
         self.selection = Some(Selection::Clip {
-            lane,
+            track: lane,
             clip: duplicate_id,
         });
         self.sync_project();
@@ -343,15 +316,17 @@ impl PulseForgeApp {
         }
     }
 
-    pub(crate) fn make_clip_pattern_unique(&mut self, lane: usize, clip: usize) {
-        let Some(pattern_id) = self.project.make_clip_pattern_unique(lane, clip) else {
-            self.status = "Only pattern clips can be made unique.".to_owned();
-            return;
-        };
-        self.selected_lane = lane;
-        self.selected_pattern = pattern_id;
-        self.selection = Some(Selection::Clip { lane, clip });
+    /// Selects a clip and notes that it already owns its notes.
+    ///
+    /// # Parameters
+    ///
+    /// - `track`: track owning the clip.
+    /// - `clip`: clip index inside the track.
+    pub(crate) fn make_clip_pattern_unique(&mut self, track: usize, clip: usize) {
+        self.selected_lane = track;
+        self.selected_clip = clip;
+        self.selection = Some(Selection::Clip { track, clip });
         self.sync_project();
-        self.status = "Made this clip's pattern unique.".to_owned();
+        self.status = "Clips own their notes, so they are always unique.".to_owned();
     }
 }
