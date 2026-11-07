@@ -153,7 +153,6 @@ impl PulseForgeApp {
         let lane_peak_level = self.peak_level(track_id);
         let project = &mut self.project;
         let lanes = &project.tracks;
-        let patterns = &project.patterns;
         let bpm = project.bpm;
         let snap_ticks = project.snap_ticks;
         let Some(track) = project.automation_tracks.get_mut(track_id) else {
@@ -316,10 +315,10 @@ impl PulseForgeApp {
             // it listens to.
             let (track_id, post_fx) = match &track.source {
                 project::AutomationSource::Peak {
-                    track_id,
+                    channel_id,
                     post_fx,
                     ..
-                } => (*track_id, *post_fx),
+                } => (*channel_id, *post_fx),
                 _ => (0, true),
             };
             let master_id = lanes.len();
@@ -403,7 +402,6 @@ impl PulseForgeApp {
                     &column_source,
                     target,
                     lanes,
-                    patterns,
                     bpm,
                     track.start_step,
                     step,

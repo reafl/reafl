@@ -82,7 +82,7 @@ impl PulseForgeApp {
                             .clicked()
                         {
                             track.source = project::AutomationSource::MidiEnvelope {
-                                instrument_id: 0,
+                                track_id: 0,
                                 attack: project::TimeValue {
                                     amount: 5.0,
                                     unit: project::TimeUnit::Milliseconds,
@@ -172,7 +172,7 @@ impl PulseForgeApp {
                             .clicked()
                         {
                             track.source = project::AutomationSource::Peak {
-                                track_id: 0,
+                                channel_id: 0,
                                 post_fx: true,
                                 attack: project::TimeValue {
                                     amount: 5.0,
@@ -498,7 +498,7 @@ impl PulseForgeApp {
                         });
                     }
                     project::AutomationSource::Peak {
-                        track_id,
+                        channel_id,
                         post_fx,
                         attack,
                         release,
@@ -506,21 +506,21 @@ impl PulseForgeApp {
                         depth,
                     } => {
                         let master_id = self.project.tracks.len();
-                        *track_id = (*track_id).min(master_id);
+                        *channel_id = (*channel_id).min(master_id);
                         ui.horizontal(|ui| {
                             ui.label("Track");
-                            let selected = if *track_id == master_id {
+                            let selected = if *channel_id == master_id {
                                 "Master".to_owned()
                             } else {
-                                self.project.tracks[*track_id].name.clone()
+                                self.project.tracks[*channel_id].name.clone()
                             };
-                            egui::ComboBox::from_id_salt(("automation_peak_channel", track_id))
+                            egui::ComboBox::from_id_salt(("automation_peak_channel", *channel_id))
                                 .selected_text(selected)
                                 .show_ui(ui, |ui| {
                                     for (id, lane) in self.project.tracks.iter().enumerate() {
-                                        ui.selectable_value(track_id, id, &lane.name);
+                                        ui.selectable_value(channel_id, id, &lane.name);
                                     }
-                                    ui.selectable_value(track_id, master_id, "Master");
+                                    ui.selectable_value(channel_id, master_id, "Master");
                                 });
                             changed |= ui
                                 .checkbox(post_fx, "Post FX")
@@ -579,7 +579,7 @@ impl PulseForgeApp {
                 } else if track.source.is_live() {
                     let channel = match &track.source {
                         project::AutomationSource::Peak {
-                            track_id,
+                            channel_id: track_id,
                             post_fx,
                             ..
                         } => {

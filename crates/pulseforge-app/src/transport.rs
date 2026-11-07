@@ -130,10 +130,8 @@ impl PulseForgeApp {
         let position = self.playhead_display.max(0.0);
         if self.selected_clip_playback {
             let length = self
-                .project
-                .tracks
-                .get(self.selected_clip)
-                .map_or(1, |pattern| pattern.length_steps.max(1));
+                .active_clip()
+                .map_or(1, |clip| clip.length_steps.max(1));
             position % length as f64
         } else if self.playing
             && self.loop_enabled

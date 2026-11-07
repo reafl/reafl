@@ -175,7 +175,14 @@ impl PulseForgeApp {
                         }
                     }
                 }
-            }            ContextAction::SetInstrumentColor { instrument, color } => {
+            }            ContextAction::GroupTrack(track) => {
+                if self.project.group_track(track).is_some() {
+                    self.status = "Grouped the track in a new folder.".to_owned();
+                } else {
+                    self.status = "That track no longer exists.".to_owned();
+                }
+            }
+            ContextAction::SetInstrumentColor { instrument, color } => {
                 if let Some(item) = self.project.tracks.get_mut(instrument) {
                     item.color = color;
                 }
