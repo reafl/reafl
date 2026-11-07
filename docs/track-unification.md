@@ -136,6 +136,14 @@ Status: **all nine steps have landed** on `dev_abletonworkflow`; `cargo check
 * A peak-follower lane that drives its own track's generator gain with
   `base = 0.0` silences the track and so can never see audio; use a non-zero
   base when a lane feeds back into its own channel.
+* Solo and mute are resolved through the tree, not per list entry:
+  `track_audible` keeps a folder in the signal path while a descendant is
+  soloed, lets a soloed folder pass its whole subtree, and treats a disabled
+  folder as muted for its children. Anything else would silence the very track
+  the user soloed.
+* Live MIDI on a folder fans out like a clip on that folder does, through
+  `handle_midi_note` and the same `midi_chain_note` path, so note-off matches
+  the transposed pitch.
 
 ## Compatibility
 

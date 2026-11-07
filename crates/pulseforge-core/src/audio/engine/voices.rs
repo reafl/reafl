@@ -487,6 +487,10 @@ impl AudioEngine {
 
     /// Handles a live MIDI note from the UI.
     ///
+    /// A note played on a folder behaves like a clip on that folder: it fans out
+    /// to every source track below it, passing the folder's MIDI FX on the way
+    /// down, and the release is matched on the same transposed pitch.
+    ///
     /// # Parameters
     ///
     /// - `track_id`: the track the note was played on.
@@ -497,18 +501,47 @@ impl AudioEngine {
         if track_id >= self.project.tracks.len() {
             return;
         }
-        if on && velocity > 0 {
-            self.start_voice(track_id, note, velocity, None);
+        let targets: Vec<TrackId> = if self.project.tracks[track_id].is_group() {
+            Track::descendants(&self.project.tracks, track_id)
+                .into_iter()
+                .filter(|child| {
+                    self.project
+                        .tracks
+                        .get(*child)
+                        .is_some_and(|track| !track.is_group())
+                })
+                .collect()
         } else {
-            self.release_automation(track_id);
-            let id = instrument_host_id(track_id);
+            vec![track_id]
+        };
+        for target in targets {
+            let pitch = if target == track_id {
+                note
+            } else {
+                self.midi_chain_note(
+                    track_id,
+                    target,
+                    ClipNote {
+                        pitch: note,
+                        velocity,
+                        ..ClipNote::default()
+                    },
+                )
+                .pitch
+            };
+            if on && velocity > 0 {
+                self.start_voice(target, pitch, velocity, None);
+                continue;
+            }
+            self.release_automation(target);
+            let id = instrument_host_id(target);
             if let Some(hosted) = self.hosted.get_mut(&id) {
-                hosted.note_off(note);
+                hosted.note_off(pitch);
             }
             for voice in &mut self.voices {
                 if voice.active
-                    && voice.track_id == track_id
-                    && voice.note == note
+                    && voice.track_id == target
+                    && voice.note == pitch
                     && voice.release_at_tick.is_none()
                 {
                     voice.released = true;

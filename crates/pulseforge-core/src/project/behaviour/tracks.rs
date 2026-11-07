@@ -52,6 +52,10 @@ impl Project {
 
     /// Wraps a track in a new folder, so it becomes the folder's only child.
     ///
+    /// The folder is inserted directly above the track it wraps, which is how
+    /// the arrangement has to draw it, so every index at or after `track`
+    /// shifts by one; `move_track` does that shifting for us.
+    ///
     /// # Parameters
     ///
     /// - `track`: the track to group.
@@ -70,7 +74,9 @@ impl Project {
         self.tracks.push(folder);
         self.tracks[track].parent = Some(group);
         self.normalize();
-        Some(group)
+        // Slide the folder from the end of the list to just above its child.
+        self.move_track(group, track);
+        Some(track)
     }
 
     /// Moves a track into a folder, or back to the top level.
@@ -286,13 +292,10 @@ impl Project {
                     *gain = 0.0;
                 }
             }
-            for index in 0..self.automation_tracks.len() {
-                let target = self.automation_tracks[index].target;
-                if target_track(target) == Some(victim) {
-                    self.automation_tracks.remove(index);
-                    break;
-                }
-            }
+            // Every lane that pointed at the removed track goes with it, not
+            // just the first one.
+            self.automation_tracks
+                .retain(|lane| target_track(lane.target) != Some(victim));
             for entry in &mut self.tracks {
                 entry.parent = match entry.parent {
                     Some(parent) if parent > victim => Some(parent - 1),

@@ -40,6 +40,31 @@ mod tests {
         project
     }
 
+    /// The default project with the Kick turned into a sine synth and no clips,
+    /// so the folder at index 0 holds one source track at index 1.
+    pub(crate) fn folder_project() -> Project {
+        let mut project = Project::default();
+        for track in &mut project.tracks {
+            track.clips.clear();
+        }
+        use_synth(&mut project.tracks[1], SynthKind::Sine);
+        project.normalize();
+        project
+    }
+
+    /// Renders one control block with a held note on `track_id` and returns the
+    /// master peak the block produced.
+    pub(crate) fn master_peak_of_held_note(project: Project, track_id: usize) -> f32 {
+        let mut engine = AudioEngine::new(project, 48_000);
+        engine.start_voice(track_id, 60, 100, None);
+        let (_sender, receiver) = mpsc::channel();
+        let updates = empty_project_updates();
+        for _ in 0..(CONTROL_INTERVAL * 2) {
+            engine.render_frame(&receiver, &updates);
+        }
+        engine.track_peak_post[engine.project.tracks.len()]
+    }
+
     /// Replaces a track's clips with one note clip.
     pub(crate) fn set_clip(
         track: &mut Track,
@@ -775,6 +800,49 @@ mod tests {
     }
 
     #[test]
+    pub(crate) fn soloing_a_child_reaches_the_master_through_its_folder() {
+        let mut project = folder_project();
+        project.tracks[1].solo = true;
+        project.normalize();
+        let engine = AudioEngine::new(project.clone(), 48_000);
+        // The folder is not soloed itself, but it has to stay in the path.
+        assert!(engine.track_audible(1));
+        assert!(engine.track_audible(0));
+        assert!(
+            master_peak_of_held_note(project, 1) > 0.0,
+            "a soloed child of a folder never reached the master"
+        );
+    }
+
+    #[test]
+    pub(crate) fn soloing_a_folder_keeps_its_children_audible() {
+        let mut project = folder_project();
+        project.tracks[0].solo = true;
+        project.normalize();
+        let engine = AudioEngine::new(project.clone(), 48_000);
+        assert!(engine.track_audible(1));
+        // A source track outside the folder is still silenced.
+        assert!(!engine.track_audible(4));
+        assert!(
+            master_peak_of_held_note(project, 1) > 0.0,
+            "soloing the folder silenced the tracks inside it"
+        );
+    }
+
+    #[test]
+    pub(crate) fn muting_a_folder_silences_its_children() {
+        let mut project = folder_project();
+        project.tracks[0].enabled = false;
+        project.normalize();
+        let engine = AudioEngine::new(project.clone(), 48_000);
+        assert!(!engine.track_audible(1));
+        assert!(
+            master_peak_of_held_note(project, 1) == 0.0,
+            "a child of a muted folder still reached the master"
+        );
+    }
+
+    #[test]
     pub(crate) fn arpeggiator_schedules_one_note_per_rate_step() {
         let mut project = Project {
             bpm: 120.0,
@@ -806,6 +874,36 @@ mod tests {
             engine.arp_queue.len()
         );
         assert!(engine.arp_queue.iter().all(|event| event.at_tick % 16 == 0));
+    }
+
+    #[test]
+    pub(crate) fn live_notes_played_on_a_folder_reach_its_children() {
+        let mut project = folder_project();
+        // Transpose on the folder, so the child must hear the shifted pitch.
+        project.tracks[0].midi_fx.transpose = 12;
+        project.normalize();
+        let mut engine = AudioEngine::new(project, 48_000);
+        engine.handle_midi_note(0, 60, 100, true);
+        let played: Vec<(usize, u8)> = engine
+            .voices
+            .iter()
+            .filter(|voice| voice.active)
+            .map(|voice| (voice.track_id, voice.note))
+            .collect();
+        assert_eq!(
+            played,
+            vec![(1, 72)],
+            "a folder note should fan out to its sources with the folder's MIDI FX applied"
+        );
+        engine.handle_midi_note(0, 60, 100, false);
+        assert!(
+            engine
+                .voices
+                .iter()
+                .filter(|voice| voice.active)
+                .all(|voice| voice.released),
+            "the note-off did not release the child voice"
+        );
     }
 
     #[test]

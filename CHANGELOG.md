@@ -169,6 +169,25 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ### Fixed
 
+- **Solo and mute now follow the track tree.** Solo used to compare the solo
+  flags of two flat lists, so soloing a child inside a folder silenced it (its
+  folder was not soloed and dropped the submix) and soloing a folder silenced
+  its children. `track_audible` resolves solo against the whole subtree — a
+  folder stays in the signal path while any descendant is soloed, a soloed
+  folder lets every descendant through, and disabling a folder silences its
+  children (and their sends).
+- **Live MIDI on a folder now plays.** `handle_midi_note` fanned out only for
+  clips, so routing a MIDI channel to a folder produced silence. A note on a
+  folder now fans out to every source track below it through the folder's MIDI
+  FX, and the note-off releases the same transposed pitch.
+- `group_track` inserted the new folder at the end of the track list instead of
+  directly above the track it wraps, so the arrangement drew the folder after
+  its child. The folder is now placed above it (and the returned index is the
+  folder's real index).
+- `remove_track` only removed the *first* automation lane that targeted the
+  deleted track, leaving the rest pointing at whatever track shifted into that
+  index. Every lane on the removed track (and on its descendants) is dropped
+  now.
 - A lane whose own parameters are driven by a *generated* source now updates in
   the UI. The preview resolved lane automation through
   `Project::automated_value`, which only understands drawn curves, so a track

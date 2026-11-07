@@ -208,6 +208,54 @@ mod tests {
         assert_eq!(project.tracks[1].clips.len(), 1);
         assert!(!project.tracks[1].clips[0].notes.is_empty());
     }
+
+    #[test]
+    fn grouping_a_track_inserts_the_folder_directly_above_it() {
+        let mut project = Project::default();
+        let lead = project.tracks.len() - 1;
+        let folder = project.group_track(lead).expect("group the lead");
+        assert_eq!(folder, lead);
+        assert!(project.tracks[folder].is_group());
+        assert_eq!(project.tracks[folder + 1].parent, Some(folder));
+        // The folder comes first in drawing order, its child right after it.
+        let visible: Vec<usize> = project
+            .visible_tracks()
+            .into_iter()
+            .map(|(track, _)| track)
+            .collect();
+        let folder_position = visible
+            .iter()
+            .position(|track| *track == folder)
+            .expect("folder is visible");
+        assert_eq!(visible.get(folder_position + 1), Some(&(folder + 1)));
+        assert_eq!(project.tracks.len(), 6);
+    }
+
+    #[test]
+    fn removing_a_track_drops_every_lane_that_targeted_it() {
+        let mut project = Project::default();
+        let victim = 4;
+        for parameter in [
+            TrackParameter::Generator(InstrumentParameter::Gain),
+            TrackParameter::Mixer(MixerParameter::Pan),
+        ] {
+            project.automation_tracks.push(AutomationTrack {
+                target: ParameterTarget::Track {
+                    track_id: victim,
+                    parameter,
+                },
+                ..AutomationTrack::default()
+            });
+        }
+        project.normalize();
+        assert_eq!(project.automation_tracks.len(), 2);
+        project.remove_track(victim);
+        assert!(
+            project.automation_tracks.is_empty(),
+            "removing a track left {} lane(s) behind",
+            project.automation_tracks.len()
+        );
+    }
     #[test]
     fn signature_accepts_plain_numeric_values_and_computes_bar_length() {
         assert_eq!(

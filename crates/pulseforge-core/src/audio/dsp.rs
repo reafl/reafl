@@ -11,7 +11,9 @@ use std::{
 use crate::{
     hosted::effect_host_id,
     plugins::BuiltinEffect,
-    project::{Clip, Generator, LfoShape, Project, SignalWaveform, SynthKind, TimeUnit, TimeValue},
+    project::{
+        Clip, Generator, LfoShape, Project, SignalWaveform, SynthKind, TimeUnit, TimeValue, Track,
+    },
 };
 
 use super::engine::*;
@@ -49,7 +51,13 @@ pub(crate) fn update_effect_chain(
 }
 
 /// True when a track should sound: its power switch is on and, if anything is
-/// soloed, it is one of the soloed tracks.
+/// soloed, solo applies to the whole folder subtree.
+///
+/// Soloing is tree aware so a folder behaves like a console group: soloing a
+/// child keeps its ancestors in the signal path (they still need to sum and
+/// process the child's audio), and soloing a folder lets every descendant
+/// through. A track is silenced when its own power switch is off or when any
+/// ancestor folder is off, which also drops its sends.
 ///
 /// # Parameters
 ///
@@ -61,7 +69,35 @@ pub(crate) fn track_audible(project: &Project, track_id: usize, solo_active: boo
     let Some(track) = project.tracks.get(track_id) else {
         return false;
     };
-    track.enabled && (!solo_active || track.solo)
+    let ancestors = Track::ancestors(&project.tracks, track_id);
+    if !track.enabled
+        || ancestors.iter().any(|ancestor| {
+            project
+                .tracks
+                .get(*ancestor)
+                .is_some_and(|group| !group.enabled)
+        })
+    {
+        return false;
+    }
+    if !solo_active {
+        return true;
+    }
+    if track.solo
+        || ancestors.iter().any(|ancestor| {
+            project
+                .tracks
+                .get(*ancestor)
+                .is_some_and(|group| group.solo)
+        })
+    {
+        return true;
+    }
+    // A folder is still in the path when one of its descendants is soloed: the
+    // child is audible, but the folder has to keep summing and processing it.
+    Track::descendants(&project.tracks, track_id)
+        .iter()
+        .any(|child| project.tracks.get(*child).is_some_and(|child| child.solo))
 }
 
 pub(crate) fn instrument_controls(instrument: &Generator, bpm: f32) -> InstrumentControls {
