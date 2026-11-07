@@ -89,10 +89,12 @@ impl PulseForgeApp {
             .selected_instrument
             .min(self.project.tracks.len() - 1);
         self.push_history();
-        let instrument = &mut self.project.tracks[instrument_id];
-        instrument.default_sample = kind;
-        instrument.sample_path.clear();
-        instrument.name = default_sample_label(kind).to_owned();
+        let track = &mut self.project.tracks[instrument_id];
+        track.name = default_sample_label(kind).to_owned();
+        if let Some(generator) = track.generator_mut() {
+            generator.kind = GeneratorKind::Sample(kind);
+            generator.sample_path.clear();
+        }
         self.sync_project();
         self.load_instrument_samples();
         self.status = format!("{} loaded.", default_sample_label(kind));
@@ -103,8 +105,10 @@ impl PulseForgeApp {
             .selected_instrument
             .min(self.project.tracks.len() - 1);
         self.push_history();
-        self.project.tracks[instrument_id].sample_path = path.to_owned();
-        self.project.tracks[instrument_id].default_sample = DefaultSample::None;
+        if let Some(generator) = self.project.tracks[instrument_id].generator_mut() {
+            generator.sample_path = path.to_owned();
+            generator.kind = GeneratorKind::Sample(DefaultSample::None);
+        }
         self.sync_project();
         self.load_instrument_sample(instrument_id);
     }
