@@ -1,4 +1,4 @@
-﻿//! The toolbar and the clip picker beside the arrangement.
+//! The toolbar and the clip picker beside the arrangement.
 
 use crate::*;
 
@@ -94,7 +94,7 @@ impl PulseForgeApp {
                 ui,
                 Icon::Solo,
                 "Pattern playback (Ctrl+Shift+P)",
-                self.selected_pattern_playback,
+                self.selected_clip_playback,
             )
             .clicked()
             {
@@ -179,7 +179,7 @@ impl PulseForgeApp {
                     let name = self.project.patterns[pattern_id].name.clone();
                     // The selected pattern is the one the arrangement pen
                     // places, so the picker marks it.
-                    let selected = pattern_id == self.selected_pattern;
+                    let selected = pattern_id == self.selected_clip;
                     let mut button = egui::Button::new(if selected {
                         format!("\u{25B8} [P]  {name}")
                     } else {
@@ -191,11 +191,11 @@ impl PulseForgeApp {
                     }
                     let response = ui.add_sized([ui.available_width(), 32.0], button);
                     if response.clicked() {
-                        self.selected_pattern = pattern_id;
+                        self.selected_clip = pattern_id;
                         self.arrangement_source = Some(ClipSource::Pattern { pattern_id });
                     }
                     if response.double_clicked() {
-                        self.selected_pattern = pattern_id;
+                        self.selected_clip = pattern_id;
                         self.windows.piano_roll = true;
                     }
                     if response.drag_started() {
@@ -204,7 +204,7 @@ impl PulseForgeApp {
                 }
             });
         if ui.button("+ New pattern").clicked() {
-            self.selected_pattern = self.project.add_pattern();
+            self.selected_clip = self.project.add_pattern();
             self.sync_project();
         }
         ui.separator();
@@ -244,12 +244,12 @@ impl PulseForgeApp {
         }
         ui.add_space(12.0);
         if ui.button("+ Arrangement lane").clicked() {
-            let old_master_id = self.project.lanes.len();
+            let old_master_id = self.project.tracks.len();
             self.project.add_lane();
             if self.automation_channel_id == old_master_id {
                 self.automation_channel_id = old_master_id + 1;
             }
-            self.selected_lane = self.project.lanes.len() - 1;
+            self.selected_lane = self.project.tracks.len() - 1;
             self.sync_project();
         }
     }

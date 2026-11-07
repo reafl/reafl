@@ -93,8 +93,8 @@ impl eframe::App for PulseForgeApp {
             data.insert_temp(egui::Id::new(AUTOMATED_VALUES_KEY), automated_values);
         });
         let preview_pattern = self
-            .selected_pattern_playback
-            .then_some(self.selected_pattern);
+            .selected_clip_playback
+            .then_some(self.selected_clip);
         if preview_pattern != self.audio_preview_pattern {
             self.audio_preview_pattern = preview_pattern;
             self.send_audio(AudioCommand::SetSelectedPattern(preview_pattern));

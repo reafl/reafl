@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use super::device::*;
 use super::params::*;
 use super::piano::*;
+use super::track::*;
+use super::track_param::*;
 
 /// Continuous and integer parameters of an instrument.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -224,18 +226,18 @@ impl AutomationLaneParameter {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ParameterTarget {
-    /// A parameter of a channel-rack instrument.
-    Instrument {
-        /// Index into [`Project::instruments`](super::arrangement::Project::instruments).
-        instrument_id: usize,
-        /// Which instrument parameter.
-        parameter: InstrumentParameter,
+    /// A generator, MIDI FX or mixer control of a track.
+    Track {
+        /// Index into [`Project::tracks`](super::arrangement::Project::tracks).
+        track_id: TrackId,
+        /// Which control of the track.
+        parameter: TrackParameter,
     },
     /// A parameter of one insert slot.
     InsertEffect {
-        /// Mixer channel, or the master index for the master bus.
-        channel_id: usize,
-        /// Slot index inside the channel's insert chain.
+        /// Track owning the insert chain, or the master index for the master bus.
+        track_id: TrackId,
+        /// Slot index inside the track's insert chain.
         slot_id: usize,
         /// Which effect parameter.
         parameter: EffectParameter,
@@ -247,13 +249,6 @@ pub enum ParameterTarget {
         /// Parameter index inside the plug-in.
         parameter_id: u32,
     },
-    /// A mixer channel's own volume or pan.
-    MixerChannel {
-        /// Mixer channel, or the master index for the master bus.
-        channel_id: usize,
-        /// Which mixer control.
-        parameter: MixerParameter,
-    },
     /// A parameter of another automation lane's source.
     AutomationLane {
         /// Index into [`Project::automation_tracks`](super::arrangement::Project::automation_tracks).
@@ -261,11 +256,11 @@ pub enum ParameterTarget {
         /// Which lane source parameter.
         parameter: AutomationLaneParameter,
     },
-    /// A playback control of one arrangement clip.
+    /// A playback control of one clip.
     Clip {
-        /// Arrangement lane the clip sits on.
-        lane_id: usize,
-        /// Index of the clip inside the lane.
+        /// Track the clip sits on.
+        track_id: TrackId,
+        /// Index of the clip inside the track.
         clip_id: usize,
         /// Which clip control.
         parameter: ClipParameter,
@@ -281,9 +276,9 @@ pub enum ParameterTarget {
 
 impl Default for ParameterTarget {
     fn default() -> Self {
-        Self::Instrument {
-            instrument_id: 0,
-            parameter: InstrumentParameter::Gain,
+        Self::Track {
+            track_id: 0,
+            parameter: TrackParameter::Mixer(MixerParameter::Gain),
         }
     }
 }
@@ -292,7 +287,7 @@ impl ParameterTarget {
     /// Lowest and highest value this parameter accepts.
     pub fn range(self) -> (f32, f32) {
         match self {
-            Self::Instrument { parameter, .. } => parameter.range(),
+            Self::Track { parameter, .. } => parameter.range(),
             Self::InsertEffect { parameter, .. } => match parameter {
                 EffectParameter::Mix
                 | EffectParameter::Amount
@@ -308,7 +303,6 @@ impl ParameterTarget {
             },
             // Hosted plug-in parameters are always normalized 0..=1.
             Self::PluginParameter { .. } => (0.0, 1.0),
-            Self::MixerChannel { parameter, .. } => parameter.range(),
             Self::Clip { parameter, .. } | Self::SampleDefaults { parameter } => match parameter {
                 ClipParameter::Gain => (0.0, 1.0),
                 ClipParameter::Pan => (-1.0, 1.0),

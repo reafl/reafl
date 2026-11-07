@@ -6,7 +6,7 @@ use pulseforge_profiling::SlotCounters;
 
 use crate::{
     plugins::BuiltinEffect,
-    project::{PianoNote, Project},
+    project::{ClipNote, Project},
 };
 
 use super::sample::SampleData;
@@ -45,10 +45,10 @@ pub enum AudioCommand {
     SetTempo(f32),
     /// Replaces the engine's copy of the project.
     SetProject(Box<Project>),
-    /// Caches a decoded sample for one instrument.
-    LoadInstrumentSample {
-        /// Instrument the sample belongs to.
-        instrument_id: usize,
+    /// Caches a decoded sample for one track.
+    LoadTrackSample {
+        /// Track the sample belongs to.
+        track_id: usize,
         /// The decoded sample.
         sample: SampleData,
     },
@@ -61,10 +61,10 @@ pub enum AudioCommand {
         /// The decoded sample.
         sample: SampleData,
     },
-    /// Plays a note on an instrument immediately, bypassing the sequencer.
+    /// Plays a note on a track immediately, bypassing the sequencer.
     MidiNote {
-        /// Instrument the note is sent to.
-        instrument_id: usize,
+        /// Track the note is sent to.
+        track_id: usize,
         /// MIDI note number.
         note: u8,
         /// MIDI velocity, 1..=127.
@@ -101,8 +101,7 @@ pub enum AudioCommand {
 }
 
 pub(crate) struct Voice {
-    pub(crate) instrument_id: usize,
-    pub(crate) mixer_lane: usize,
+    pub(crate) track_id: usize,
     pub(crate) note: u8,
     pub(crate) phase: f32,
     pub(crate) second_phase: f32,
@@ -119,8 +118,7 @@ pub(crate) struct Voice {
 impl Default for Voice {
     fn default() -> Self {
         Self {
-            instrument_id: 0,
-            mixer_lane: 0,
+            track_id: 0,
             note: 0,
             phase: 0.0,
             second_phase: 0.0,
@@ -162,15 +160,13 @@ pub(crate) struct AutomationRuntime {
 pub(crate) struct ArpEvent {
     pub(crate) at_tick: u64,
     pub(crate) release_tick: u64,
-    pub(crate) instrument_id: usize,
-    pub(crate) lane_id: usize,
+    pub(crate) track_id: usize,
     pub(crate) pitch: u8,
     pub(crate) velocity: u8,
 }
 
 pub(crate) struct SampleVoice {
-    pub(crate) instrument_id: usize,
-    pub(crate) mixer_lane: usize,
+    pub(crate) track_id: usize,
     pub(crate) cursor: f64,
     pub(crate) active: bool,
 }
@@ -178,8 +174,7 @@ pub(crate) struct SampleVoice {
 impl Default for SampleVoice {
     fn default() -> Self {
         Self {
-            instrument_id: 0,
-            mixer_lane: 0,
+            track_id: 0,
             cursor: 0.0,
             active: false,
         }
@@ -210,16 +205,12 @@ impl Default for AudioClipRuntime {
 
 #[derive(Clone, Copy)]
 pub(crate) enum TriggerEvent {
-    InstrumentHit {
-        instrument_id: usize,
-        lane_id: usize,
-    },
     Note {
-        note: PianoNote,
-        lane_id: usize,
+        track_id: usize,
+        note: ClipNote,
     },
     AudioClip {
-        lane_id: usize,
+        track_id: usize,
         clip_index: usize,
     },
 }

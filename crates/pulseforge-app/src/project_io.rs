@@ -24,7 +24,7 @@ impl PulseForgeApp {
     pub(crate) fn adopt_project(&mut self, mut project: Project, path: &str) {
         project.normalize();
         self.project = project;
-        self.selected_pattern = 0;
+        self.selected_clip = 0;
         self.selected_instrument = 0;
         self.selected_lane = 0;
         self.selected_mixer_channel = 0;
@@ -117,12 +117,12 @@ impl PulseForgeApp {
                 ));
             }
         }
-        let lane_count = self.project.lanes.len();
-        for channel in 0..=lane_count {
-            let slots = if channel == lane_count {
+        let track_count = self.project.tracks.len();
+        for channel in 0..=track_count {
+            let slots = if channel == track_count {
                 &self.project.master.inserts
             } else {
-                &self.project.lanes[channel].inserts
+                &self.project.tracks[channel].inserts
             };
             for (slot_index, slot) in slots.iter().enumerate() {
                 if !slot.enabled || slot.plugin_path.is_empty() {

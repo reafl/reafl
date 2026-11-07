@@ -2,14 +2,14 @@
 //! channel-rack slot.
 //!
 //! A track owns one generator (or is a group), the MIDI processing that feeds
-//! it, its mixer settings and its clips. Clips carry their own notes, so the
+//! it, its mixer controls and its clips. Clips carry their own notes, so the
 //! shared pattern pool of the previous model is gone.
 
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Arpeggio, DefaultSample, InsertFxSlot, PianoNote, SignalWaveform, SynthKind, ThreeBandEq,
-    TrackParameter, VoiceSettings,
+    Arpeggio, DefaultSample, InsertFxSlot, SignalWaveform, SynthKind, ThreeBandEq, TimeUnit,
+    TrackParameter, VoiceSettings, INSERT_SLOTS,
 };
 
 /// Index of a track inside a project's track list.
@@ -71,6 +71,14 @@ impl GeneratorKind {
             Self::Sample(_) => None,
         }
     }
+
+    /// The shipped sample this generator plays, if it is a sample player.
+    pub fn sample(self) -> Option<DefaultSample> {
+        match self {
+            Self::Sample(sample) => Some(sample),
+            Self::Synth(_) => None,
+        }
+    }
 }
 
 /// The sound source of a generator track.
@@ -107,7 +115,7 @@ pub struct Generator {
     /// M1 style decay amount.
     pub m1_decay: f32,
     /// Unit of [`Generator::m1_decay`].
-    pub m1_decay_unit: super::TimeUnit,
+    pub m1_decay_unit: TimeUnit,
     /// M1 style decay in steps.
     pub m1_decay_steps: f32,
     /// FM modulator ratio.
@@ -143,7 +151,7 @@ impl Default for Generator {
             juno_sub_level: 0.3,
             m1_tone: 0.55,
             m1_decay: 1.2,
-            m1_decay_unit: super::TimeUnit::Milliseconds,
+            m1_decay_unit: TimeUnit::Milliseconds,
             m1_decay_steps: 4.0,
             fm_ratio: 2.0,
             fm_index: 0.35,
@@ -193,7 +201,7 @@ impl MidiFx {
     ///
     /// The transformed note. Pitch is clamped to the MIDI range and velocity to
     /// `1..=127`, so downstream code never sees an invalid value.
-    pub fn process(&self, note: PianoNote) -> PianoNote {
+    pub fn process(&self, note: ClipNote) -> ClipNote {
         if !self.enabled {
             return note;
         }
@@ -202,7 +210,7 @@ impl MidiFx {
             * self.velocity_scale)
             .round()
             .clamp(1.0, 127.0) as u8;
-        PianoNote {
+        ClipNote {
             pitch,
             velocity,
             ..note
@@ -210,46 +218,18 @@ impl MidiFx {
     }
 }
 
-/// Mixer settings of one track. A group processes the sum of its children with
-/// the same controls.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(default)]
-pub struct TrackMixer {
-    /// Fader gain in 0..=1.3.
-    pub gain: f32,
-    /// Pan in -1..=1.
-    pub pan: f32,
-    /// Stereo width, `0` = mono, `1` = unchanged, `2` = double side signal.
-    pub width: f32,
-    /// Three-band equaliser.
-    pub eq: ThreeBandEq,
-    /// Insert effects, in processing order.
-    pub inserts: Vec<InsertFxSlot>,
-    /// Skips every insert without changing their enabled flags.
-    pub fx_bypass: bool,
-}
-
-impl Default for TrackMixer {
-    fn default() -> Self {
-        Self {
-            gain: 0.8,
-            pan: 0.0,
-            width: 1.0,
-            eq: ThreeBandEq::default(),
-            inserts: vec![InsertFxSlot::default(); super::INSERT_SLOTS],
-            fx_bypass: false,
-        }
-    }
-}
-
-/// One note inside a clip, positioned in ticks from the clip start.
+/// One note inside a clip, positioned in steps from the clip start.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ClipNote {
-    /// Start position in ticks (`super::TICKS_PER_STEP` ticks per step).
-    pub start_tick: u64,
-    /// Length in ticks, at least one.
-    pub duration_ticks: u64,
+    /// Start step inside the clip.
+    pub start_step: u64,
+    /// Sub-step offset in ticks, 0..=15.
+    pub start_substep: u8,
+    /// Duration in whole steps.
+    pub duration_steps: u64,
+    /// Extra duration in ticks, 0..15.
+    pub duration_substeps: u8,
     /// MIDI note number.
     pub pitch: u8,
     /// MIDI velocity, 1..=127.
@@ -273,14 +253,73 @@ impl ClipNote {
     /// - `steps`: length in steps.
     pub fn new(step: u64, pitch: u8, velocity: u8, steps: u64) -> Self {
         Self {
-            start_tick: step.saturating_mul(super::TICKS_PER_STEP),
-            duration_ticks: (steps.max(1)).saturating_mul(super::TICKS_PER_STEP),
+            start_step: step,
+            start_substep: 0,
+            duration_steps: steps.max(1),
+            duration_substeps: 0,
             pitch,
             velocity: velocity.max(1),
             repeat_count: 0,
             repeat_ticks: 0,
             repeat_decay: 0,
         }
+    }
+
+    /// Start position in ticks from the clip start.
+    pub fn start_tick(self) -> u64 {
+        self.start_step
+            .saturating_mul(super::TICKS_PER_STEP)
+            .saturating_add(u64::from(self.start_substep.min(15)))
+    }
+
+    /// Length in ticks; always at least one tick.
+    pub fn duration_ticks(self) -> u64 {
+        self.duration_steps
+            .saturating_mul(super::TICKS_PER_STEP)
+            .saturating_add(u64::from(self.duration_substeps.min(15)))
+            .max(1)
+    }
+
+    /// Moves the note to an absolute tick position.
+    ///
+    /// # Parameters
+    ///
+    /// - `tick`: new start position in ticks from the clip start.
+    pub fn set_start_tick(&mut self, tick: u64) {
+        self.start_step = tick / super::TICKS_PER_STEP;
+        self.start_substep = (tick % super::TICKS_PER_STEP) as u8;
+    }
+
+    /// Stretches the note to an absolute length in ticks.
+    ///
+    /// # Parameters
+    ///
+    /// - `ticks`: new length in ticks, clamped to at least one.
+    pub fn set_duration_ticks(&mut self, ticks: u64) {
+        let ticks = ticks.max(1);
+        self.duration_steps = ticks / super::TICKS_PER_STEP;
+        self.duration_substeps = (ticks % super::TICKS_PER_STEP) as u8;
+    }
+
+    /// Offsets, in ticks from the note start, at which this note re-triggers.
+    ///
+    /// # Returns
+    ///
+    /// `(offset, velocity)` pairs; the first entry is the note itself.
+    pub fn trigger_offsets(self) -> Vec<(u64, u8)> {
+        let spacing = if self.repeat_ticks == 0 {
+            (self.duration_ticks() / 2).max(1)
+        } else {
+            u64::from(self.repeat_ticks)
+        };
+        let mut offsets = Vec::with_capacity(usize::from(self.repeat_count) + 1);
+        offsets.push((0, self.velocity.max(1)));
+        let mut velocity = self.velocity.max(1);
+        for repeat in 1..=u64::from(self.repeat_count) {
+            velocity = velocity.saturating_sub(self.repeat_decay).max(1);
+            offsets.push((repeat.saturating_mul(spacing), velocity));
+        }
+        offsets
     }
 }
 
@@ -330,6 +369,11 @@ impl Clip {
         self.audio_path.is_some()
     }
 
+    /// True when the clip plays notes.
+    pub fn is_note_clip(&self) -> bool {
+        !self.is_audio()
+    }
+
     /// One past the last step the clip covers.
     pub fn end_step(&self) -> u64 {
         self.start_step.saturating_add(self.length_steps)
@@ -349,8 +393,6 @@ pub struct Track {
     /// MIDI processing applied before the generator and, on a group, before the
     /// children receive the notes.
     pub midi_fx: MidiFx,
-    /// Mixer settings.
-    pub mixer: TrackMixer,
     /// Clips on this track, in any order.
     pub clips: Vec<Clip>,
     /// Power switch: a disabled track is silent.
@@ -363,6 +405,8 @@ pub struct Track {
     pub height: f32,
     /// Hides the children of a group in the arrangement.
     pub collapsed: bool,
+    /// Hides the automation rows of this track.
+    pub automation_collapsed: bool,
     /// Child parameters a group additionally exposes as its own automation
     /// targets.
     ///
@@ -375,6 +419,18 @@ pub struct Track {
     pub pinned: bool,
     /// Optional custom colour.
     pub color: Option<[u8; 3]>,
+    /// Fader gain in 0..=1.3.
+    pub gain: f32,
+    /// Pan in -1..=1.
+    pub pan: f32,
+    /// Stereo width: 0 = mono, 1 = unchanged, 2 = double side signal.
+    pub width: f32,
+    /// Three-band equaliser of the strip.
+    pub eq: ThreeBandEq,
+    /// Insert effects, in processing order.
+    pub inserts: Vec<InsertFxSlot>,
+    /// Skips every insert without touching their enable states.
+    pub fx_bypass: bool,
 }
 
 impl Default for Track {
@@ -384,21 +440,54 @@ impl Default for Track {
             kind: TrackKind::Generator(Generator::default()),
             parent: None,
             midi_fx: MidiFx::default(),
-            mixer: TrackMixer::default(),
             clips: Vec::new(),
             enabled: true,
             locked: false,
             solo: false,
             height: 54.0,
             collapsed: false,
+            automation_collapsed: false,
             group_targets: Vec::new(),
             pinned: false,
             color: None,
+            gain: 0.8,
+            pan: 0.0,
+            width: 1.0,
+            eq: ThreeBandEq::default(),
+            inserts: vec![InsertFxSlot::default(); INSERT_SLOTS],
+            fx_bypass: false,
         }
     }
 }
 
 impl Track {
+    /// A folder track with the given name.
+    ///
+    /// # Parameters
+    ///
+    /// - `name`: display name of the folder.
+    pub fn group(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            kind: TrackKind::Group,
+            ..Self::default()
+        }
+    }
+
+    /// A source track with the given name and generator.
+    ///
+    /// # Parameters
+    ///
+    /// - `name`: display name of the track.
+    /// - `generator`: the sound source.
+    pub fn source(name: impl Into<String>, generator: Generator) -> Self {
+        Self {
+            name: name.into(),
+            kind: TrackKind::Generator(generator),
+            ..Self::default()
+        }
+    }
+
     /// True when the track is a folder.
     pub fn is_group(&self) -> bool {
         self.kind.is_group()
@@ -517,6 +606,39 @@ impl Track {
         }
         !Self::is_ancestor(tracks, track, parent)
     }
+
+    /// Every clip on this track that covers `step`.
+    ///
+    /// # Parameters
+    ///
+    /// - `step`: position in steps.
+    pub fn clips_at(&self, step: u64) -> impl Iterator<Item = &Clip> {
+        self.clips
+            .iter()
+            .filter(move |clip| step >= clip.start_step && step < clip.end_step())
+    }
+
+    /// The track's name with the folders above it, for tooltips.
+    ///
+    /// # Parameters
+    ///
+    /// - `tracks`: the project's track list.
+    /// - `track`: the track to describe.
+    pub fn path_label(tracks: &[Track], track: TrackId) -> String {
+        let mut parts = vec![
+            tracks
+                .get(track)
+                .map(|entry| entry.name.clone())
+                .unwrap_or_default(),
+        ];
+        for ancestor in Self::ancestors(tracks, track) {
+            if let Some(entry) = tracks.get(ancestor) {
+                parts.push(entry.name.clone());
+            }
+        }
+        parts.reverse();
+        parts.join(" / ")
+    }
 }
 
 /// Depth-first child collection with a visited guard, so a parent cycle cannot
@@ -612,11 +734,18 @@ mod tests {
     }
 
     #[test]
+    fn a_path_label_lists_the_groups_above_a_track() {
+        let tracks = tree();
+        assert_eq!(Track::path_label(&tracks, 3), "folder / inner / pad");
+        assert_eq!(Track::path_label(&tracks, 0), "folder");
+    }
+
+    #[test]
     fn midi_fx_transposes_and_scales_velocity() {
-        let note = PianoNote {
+        let note = ClipNote {
             pitch: 60,
             velocity: 100,
-            ..PianoNote::default()
+            ..ClipNote::default()
         };
         let fx = MidiFx {
             transpose: 12,
@@ -638,10 +767,10 @@ mod tests {
 
     #[test]
     fn midi_fx_keeps_pitch_and_velocity_in_range() {
-        let note = PianoNote {
+        let note = ClipNote {
             pitch: 120,
             velocity: 120,
-            ..PianoNote::default()
+            ..ClipNote::default()
         };
         let fx = MidiFx {
             transpose: 40,

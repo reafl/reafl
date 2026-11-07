@@ -38,7 +38,7 @@ mod tests {
     pub(crate) fn selected_pattern_playback_uses_instrument_mixer_lane() {
         let mut project = Project::default();
         project.patterns[0].step_hits.push(crate::project::StepHit {
-            instrument_id: 0,
+            track_id: 0,
             step: 0,
         });
         project.instruments[0].default_mixer_lane = 2;
@@ -48,8 +48,8 @@ mod tests {
         assert!(engine.trigger_events.iter().any(|event| matches!(
             event,
             TriggerEvent::InstrumentHit {
-                instrument_id: 0,
-                lane_id: 2
+                track_id: 0,
+                track_id: 2
             }
         )));
     }
@@ -97,7 +97,7 @@ mod tests {
             .automation_tracks
             .push(crate::project::AutomationTrack {
                 target: ParameterTarget::Instrument {
-                    instrument_id: 0,
+                    track_id: 0,
                     parameter: InstrumentParameter::Gain,
                 },
                 source: AutomationSource::Lfo {
@@ -216,7 +216,7 @@ mod tests {
     #[test]
     pub(crate) fn offline_wav_render_writes_a_stereo_file_with_audio() {
         let mut project = Project::default();
-        project.lanes[0].clips[0].length_steps = 16;
+        project.tracks[0].clips[0].length_steps = 16;
         let path =
             std::env::temp_dir().join(format!("pulseforge-render-{}.wav", std::process::id()));
         let frames = render_project_to_wav(&project, path.to_str().unwrap()).unwrap();
@@ -247,7 +247,7 @@ mod tests {
         let active: Vec<_> = engine
             .voices
             .iter()
-            .filter(|voice| voice.active && voice.instrument_id == 0)
+            .filter(|voice| voice.active && voice.track_id == 0)
             .collect();
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].note, 67);
@@ -277,7 +277,7 @@ mod tests {
                 let voice = engine
                     .voices
                     .iter()
-                    .find(|voice| voice.active && voice.instrument_id == 0)
+                    .find(|voice| voice.active && voice.track_id == 0)
                     .unwrap();
                 assert!((voice.phase - 2.0 * voice.sub_phase).abs() < 0.001);
             }
@@ -287,7 +287,7 @@ mod tests {
     #[test]
     pub(crate) fn instrument_automation_updates_audio_rate_controls() {
         let target = ParameterTarget::Instrument {
-            instrument_id: 0,
+            track_id: 0,
             parameter: InstrumentParameter::CutoffHz,
         };
         let mut project = Project::default();
@@ -321,7 +321,7 @@ mod tests {
     #[test]
     pub(crate) fn peak_source_follows_the_lane_level() {
         let target = ParameterTarget::Instrument {
-            instrument_id: 0,
+            track_id: 0,
             parameter: InstrumentParameter::Gain,
         };
         let mut project = Project::default();
@@ -372,7 +372,7 @@ mod tests {
     #[test]
     pub(crate) fn control_rate_automation_reaches_the_instrument_within_one_block() {
         let target = ParameterTarget::Instrument {
-            instrument_id: 0,
+            track_id: 0,
             parameter: InstrumentParameter::CutoffHz,
         };
         let mut project = Project::default();
@@ -418,7 +418,7 @@ mod tests {
             .automation_tracks
             .push(crate::project::AutomationTrack {
                 target: ParameterTarget::Instrument {
-                    instrument_id: 0,
+                    track_id: 0,
                     parameter: InstrumentParameter::Gain,
                 },
                 enabled: false,
@@ -449,7 +449,7 @@ mod tests {
     #[test]
     pub(crate) fn unchanged_project_updates_keep_audio_runtimes_in_place() {
         let mut project = Project::default();
-        project.lanes[0].clips.push(ArrangementClip {
+        project.tracks[0].clips.push(ArrangementClip {
             start_step: 0,
             length_steps: 16,
             offset_steps: 0,
@@ -467,7 +467,7 @@ mod tests {
         let original_len = engine.audio_clips[0].len();
 
         let mut edited = project;
-        edited.lanes[0].gain = 0.42;
+        edited.tracks[0].gain = 0.42;
         engine.apply_project(edited);
 
         assert_eq!(engine.audio_clips[0].len(), original_len);
@@ -480,8 +480,8 @@ mod tests {
     #[test]
     pub(crate) fn duplicated_audio_clips_share_one_loaded_sample() {
         let mut project = Project::default();
-        project.lanes[0].clips.clear();
-        project.lanes[0].clips.push(ArrangementClip {
+        project.tracks[0].clips.clear();
+        project.tracks[0].clips.push(ArrangementClip {
             start_step: 0,
             length_steps: 16,
             offset_steps: 0,
@@ -498,7 +498,7 @@ mod tests {
         }));
 
         let mut duplicated = project;
-        duplicated.lanes[0].clips.push(ArrangementClip {
+        duplicated.tracks[0].clips.push(ArrangementClip {
             start_step: 16,
             length_steps: 16,
             offset_steps: 0,
@@ -528,8 +528,8 @@ mod tests {
             bpm: 120.0,
             ..Project::default()
         };
-        project.lanes[0].clips.clear();
-        project.lanes[0].clips.push(ArrangementClip {
+        project.tracks[0].clips.clear();
+        project.tracks[0].clips.push(ArrangementClip {
             start_step: 0,
             length_steps: 16,
             offset_steps: 4,
@@ -557,7 +557,7 @@ mod tests {
         let mut project = Project::default();
         project.instruments[0].synth_enabled = true;
         project.patterns[0].notes = vec![PianoNote {
-            instrument_id: 0,
+            track_id: 0,
             pitch: 60,
             velocity: 100,
             duration_steps: 1,
@@ -601,7 +601,7 @@ mod tests {
         assert!(!engine.smoothing_enabled);
         // With smoothing off, one rendered frame reaches the new target.
         let mut project = engine.project.clone();
-        project.lanes[0].gain = 0.1;
+        project.tracks[0].gain = 0.1;
         engine.apply_project(project);
         engine.render_frame(&receiver, &empty_project_updates());
         assert!((engine.lane_gain[0].value() - 0.1).abs() < 1e-5);
@@ -622,7 +622,7 @@ mod tests {
             .unwrap();
         engine.apply_pending(&receiver, &empty_project_updates());
         let mut changed = engine.project.clone();
-        changed.lanes[0].gain = 0.2;
+        changed.tracks[0].gain = 0.2;
         engine.apply_project(changed);
         engine.render_frame(&receiver, &empty_project_updates());
         let after_one = engine.lane_gain[0].value();
@@ -662,8 +662,8 @@ mod tests {
             bpm: 120.0,
             ..Project::default()
         };
-        project.lanes[0].clips.clear();
-        project.lanes[0].clips.push(ArrangementClip {
+        project.tracks[0].clips.clear();
+        project.tracks[0].clips.push(ArrangementClip {
             start_step: 8,
             length_steps: 8,
             offset_steps: 0,
@@ -696,8 +696,8 @@ mod tests {
     #[test]
     pub(crate) fn audio_clips_rewind_after_leaving_their_range() {
         let mut project = Project::default();
-        project.lanes[0].clips.clear();
-        project.lanes[0].clips.push(ArrangementClip {
+        project.tracks[0].clips.clear();
+        project.tracks[0].clips.push(ArrangementClip {
             start_step: 0,
             length_steps: 4,
             offset_steps: 0,
@@ -734,7 +734,7 @@ mod tests {
 
         let mut project = engine.project.clone();
         project.instruments[0].enabled = true;
-        project.lanes[0].enabled = false;
+        project.tracks[0].enabled = false;
         engine.apply_project(project);
         assert!(engine.instrument_audible(0));
         assert!(!engine.lane_audible(0));
@@ -760,7 +760,7 @@ mod tests {
         project.instruments[0].arpeggio.enabled = true;
         project.instruments[0].arpeggio.octaves = 2;
         project.patterns[0].notes = vec![PianoNote {
-            instrument_id: 0,
+            track_id: 0,
             pitch: 60,
             velocity: 100,
             duration_steps: 4,
@@ -792,7 +792,7 @@ mod tests {
             !engine
                 .voices
                 .iter()
-                .any(|voice| voice.active && voice.instrument_id == 0),
+                .any(|voice| voice.active && voice.track_id == 0),
             "an external plug-in must not allocate a built-in voice"
         );
     }
@@ -817,7 +817,7 @@ mod tests {
     pub(crate) fn pattern_clip_routes_note_to_its_arrangement_lane() {
         let mut project = Project::default();
         project.add_lane();
-        project.lanes[1].name = "Second".to_owned();
+        project.tracks[1].name = "Second".to_owned();
         project.instruments[3].default_mixer_lane = 0;
         project.patterns = vec![Pattern {
             name: "Notes".to_owned(),
@@ -826,7 +826,7 @@ mod tests {
                 repeat_count: 0,
                 repeat_ticks: 0,
                 repeat_decay: 0,
-                instrument_id: 3,
+                track_id: 3,
                 start_step: 0,
                 start_substep: 0,
                 duration_steps: 4,
@@ -836,7 +836,7 @@ mod tests {
             }],
             ..Pattern::default()
         }];
-        project.lanes[1].clips.push(ArrangementClip {
+        project.tracks[1].clips.push(ArrangementClip {
             start_step: 0,
             length_steps: 16,
             source: ClipSource::Pattern { pattern_id: 0 },
@@ -849,13 +849,13 @@ mod tests {
         engine.playing = true;
         engine.trigger_step(0);
         let voice = engine.voices.iter().find(|voice| voice.active).unwrap();
-        assert_eq!(voice.mixer_lane, 1);
+        assert_eq!(voice.track_id, 1);
     }
 
     #[test]
     pub(crate) fn master_bus_receives_routed_audio_and_drives_the_output_meter() {
         let project = Project::default();
-        let master_index = project.lanes.len();
+        let master_index = project.tracks.len();
         let mut engine = AudioEngine::new(project, 48_000);
         let edge = engine
             .send_edges
@@ -875,7 +875,7 @@ mod tests {
     #[test]
     pub(crate) fn project_updates_keep_audio_samples_attached_when_clips_move_lanes() {
         let mut project = Project::default();
-        project.lanes[0].clips.push(ArrangementClip {
+        project.tracks[0].clips.push(ArrangementClip {
             start_step: 16,
             length_steps: 16,
             offset_steps: 0,
@@ -886,7 +886,7 @@ mod tests {
         });
         project.normalize();
         let mut engine = AudioEngine::new(project.clone(), 48_000);
-        let existing_index = project.lanes[0]
+        let existing_index = project.tracks[0]
             .clips
             .iter()
             .position(
@@ -898,9 +898,9 @@ mod tests {
             frames: vec![[0.25, 0.25]],
         }));
 
-        let moved_clip = project.lanes[0].clips.remove(existing_index);
-        project.lanes[1].clips.push(moved_clip);
-        project.lanes[0].clips.push(ArrangementClip {
+        let moved_clip = project.tracks[0].clips.remove(existing_index);
+        project.tracks[1].clips.push(moved_clip);
+        project.tracks[0].clips.push(ArrangementClip {
             start_step: 0,
             length_steps: 8,
             offset_steps: 0,
@@ -918,7 +918,7 @@ mod tests {
         );
         engine.apply_pending(&receiver, &empty_project_updates());
 
-        let moved_index = project.lanes[1]
+        let moved_index = project.tracks[1]
             .clips
             .iter()
             .position(

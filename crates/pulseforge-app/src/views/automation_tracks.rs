@@ -172,7 +172,7 @@ impl PulseForgeApp {
                             .clicked()
                         {
                             track.source = project::AutomationSource::Peak {
-                                channel_id: 0,
+                                track_id: 0,
                                 post_fx: true,
                                 attack: project::TimeValue {
                                     amount: 5.0,
@@ -499,29 +499,29 @@ impl PulseForgeApp {
                         });
                     }
                     project::AutomationSource::Peak {
-                        channel_id,
+                        track_id,
                         post_fx,
                         attack,
                         release,
                         base,
                         depth,
                     } => {
-                        let master_id = self.project.lanes.len();
-                        *channel_id = (*channel_id).min(master_id);
+                        let master_id = self.project.tracks.len();
+                        *track_id = (*track_id).min(master_id);
                         ui.horizontal(|ui| {
                             ui.label("Track");
-                            let selected = if *channel_id == master_id {
+                            let selected = if *track_id == master_id {
                                 "Master".to_owned()
                             } else {
-                                self.project.lanes[*channel_id].name.clone()
+                                self.project.tracks[*track_id].name.clone()
                             };
                             egui::ComboBox::from_id_salt(("automation_peak_channel", track_id))
                                 .selected_text(selected)
                                 .show_ui(ui, |ui| {
-                                    for (id, lane) in self.project.lanes.iter().enumerate() {
-                                        ui.selectable_value(channel_id, id, &lane.name);
+                                    for (id, lane) in self.project.tracks.iter().enumerate() {
+                                        ui.selectable_value(track_id, id, &lane.name);
                                     }
-                                    ui.selectable_value(channel_id, master_id, "Master");
+                                    ui.selectable_value(track_id, master_id, "Master");
                                 });
                             changed |= ui
                                 .checkbox(post_fx, "Post FX")
@@ -580,15 +580,15 @@ impl PulseForgeApp {
                 } else if track.source.is_live() {
                     let channel = match &track.source {
                         project::AutomationSource::Peak {
-                            channel_id,
+                            track_id,
                             post_fx,
                             ..
                         } => {
-                            let master_id = self.project.lanes.len();
-                            let name = if *channel_id == master_id {
+                            let master_id = self.project.tracks.len();
+                            let name = if *track_id == master_id {
                                 "Master".to_owned()
                             } else {
-                                self.project.lanes.get(*channel_id).map_or_else(
+                                self.project.tracks.get(*track_id).map_or_else(
                                     || "a missing track".to_owned(),
                                     |lane| lane.name.clone(),
                                 )

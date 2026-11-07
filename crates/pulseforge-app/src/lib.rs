@@ -22,10 +22,11 @@ use pulseforge_core::{
     audio::{self, AudioCommand, AudioOutput},
     project,
     project::{
-        ArrangementClip, AutomationCurve, AutomationPoint, AutomationTrack, ClipParameter,
-        ClipSource, DefaultSample, EffectParameter, InsertFxSlot, Instrument, InstrumentParameter,
-        MIDI_CHANNEL_COUNT, MixerParameter, ParameterTarget, PianoNote, Project, SignalWaveform,
-        SynthKind, TimeSignature, disconnect_channel,
+        AutomationCurve, AutomationPoint, AutomationTrack, Clip, ClipNote, ClipParameter,
+        DefaultSample, EffectParameter, Generator, GeneratorKind, InsertFxSlot,
+        InstrumentParameter, MIDI_CHANNEL_COUNT, MixerParameter, MidiFxParameter,
+        ParameterTarget, Project, SignalWaveform, SynthKind, TimeSignature, Track, TrackParameter,
+        disconnect_channel,
     },
 };
 use pulseforge_profiling::{

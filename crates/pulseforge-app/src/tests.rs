@@ -39,17 +39,17 @@ fn envelope_preview_finds_step_sequencer_hits() {
             step: 4,
         },
     ];
-    project.lanes[0].clips = vec![ArrangementClip {
+    project.tracks[0].clips = vec![ArrangementClip {
         start_step: 0,
         length_steps: 8,
         source: ClipSource::Pattern { pattern_id: 0 },
         offset_steps: 0,
         ..ArrangementClip::default()
     }];
-    let found = automation_note_at(&project.lanes, &project.patterns, 0, 4.5);
+    let found = automation_note_at(&project.tracks, &project.patterns, 0, 4.5);
     assert_eq!(found, Some((4.0, 1.0)));
-    assert!(automation_note_at(&project.lanes, &project.patterns, 0, 1.0).is_none());
-    assert!(automation_note_at(&project.lanes, &project.patterns, 1, 4.5).is_none());
+    assert!(automation_note_at(&project.tracks, &project.patterns, 0, 1.0).is_none());
+    assert!(automation_note_at(&project.tracks, &project.patterns, 1, 4.5).is_none());
 }
 
 #[test]
@@ -59,7 +59,7 @@ fn automation_source_preview_reacts_to_step_hits() {
         instrument_id: 0,
         step: 0,
     }];
-    project.lanes[0].clips = vec![ArrangementClip {
+    project.tracks[0].clips = vec![ArrangementClip {
         start_step: 0,
         length_steps: 16,
         source: ClipSource::Pattern { pattern_id: 0 },
@@ -91,7 +91,7 @@ fn automation_source_preview_reacts_to_step_hits() {
     let level = automation_source_preview(
         &source,
         target,
-        &project.lanes,
+        &project.tracks,
         &project.patterns,
         120.0,
         0,
@@ -118,7 +118,7 @@ fn collapsed_tracks_hide_their_automation_rows() {
             .any(|span| matches!(span.row, ArrangementRow::Automation(0)))
     );
 
-    project.lanes[0].automation_collapsed = true;
+    project.tracks[0].automation_collapsed = true;
     let collapsed = arrangement_layout(&project);
     assert!(
         !collapsed
@@ -131,8 +131,8 @@ fn collapsed_tracks_hide_their_automation_rows() {
 #[test]
 fn row_heights_offset_and_hit_test_together() {
     let mut project = Project::default();
-    project.lanes[0].height = 100.0;
-    project.lanes[1].height = 40.0;
+    project.tracks[0].height = 100.0;
+    project.tracks[1].height = 40.0;
     let spans = arrangement_layout(&project);
     assert!((spans[0].height - 100.0).abs() < f32::EPSILON);
     assert!((spans[1].top - 100.0).abs() < f32::EPSILON);
@@ -155,7 +155,7 @@ fn arrangement_rows_group_automation_under_its_mixer_lane() {
     });
     project.automation_tracks.push(AutomationTrack {
         target: ParameterTarget::InsertEffect {
-            channel_id: 2,
+            track_id: 2,
             slot_id: 0,
             parameter: EffectParameter::Mix,
         },
@@ -316,7 +316,7 @@ fn peak_lane_drives_another_lane_parameter() {
             parameter: AutomationLaneParameter::RateAmount,
         },
         source: AutomationSource::Peak {
-            channel_id: 0,
+            track_id: 0,
             post_fx: true,
             attack: TimeValue {
                 amount: 5.0,
@@ -356,7 +356,7 @@ fn peak_source_preview_uses_the_live_level() {
     use project::{AutomationSource, TimeUnit, TimeValue};
     let project = Project::default();
     let source = AutomationSource::Peak {
-        channel_id: 0,
+        track_id: 0,
         post_fx: true,
         attack: TimeValue {
             amount: 5.0,
@@ -376,7 +376,7 @@ fn peak_source_preview_uses_the_live_level() {
     let silent = automation_source_preview(
         &source,
         target,
-        &project.lanes,
+        &project.tracks,
         &project.patterns,
         120.0,
         0,
@@ -386,7 +386,7 @@ fn peak_source_preview_uses_the_live_level() {
     let loud = automation_source_preview(
         &source,
         target,
-        &project.lanes,
+        &project.tracks,
         &project.patterns,
         120.0,
         0,

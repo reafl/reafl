@@ -77,7 +77,7 @@ impl PulseForgeApp {
         let lane = self.lane_for_selection();
         self.rename_buffer = self
             .project
-            .lanes
+            .tracks
             .get(lane)
             .map(|lane| lane.name.clone())
             .unwrap_or_default();
@@ -88,8 +88,8 @@ impl PulseForgeApp {
     /// the selected mixer channel.
     pub(crate) fn lane_for_selection(&self) -> usize {
         match self.selection {
-            Some(Selection::Clip { lane, .. }) => lane.min(self.project.lanes.len() - 1),
-            _ => self.selected_lane.min(self.project.lanes.len() - 1),
+            Some(Selection::Clip { lane, .. }) => lane.min(self.project.tracks.len() - 1),
+            _ => self.selected_lane.min(self.project.tracks.len() - 1),
         }
     }
 
@@ -102,7 +102,7 @@ impl PulseForgeApp {
             self.status = "Track name cannot be empty.".to_owned();
             return;
         }
-        if let Some(target) = self.project.lanes.get_mut(lane) {
+        if let Some(target) = self.project.tracks.get_mut(lane) {
             target.name = name.clone();
         }
         self.push_history();
@@ -130,10 +130,10 @@ impl PulseForgeApp {
     }
 
     pub(crate) fn effect_slot_name(&self, channel: usize, slot: usize) -> Option<String> {
-        let slots = if channel == self.project.lanes.len() {
+        let slots = if channel == self.project.tracks.len() {
             &self.project.master.inserts
         } else {
-            &self.project.lanes.get(channel)?.inserts
+            &self.project.tracks.get(channel)?.inserts
         };
         let name = &slots.get(slot)?.name;
         (!name.is_empty()).then(|| name.clone())
@@ -144,10 +144,10 @@ impl PulseForgeApp {
         channel: usize,
         slot: usize,
     ) -> Option<&mut InsertFxSlot> {
-        let slots = if channel == self.project.lanes.len() {
+        let slots = if channel == self.project.tracks.len() {
             &mut self.project.master.inserts
         } else {
-            &mut self.project.lanes.get_mut(channel)?.inserts
+            &mut self.project.tracks.get_mut(channel)?.inserts
         };
         slots.get_mut(slot)
     }

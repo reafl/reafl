@@ -6,7 +6,7 @@ impl PulseForgeApp {
     pub(crate) fn apply_context_action(&mut self, action: ContextAction) {
         match action {
             ContextAction::ToggleLanePin(lane) => {
-                if let Some(lane) = self.project.lanes.get_mut(lane) {
+                if let Some(lane) = self.project.tracks.get_mut(lane) {
                     lane.pinned = !lane.pinned;
                 }
             }
@@ -14,16 +14,16 @@ impl PulseForgeApp {
                 disconnect_channel(&mut self.project.sends, channel);
             }
             ContextAction::SelectChannel(channel) => {
-                if channel <= self.project.lanes.len() {
+                if channel <= self.project.tracks.len() {
                     self.selected_mixer_channel = channel;
                     self.selection = Some(Selection::MixerChannel(channel));
-                    if channel < self.project.lanes.len() {
+                    if channel < self.project.tracks.len() {
                         self.selected_lane = channel;
                     }
                 }
             }
             ContextAction::DeleteClip { lane, clip } => {
-                if let Some(lane) = self.project.lanes.get_mut(lane)
+                if let Some(lane) = self.project.tracks.get_mut(lane)
                     && clip < lane.clips.len()
                 {
                     lane.clips.remove(clip);
@@ -47,17 +47,17 @@ impl PulseForgeApp {
                 let target = if up {
                     lane.checked_sub(1)
                 } else {
-                    Some(lane + 1).filter(|target| *target < self.project.lanes.len())
+                    Some(lane + 1).filter(|target| *target < self.project.tracks.len())
                 };
                 if let Some(target) = target {
                     self.push_history();
-                    self.project.move_lane(lane, target);
+                    self.project.move_track(lane, target);
                     self.selected_lane = target;
                     self.selection = Some(Selection::MixerChannel(target));
                 }
             }
             ContextAction::ToggleTrackAutomation(lane) => {
-                if let Some(track) = self.project.lanes.get_mut(lane) {
+                if let Some(track) = self.project.tracks.get_mut(lane) {
                     track.automation_collapsed = !track.automation_collapsed;
                 }
             }
@@ -80,7 +80,7 @@ impl PulseForgeApp {
             }
             ContextAction::NewAutomationForTrack(lane) => {
                 let target = ParameterTarget::InsertEffect {
-                    channel_id: lane,
+                    track_id: lane,
                     slot_id: 0,
                     parameter: EffectParameter::Mix,
                 };
@@ -89,7 +89,7 @@ impl PulseForgeApp {
                     name: format!(
                         "{} ? Insert 1 mix",
                         self.project
-                            .lanes
+                            .tracks
                             .get(lane)
                             .map_or("Track", |track| track.name.as_str())
                     ),
@@ -221,8 +221,8 @@ impl PulseForgeApp {
             ContextAction::ToggleChannelEnabled(channel) => {
                 let solo = self.mod_ctrl;
                 let lock = self.mod_shift;
-                if channel < self.project.lanes.len() {
-                    let lane = &mut self.project.lanes[channel];
+                if channel < self.project.tracks.len() {
+                    let lane = &mut self.project.tracks[channel];
                     if lock {
                         lane.locked = !lane.locked;
                     } else if solo {
@@ -293,7 +293,7 @@ impl PulseForgeApp {
 
     pub(crate) fn delete_selected_clip(&mut self) {
         if let Some(Selection::Clip { lane, clip }) = self.selection
-            && let Some(lane) = self.project.lanes.get_mut(lane)
+            && let Some(lane) = self.project.tracks.get_mut(lane)
             && clip < lane.clips.len()
         {
             lane.clips.remove(clip);
@@ -305,7 +305,7 @@ impl PulseForgeApp {
     pub(crate) fn duplicate_clip(&mut self, lane: usize, clip: usize) {
         let audio_path = self
             .project
-            .lanes
+            .tracks
             .get(lane)
             .and_then(|lane| lane.clips.get(clip))
             .and_then(|clip| match &clip.source {
@@ -349,7 +349,7 @@ impl PulseForgeApp {
             return;
         };
         self.selected_lane = lane;
-        self.selected_pattern = pattern_id;
+        self.selected_clip = pattern_id;
         self.selection = Some(Selection::Clip { lane, clip });
         self.sync_project();
         self.status = "Made this clip's pattern unique.".to_owned();

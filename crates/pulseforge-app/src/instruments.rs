@@ -6,9 +6,9 @@ impl PulseForgeApp {
     /// Colour of a channel row: its custom colour or the generated one.
     pub(crate) fn instrument_color(&self, instrument_id: usize) -> egui::Color32 {
         self.project
-            .instruments
+            .tracks
             .get(instrument_id)
-            .and_then(|instrument| instrument.color)
+            .and_then(|track| track.color)
             .map_or_else(
                 || lane_color(instrument_id),
                 |[r, g, b]| egui::Color32::from_rgb(r, g, b),
@@ -24,8 +24,8 @@ impl PulseForgeApp {
         if name.is_empty() {
             return;
         }
-        if let Some(instrument) = self.project.instruments.get_mut(instrument_id) {
-            instrument.name = name;
+        if let Some(track) = self.project.tracks.get_mut(instrument_id) {
+            track.name = name;
         }
         self.sync_project();
     }
@@ -40,7 +40,7 @@ impl PulseForgeApp {
     /// Same semantics for an instrument's power switch.
     pub(crate) fn toggle_instrument_switch(&mut self, instrument: usize) {
         let (shift, ctrl) = (self.mod_shift, self.mod_ctrl);
-        let Some(item) = self.project.instruments.get_mut(instrument) else {
+        let Some(item) = self.project.tracks.get_mut(instrument) else {
             return;
         };
         if shift {

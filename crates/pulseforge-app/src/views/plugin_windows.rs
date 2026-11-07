@@ -29,11 +29,11 @@ impl PulseForgeApp {
         let open_effects: Vec<_> = self.open_effect_plugins.iter().copied().collect();
         for (channel, slot) in open_effects {
             let mut open = true;
-            let channel_name = if channel == self.project.lanes.len() {
+            let channel_name = if channel == self.project.tracks.len() {
                 "MASTER".to_owned()
             } else {
                 self.project
-                    .lanes
+                    .tracks
                     .get(channel)
                     .map_or_else(|| "Mixer".to_owned(), |lane| lane.name.clone())
             };
@@ -51,7 +51,7 @@ impl PulseForgeApp {
             .resizable(true)
             .show(context, |ui| self.render_effect_plugin(channel, slot, ui));
             if !open
-                || channel > self.project.lanes.len()
+                || channel > self.project.tracks.len()
                 || self.effect_slot_name(channel, slot).is_none()
             {
                 self.open_effect_plugins.remove(&(channel, slot));

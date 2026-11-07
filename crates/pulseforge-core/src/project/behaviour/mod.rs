@@ -1,14 +1,15 @@
-//! What a [`Project`] can do: normalising, automation lookup, lane edits.
+//! What a [`Project`] can do: normalising, automation lookup, track edits.
 //!
 //! The methods are grouped by topic so each file stays readable:
-//! [`normalize`] clamps every numeric field, [`automation`] reads automation
-//! and parameter values, [`lanes`] reorders and normalises channels, and
-//! [`steps`] edits the step sequencer and the pattern list.
+//! [`normalize`] clamps every numeric field and keeps the track tree valid,
+//! [`automation`] reads automation and parameter values, and [`tracks`]
+//! reorders, groups and removes tracks and edits their clips.
 
 mod automation;
-mod lanes;
 mod normalize;
-mod steps;
+mod tracks;
+
+pub use tracks::target_track;
 
 use super::*;
 

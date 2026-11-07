@@ -49,17 +49,34 @@ pub(crate) enum PluginTarget {
     Effect { channel: usize, slot: usize },
 }
 
+/// What the arrangement pen places on a track.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ClipPlacement {
+    /// An empty note clip of the given length.
+    Notes {
+        /// Length in steps.
+        length_steps: u64,
+    },
+    /// An audio clip decoded from a WAV file.
+    Audio {
+        /// Path of the file.
+        path: String,
+    },
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Selection {
     Note {
-        pattern: usize,
-        instrument: usize,
+        /// Track owning the clip.
+        track: usize,
+        /// Clip index inside the track.
+        clip: usize,
         pitch: u8,
         start_step: u64,
     },
     Instrument(usize),
     Clip {
-        lane: usize,
+        track: usize,
         clip: usize,
     },
     MixerChannel(usize),
@@ -111,8 +128,9 @@ pub(crate) enum PianoGesture {
 
 #[derive(Clone, Copy)]
 pub(crate) struct RackGesture {
-    pub(crate) pattern_id: usize,
-    pub(crate) instrument_id: usize,
+    pub(crate) track_id: usize,
+    pub(crate) clip_id: usize,
+    pub(crate) pitch: u8,
     pub(crate) enabled: bool,
     pub(crate) last_step: u64,
 }
@@ -122,7 +140,7 @@ pub(crate) struct ArrangementGesture {
     pub(crate) lane: usize,
     pub(crate) start_step: u64,
     pub(crate) pointer_offset_steps: u64,
-    pub(crate) source: ClipSource,
+    pub(crate) source: ClipPlacement,
     pub(crate) resizing: bool,
     pub(crate) resizing_start: bool,
     pub(crate) resize_end_step: u64,

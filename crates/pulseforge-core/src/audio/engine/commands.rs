@@ -24,7 +24,7 @@ impl AudioEngine {
                             if voice.active && !voice.released {
                                 voice.released = true;
                                 voice.release_at_tick = None;
-                                self.releasing_instruments.push(voice.instrument_id);
+                                self.releasing_instruments.push(voice.track_id);
                             }
                         }
                         for voice in &mut self.sample_voices {
@@ -36,8 +36,8 @@ impl AudioEngine {
                         self.releasing_instruments.sort_unstable();
                         self.releasing_instruments.dedup();
                         for index in 0..self.releasing_instruments.len() {
-                            let instrument_id = self.releasing_instruments[index];
-                            self.release_automation(instrument_id);
+                            let track_id = self.releasing_instruments[index];
+                            self.release_automation(track_id);
                         }
                         self.releasing_instruments.clear();
                     }
@@ -62,8 +62,7 @@ impl AudioEngine {
                     }
                 }
                 AudioCommand::SetSelectedPattern(pattern_id) => {
-                    self.selected_pattern =
-                        pattern_id.filter(|pattern_id| *pattern_id < self.project.patterns.len());
+                    self.selected_pattern = pattern_id;
                     self.position_steps = 0;
                     self.frames_into_step = 0.0;
                     self.last_triggered_tick = None;
@@ -75,23 +74,23 @@ impl AudioEngine {
                     self.project.bpm = finite_clamp(bpm, 20.0, 300.0, 120.0);
                 }
                 AudioCommand::SetProject(project) => pending_project = Some(project),
-                AudioCommand::LoadInstrumentSample {
-                    instrument_id,
+                AudioCommand::LoadTrackSample {
+                    track_id,
                     sample,
                 } => {
-                    if instrument_id < self.instrument_samples.len() {
-                        self.instrument_samples[instrument_id] = Some(sample);
+                    if track_id < self.instrument_samples.len() {
+                        self.instrument_samples[track_id] = Some(sample);
                     }
                 }
                 AudioCommand::LoadAudioClip { path, sample } => {
                     self.clip_samples.insert(path, Arc::new(sample));
                 }
                 AudioCommand::MidiNote {
-                    instrument_id,
+                    track_id,
                     note,
                     velocity,
                     on,
-                } => self.handle_midi_note(instrument_id, note, velocity, on),
+                } => self.handle_midi_note(track_id, note, velocity, on),
                 AudioCommand::PreviewSample(sample) => {
                     self.preview = Some(sample);
                     self.preview_cursor = 0.0;
@@ -105,9 +104,9 @@ impl AudioEngine {
                     let slot =
                         HostedSlot::new(*audio, instrument, f64::from(self.sample_rate), counters);
                     if instrument {
-                        let instrument_id = id as usize;
-                        if !self.hosted_instruments.contains(&instrument_id) {
-                            self.hosted_instruments.push(instrument_id);
+                        let track_id = id as usize;
+                        if !self.hosted_instruments.contains(&track_id) {
+                            self.hosted_instruments.push(track_id);
                         }
                     }
                     self.hosted.insert(id, slot);
@@ -117,7 +116,7 @@ impl AudioEngine {
                         slot.reset();
                     }
                     self.hosted_instruments
-                        .retain(|instrument_id| instrument_host_id(*instrument_id) != id);
+                        .retain(|track_id| instrument_host_id(*track_id) != id);
                 }
                 AudioCommand::SetSmoothing {
                     enabled,
@@ -146,35 +145,48 @@ impl AudioEngine {
         let old_project = std::mem::replace(&mut self.project, project);
         self.control_countdown = 0;
         self.controls_snapped = false;
-        let instruments_changed = old_project.instruments.len() != self.project.instruments.len()
+        let generators_changed = old_project.tracks.len() != self.project.tracks.len()
             || old_project
-                .instruments
+                .tracks
                 .iter()
-                .zip(&self.project.instruments)
-                .any(|(old, new)| {
-                    old.sample_path != new.sample_path || old.default_sample != new.default_sample
+                .zip(&self.project.tracks)
+                .any(|(old, new)| match (old.generator(), new.generator()) {
+                    (Some(old), Some(new)) => {
+                        old.sample_path != new.sample_path || old.kind != new.kind
+                    }
+                    (None, None) => false,
+                    _ => true,
                 });
-        if instruments_changed {
+        if generators_changed {
             let mut old_instrument_samples = std::mem::take(&mut self.instrument_samples);
             self.instrument_samples = self
                 .project
-                .instruments
+                .tracks
                 .iter()
                 .enumerate()
-                .map(|(instrument_id, instrument)| {
+                .map(|(track_id, track)| {
+                    let Some(generator) = track.generator() else {
+                        return None;
+                    };
                     let unchanged = old_project
-                        .instruments
-                        .get(instrument_id)
+                        .tracks
+                        .get(track_id)
+                        .and_then(Track::generator)
                         .is_some_and(|old| {
-                            old.sample_path == instrument.sample_path
-                                && old.default_sample == instrument.default_sample
+                            old.sample_path == generator.sample_path
+                                && old.kind == generator.kind
                         });
                     if unchanged {
                         old_instrument_samples
-                            .get_mut(instrument_id)
+                            .get_mut(track_id)
                             .and_then(Option::take)
-                    } else if instrument.sample_path.is_empty() {
-                        SampleData::default_drum(instrument.default_sample, self.sample_rate as u32)
+                    } else if generator.sample_path.is_empty() {
+                        generator
+                            .kind
+                            .sample()
+                            .and_then(|sample| {
+                                SampleData::default_drum(sample, self.sample_rate as u32)
+                            })
                     } else {
                         None
                     }
@@ -186,11 +198,11 @@ impl AudioEngine {
             self.project.automation_tracks.len(),
             AutomationRuntime::default,
         );
-        let clips_changed = old_project.lanes.len() != self.project.lanes.len()
+        let clips_changed = old_project.tracks.len() != self.project.tracks.len()
             || old_project
-                .lanes
+                .tracks
                 .iter()
-                .zip(&self.project.lanes)
+                .zip(&self.project.tracks)
                 .any(|(old, new)| {
                     old.clips.len() != new.clips.len()
                         || old
@@ -198,7 +210,7 @@ impl AudioEngine {
                             .iter()
                             .zip(&new.clips)
                             .any(|(old_clip, new_clip)| {
-                                !clip_routes_match(&old_clip.source, &new_clip.source)
+                                !clip_routes_match(old_clip, new_clip)
                             })
                 });
         if clips_changed {
@@ -207,12 +219,12 @@ impl AudioEngine {
             // previous runtimes are a fallback for callers that attach audio
             // directly.
             let mut previous: Vec<(String, Arc<SampleData>)> = Vec::new();
-            for (lane_id, old_lane) in old_project.lanes.iter().enumerate() {
-                let Some(runtimes) = self.audio_clips.get(lane_id) else {
+            for (track_id, old_track) in old_project.tracks.iter().enumerate() {
+                let Some(runtimes) = self.audio_clips.get(track_id) else {
                     continue;
                 };
-                for (clip, runtime) in old_lane.clips.iter().zip(runtimes) {
-                    if let ClipSource::Audio { path } = &clip.source
+                for (clip, runtime) in old_track.clips.iter().zip(runtimes) {
+                    if let Some(path) = &clip.audio_path
                         && let Some(sample) = &runtime.sample
                     {
                         previous.push((path.clone(), Arc::clone(sample)));
@@ -221,23 +233,21 @@ impl AudioEngine {
             }
             self.audio_clips = self
                 .project
-                .lanes
+                .tracks
                 .iter()
-                .map(|lane| {
-                    lane.clips
+                .map(|track| {
+                    track
+                        .clips
                         .iter()
                         .map(|new_clip| {
-                            let sample = match &new_clip.source {
-                                ClipSource::Audio { path } => {
-                                    self.clip_samples.get(path).map(Arc::clone).or_else(|| {
-                                        previous
-                                            .iter()
-                                            .find(|(old_path, _)| old_path == path)
-                                            .map(|(_, sample)| Arc::clone(sample))
-                                    })
-                                }
-                                ClipSource::Pattern { .. } => None,
-                            };
+                            let sample = new_clip.audio_path.as_ref().and_then(|path| {
+                                self.clip_samples.get(path).map(Arc::clone).or_else(|| {
+                                    previous
+                                        .iter()
+                                        .find(|(old_path, _)| old_path == path)
+                                        .map(|(_, sample)| Arc::clone(sample))
+                                })
+                            });
                             AudioClipRuntime {
                                 sample,
                                 cursor: 0.0,
@@ -249,14 +259,12 @@ impl AudioEngine {
                 })
                 .collect();
         }
-        self.meter_levels.resize(self.project.lanes.len() + 1, 0.0);
-        let structure_changed = old_project.lanes.len() != self.project.lanes.len()
-            || old_project.instruments.len() != self.project.instruments.len()
-            || old_project.patterns.len() != self.project.patterns.len()
+        self.meter_levels.resize(self.project.tracks.len() + 1, 0.0);
+        let structure_changed = old_project.tracks.len() != self.project.tracks.len()
             || old_project
-                .lanes
+                .tracks
                 .iter()
-                .zip(&self.project.lanes)
+                .zip(&self.project.tracks)
                 .any(|(old, new)| old.clips.len() != new.clips.len());
         let sends_changed = old_project.sends != self.project.sends;
         if structure_changed {

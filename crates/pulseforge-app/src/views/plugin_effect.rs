@@ -24,7 +24,7 @@ impl PulseForgeApp {
                 ui.checkbox(&mut effect.enabled, "Enabled");
                 ui.checkbox(&mut effect.locked, "Locked");
                 let mix_target = ParameterTarget::InsertEffect {
-                    channel_id: channel,
+                    track_id: channel,
                     slot_id,
                     parameter: EffectParameter::Mix,
                 };
@@ -43,18 +43,18 @@ impl PulseForgeApp {
             }
             return;
         }
-        let lane_count = self.project.lanes.len();
-        let channel_label = if channel == lane_count {
+        let track_count = self.project.tracks.len();
+        let channel_label = if channel == track_count {
             "MASTER".to_owned()
-        } else if let Some(lane) = self.project.lanes.get(channel) {
+        } else if let Some(lane) = self.project.tracks.get(channel) {
             lane.name.clone()
         } else {
             ui.colored_label(egui::Color32::LIGHT_RED, "Mixer channel no longer exists.");
             return;
         };
-        let slots = if channel == lane_count {
+        let slots = if channel == track_count {
             &mut self.project.master.inserts
-        } else if let Some(lane) = self.project.lanes.get_mut(channel) {
+        } else if let Some(lane) = self.project.tracks.get_mut(channel) {
             &mut lane.inserts
         } else {
             ui.colored_label(egui::Color32::LIGHT_RED, "Mixer channel no longer exists.");

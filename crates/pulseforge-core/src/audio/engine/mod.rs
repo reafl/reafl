@@ -1,4 +1,4 @@
-﻿//! The render engine: state, rendering and automation.
+//! The render engine: state, rendering and automation.
 //!
 //! [`AudioEngine`] is one struct spread over several files: the module root
 //! keeps construction and the state that the routing is built from, while
@@ -25,10 +25,10 @@ use crate::{
     hosted::{HostedSlot, instrument_host_id},
     plugins::EffectParameters,
     project::{
-        AutomationLaneParameter, AutomationSource, ClipParameter, ClipSource, EffectParameter,
-        InstrumentParameter, LfoShape, MAX_SEND_GAIN_SUM, MixerParameter, ParameterTarget,
-        PianoNote, Project, SignalWaveform, SynthKind, TimeUnit, TimeValue, finite_clamp,
-        normalize_sends,
+        AutomationLaneParameter, AutomationSource, ClipNote, ClipParameter, EffectParameter,
+        InstrumentParameter, LfoShape, MAX_SEND_GAIN_SUM, MixerParameter, ParameterTarget, Project,
+        SignalWaveform, SynthKind, TimeUnit, TimeValue, Track, TrackId, TrackParameter,
+        finite_clamp, normalize_sends,
     },
     smooth::SmoothedValue,
 };
@@ -49,14 +49,14 @@ pub(crate) struct AudioEngine {
     pub(crate) instrument_samples: Vec<Option<SampleData>>,
     pub(crate) audio_clips: Vec<Vec<AudioClipRuntime>>,
     pub(crate) send_edges: Vec<SendEdge>,
-    pub(crate) lane_inputs: Vec<[f32; 2]>,
+    pub(crate) track_inputs: Vec<[f32; 2]>,
     pub(crate) meter_levels: Vec<f32>,
     /// Block peak of each channel as it enters its insert chain, used by
     /// `AutomationSource::Peak { post_fx: false }`.
-    pub(crate) lane_peak_pre: Vec<f32>,
+    pub(crate) track_peak_pre: Vec<f32>,
     /// Block peak of each channel after its insert chain, used by
     /// `AutomationSource::Peak { post_fx: true }`.
-    pub(crate) lane_peak_post: Vec<f32>,
+    pub(crate) track_peak_post: Vec<f32>,
     /// Followed peak level per automation lane, so a peak lane keeps its own
     /// attack and release.
     pub(crate) peak_levels: Vec<f32>,
@@ -113,32 +113,29 @@ pub(crate) struct AudioEngine {
 impl AudioEngine {
     pub(crate) fn new(mut project: Project, sample_rate: u32) -> Self {
         project.normalize();
-        let instrument_count = project.instruments.len();
+        let instrument_count = project.tracks.len();
         let automation_track_count = project.automation_tracks.len();
         let instrument_samples = project
-            .instruments
+            .tracks
             .iter()
-            .map(|instrument| SampleData::default_drum(instrument.default_sample, sample_rate))
+            .map(|track| {
+                track.generator().and_then(|generator| {
+                    generator
+                        .kind
+                        .sample()
+                        .and_then(|sample| SampleData::default_drum(sample, sample_rate))
+                })
+            })
             .collect();
-        let channel_count = project.lanes.len() + 1;
+        let channel_count = project.tracks.len() + 1;
         let audio_clips = project
-            .lanes
+            .tracks
             .iter()
-            .map(|lane| {
-                lane.clips
+            .map(|track| {
+                track
+                    .clips
                     .iter()
-                    .map(|clip| {
-                        if matches!(clip.source, ClipSource::Audio { .. }) {
-                            AudioClipRuntime::default()
-                        } else {
-                            AudioClipRuntime {
-                                active: false,
-                                cursor: 0.0,
-                                sample: None,
-                                finished: false,
-                            }
-                        }
-                    })
+                    .map(|_| AudioClipRuntime::default())
                     .collect()
             })
             .collect();
@@ -151,10 +148,10 @@ impl AudioEngine {
             selected_pattern: None,
             loop_range: None,
             send_edges: Vec::new(),
-            lane_inputs: vec![[0.0; 2]; channel_count],
+            track_inputs: vec![[0.0; 2]; channel_count],
             meter_levels: vec![0.0; channel_count],
-            lane_peak_pre: vec![0.0; channel_count],
-            lane_peak_post: vec![0.0; channel_count],
+            track_peak_pre: vec![0.0; channel_count],
+            track_peak_post: vec![0.0; channel_count],
             peak_levels: vec![0.0; automation_track_count],
             eq_states: vec![EqState::default(); channel_count],
             eq_gains: Vec::new(),

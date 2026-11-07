@@ -62,12 +62,12 @@ impl AudioEngine {
         } else {
             1
         };
-        let lane_count = self.project.lanes.len();
-        let mut gains = Vec::with_capacity(lane_count);
-        let mut pans = Vec::with_capacity(lane_count);
-        let mut widths = Vec::with_capacity(lane_count);
-        let mut mixes: Vec<Vec<SmoothedValue>> = Vec::with_capacity(lane_count + 1);
-        for (channel, lane) in self.project.lanes.iter().enumerate() {
+        let track_count = self.project.tracks.len();
+        let mut gains = Vec::with_capacity(track_count);
+        let mut pans = Vec::with_capacity(track_count);
+        let mut widths = Vec::with_capacity(track_count);
+        let mut mixes: Vec<Vec<SmoothedValue>> = Vec::with_capacity(track_count + 1);
+        for (channel, lane) in self.project.tracks.iter().enumerate() {
             let mut gain = self
                 .lane_gain
                 .get(channel)
@@ -106,7 +106,7 @@ impl AudioEngine {
             }
             mixes.push(slots);
         }
-        let master_index = lane_count;
+        let master_index = track_count;
         let mut master_slots = Vec::with_capacity(self.project.master.inserts.len());
         for (slot_id, slot) in self.project.master.inserts.iter().enumerate() {
             let mut value = self
@@ -131,44 +131,31 @@ impl AudioEngine {
     }
 
     pub(crate) fn resize_routing(&mut self) {
-        let lane_count = self.project.lanes.len() + 1;
+        let track_count = self.project.tracks.len() + 1;
         self.audio_clips
-            .resize_with(self.project.lanes.len(), Vec::new);
-        for (lane_id, lane) in self.project.lanes.iter().enumerate() {
-            self.audio_clips[lane_id].resize_with(lane.clips.len(), AudioClipRuntime::default);
+            .resize_with(self.project.tracks.len(), Vec::new);
+        for (track_id, lane) in self.project.tracks.iter().enumerate() {
+            self.audio_clips[track_id].resize_with(lane.clips.len(), AudioClipRuntime::default);
         }
         let event_capacity: usize = self
             .project
-            .lanes
+            .tracks
             .iter()
-            .flat_map(|lane| &lane.clips)
-            .map(|clip| match clip.source {
-                ClipSource::Pattern { pattern_id } => {
-                    self.project.patterns.get(pattern_id).map_or(1, |pattern| {
-                        1 + pattern.step_hits.len() + pattern.notes.len()
-                    })
-                }
-                ClipSource::Audio { .. } => 1,
-            })
-            .sum::<usize>()
-            + self
-                .project
-                .patterns
-                .iter()
-                .map(|pattern| pattern.step_hits.len() + pattern.notes.len())
-                .sum::<usize>();
+            .flat_map(|track| &track.clips)
+            .map(|clip| 1 + clip.notes.len())
+            .sum::<usize>();
         self.trigger_events
             .reserve(event_capacity.saturating_sub(self.trigger_events.len()));
-        self.lane_inputs.resize(lane_count, [0.0; 2]);
-        self.meter_levels.resize(lane_count, 0.0);
-        self.lane_peak_pre.resize(lane_count, 0.0);
-        self.lane_peak_post.resize(lane_count, 0.0);
+        self.track_inputs.resize(track_count, [0.0; 2]);
+        self.meter_levels.resize(track_count, 0.0);
+        self.track_peak_pre.resize(track_count, 0.0);
+        self.track_peak_post.resize(track_count, 0.0);
         self.peak_levels
             .resize(self.project.automation_tracks.len(), 0.0);
-        self.eq_states.resize(lane_count, EqState::default());
+        self.eq_states.resize(track_count, EqState::default());
         self.eq_gains = self
             .project
-            .lanes
+            .tracks
             .iter()
             .map(|lane| eq_gains(lane.eq.low_db, lane.eq.mid_db, lane.eq.high_db))
             .chain(std::iter::once(eq_gains(
@@ -178,8 +165,8 @@ impl AudioEngine {
             )))
             .collect();
         self.effect_processors
-            .resize_with(self.project.lanes.len() + 1, Vec::new);
-        for (channel, lane) in self.project.lanes.iter().enumerate() {
+            .resize_with(self.project.tracks.len() + 1, Vec::new);
+        for (channel, lane) in self.project.tracks.iter().enumerate() {
             // A bypassed channel keeps its insert settings but renders with no
             // chain at all, so the dry signal costs nothing.
             let inserts: &[_] = if lane.fx_bypass { &[] } else { &lane.inserts };
@@ -191,17 +178,15 @@ impl AudioEngine {
             );
         }
         update_effect_chain(
-            self.project.lanes.len(),
+            self.project.tracks.len(),
             &self.project.master.inserts,
-            &mut self.effect_processors[self.project.lanes.len()],
+            &mut self.effect_processors[self.project.tracks.len()],
             self.sample_rate as u32,
         );
         self.instrument_samples
-            .resize_with(self.project.instruments.len(), || None);
-        self.instrument_controls.resize(
-            self.project.instruments.len(),
-            InstrumentControls::default(),
-        );
+            .resize_with(self.project.tracks.len(), || None);
+        self.instrument_controls
+            .resize(self.project.tracks.len(), InstrumentControls::default());
         self.automation_runtime.resize(
             self.project.automation_tracks.len(),
             AutomationRuntime::default(),
@@ -216,11 +201,11 @@ impl AudioEngine {
     pub(crate) fn resize_effect_parameters(&mut self) {
         self.effect_parameters.clear();
         self.effect_parameters
-            .resize_with(self.project.lanes.len() + 1, Vec::new);
-        for (channel, lane) in self.project.lanes.iter().enumerate() {
+            .resize_with(self.project.tracks.len() + 1, Vec::new);
+        for (channel, lane) in self.project.tracks.iter().enumerate() {
             self.effect_parameters[channel].resize(lane.inserts.len(), EffectParameters::default());
         }
-        self.effect_parameters[self.project.lanes.len()].resize(
+        self.effect_parameters[self.project.tracks.len()].resize(
             self.project.master.inserts.len(),
             EffectParameters::default(),
         );
@@ -233,7 +218,7 @@ impl AudioEngine {
         self.eq_gains.clear();
         self.eq_gains.extend(
             self.project
-                .lanes
+                .tracks
                 .iter()
                 .map(|lane| eq_gains(lane.eq.low_db, lane.eq.mid_db, lane.eq.high_db)),
         );
@@ -242,10 +227,10 @@ impl AudioEngine {
             self.project.master.eq.mid_db,
             self.project.master.eq.high_db,
         ));
-        let channel_count = self.project.lanes.len() + 1;
+        let channel_count = self.project.tracks.len() + 1;
         self.effect_processors.resize_with(channel_count, Vec::new);
         self.effect_processors.truncate(channel_count);
-        for (channel, lane) in self.project.lanes.iter().enumerate() {
+        for (channel, lane) in self.project.tracks.iter().enumerate() {
             // A bypassed channel keeps its insert settings but renders with no
             // chain at all, so the dry signal costs nothing.
             let inserts: &[_] = if lane.fx_bypass { &[] } else { &lane.inserts };
@@ -257,9 +242,9 @@ impl AudioEngine {
             );
         }
         update_effect_chain(
-            self.project.lanes.len(),
+            self.project.tracks.len(),
             &self.project.master.inserts,
-            &mut self.effect_processors[self.project.lanes.len()],
+            &mut self.effect_processors[self.project.tracks.len()],
             self.sample_rate as u32,
         );
         self.rebuild_automation_index();

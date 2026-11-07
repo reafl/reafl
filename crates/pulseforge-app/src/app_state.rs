@@ -25,8 +25,8 @@ pub(crate) struct PulseForgeApp {
     pub(crate) open_instrument_plugins: BTreeSet<usize>,
     pub(crate) open_effect_plugins: BTreeSet<(usize, usize)>,
     pub(crate) plugin_selector_target: Option<PluginTarget>,
-    pub(crate) selected_pattern: usize,
-    pub(crate) selected_pattern_playback: bool,
+    pub(crate) selected_clip: usize,
+    pub(crate) selected_clip_playback: bool,
     pub(crate) audio_preview_pattern: Option<usize>,
     pub(crate) arrangement_loop: Option<(u64, u64)>,
     pub(crate) loop_drag_start: Option<u64>,
@@ -101,10 +101,10 @@ pub(crate) struct PulseForgeApp {
     pub(crate) piano_gesture: Option<PianoGesture>,
     pub(crate) rack_gesture: Option<RackGesture>,
     pub(crate) note_length_steps: u64,
-    pub(crate) pattern_drag: Option<ClipSource>,
+    pub(crate) pattern_drag: Option<ClipPlacement>,
     /// Source placed by the arrangement pen and brush tools, mirroring the
     /// "last clicked item" behaviour of FL Studio.
-    pub(crate) arrangement_source: Option<ClipSource>,
+    pub(crate) arrangement_source: Option<ClipPlacement>,
     pub(crate) arrangement_gesture: Option<ArrangementGesture>,
     /// True while the arrangement brush is painting a stroke.
     pub(crate) arrangement_painting: bool,

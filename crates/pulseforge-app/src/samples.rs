@@ -39,9 +39,10 @@ impl PulseForgeApp {
     ) {
         let path = self
             .project
-            .instruments
+            .tracks
             .get(instrument_id)
-            .map(|instrument| instrument.sample_path.clone())
+            .and_then(|track| track.generator())
+            .map(|generator| generator.sample_path.clone())
             .unwrap_or_default();
         painter.rect_filled(rect, 4.0, egui::Color32::from_gray(20));
         if path.trim().is_empty() {

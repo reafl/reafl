@@ -36,7 +36,7 @@ impl PulseForgeApp {
     ) {
         let Some(source_path) = self
             .project
-            .lanes
+            .tracks
             .get(lane)
             .and_then(|lane| lane.clips.get(clip))
             .and_then(|clip| match &clip.source {
@@ -136,7 +136,7 @@ impl PulseForgeApp {
                 };
                 if let Some(clip) = self
                     .project
-                    .lanes
+                    .tracks
                     .get_mut(lane)
                     .and_then(|lane| lane.clips.get_mut(clip))
                 {

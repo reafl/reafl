@@ -24,11 +24,11 @@ impl PulseForgeApp {
                 "Drag outputs to inputs · hover a cable for level · right-click to disconnect",
             );
         });
-        let lane_count = self.project.lanes.len();
-        let channel_count = lane_count + 1;
-        let mut order = vec![lane_count];
-        let mut lanes: Vec<_> = (0..lane_count).collect();
-        lanes.sort_by_key(|lane| !self.project.lanes[*lane].pinned);
+        let track_count = self.project.tracks.len();
+        let channel_count = track_count + 1;
+        let mut order = vec![track_count];
+        let mut lanes: Vec<_> = (0..track_count).collect();
+        lanes.sort_by_key(|lane| !self.project.tracks[*lane].pinned);
         order.extend(lanes);
         let canvas_height = 48.0 + channel_count as f32 * 38.0;
         let (rect, response) = ui.allocate_exact_size(
@@ -54,10 +54,10 @@ impl PulseForgeApp {
             egui::Color32::from_gray(155),
         );
         let channel_name = |index: usize, project: &Project| {
-            if index == project.lanes.len() {
+            if index == project.tracks.len() {
                 "MASTER".to_owned()
             } else {
-                project.lanes[index].name.clone()
+                project.tracks[index].name.clone()
             }
         };
         let mut node_y = vec![0.0; channel_count];
@@ -65,7 +65,7 @@ impl PulseForgeApp {
             node_y[channel] = rect.top() + 48.0 + row as f32 * 38.0;
         }
         let channel_color = |index: usize, project: &Project| {
-            if index == project.lanes.len() {
+            if index == project.tracks.len() {
                 egui::Color32::WHITE
             } else {
                 lane_color(index)
@@ -231,7 +231,7 @@ impl PulseForgeApp {
             // offers its context menu exactly like every other parameter.
             let mut value = self.project.sends[source][destination];
             let send_target = ParameterTarget::MixerChannel {
-                channel_id: source,
+                track_id: source,
                 parameter: project::MixerParameter::Send { destination },
             };
             ui.scope_builder(egui::UiBuilder::new().max_rect(knob_rect), |ui| {
@@ -270,7 +270,7 @@ impl PulseForgeApp {
                 ));
                 let mut gain = self.project.sends[*source][*destination];
                 let send_target = ParameterTarget::MixerChannel {
-                    channel_id: *source,
+                    track_id: *source,
                     parameter: project::MixerParameter::Send {
                         destination: *destination,
                     },
@@ -449,7 +449,7 @@ impl PulseForgeApp {
                 .map_or_else(|| "instrument".to_owned(), |item| item.name.clone()),
             Some(Selection::Clip { lane, clip }) => self
                 .project
-                .lanes
+                .tracks
                 .get(lane)
                 .and_then(|lane| lane.clips.get(clip))
                 .map_or_else(
@@ -470,7 +470,7 @@ impl PulseForgeApp {
                 ),
             Some(Selection::MixerChannel(channel)) => self
                 .project
-                .lanes
+                .tracks
                 .get(channel)
                 .map_or_else(|| "MASTER".to_owned(), |lane| lane.name.clone()),
             Some(Selection::Automation(track)) => self

@@ -21,38 +21,90 @@ impl PulseForgeApp {
         self.selection_anchor = self.selection;
     }
 
-    /// Step count shown in the piano roll: covers the pattern length and every
-    /// note, so shortening a pattern never hides notes that sit beyond it.
+    /// Step count shown in the piano roll: covers the clip length and every
+    /// note, so shortening a clip never hides notes that sit beyond it.
     pub(crate) fn piano_visible_steps(&self) -> u64 {
-        let pattern = self.project.patterns.get(self.selected_pattern);
-        let pattern_length = pattern.map_or(VISIBLE_PIANO_STEPS, |pattern| pattern.length_steps);
-        let note_end = pattern.map_or(0, |pattern| {
-            pattern
-                .notes
-                .iter()
-                .map(|note| note.start_step.saturating_add(note.duration_steps))
-                .max()
-                .unwrap_or(0)
-        });
-        pattern_length
+        let Some(clip) = self.active_clip() else {
+            return VISIBLE_PIANO_STEPS;
+        };
+        let clip_length = clip.length_steps;
+        let note_end = clip
+            .notes
+            .iter()
+            .map(|note| note.start_step.saturating_add(note.duration_steps))
+            .max()
+            .unwrap_or(0);
+        clip_length
             .max(note_end.saturating_add(1))
             .clamp(VISIBLE_PIANO_STEPS, 4096)
     }
 
+    /// The track the editors act on.
+    pub(crate) fn active_track(&self) -> usize {
+        self.selected_instrument
+    }
+
+    /// The clip the piano roll edits: the selected clip slot of the active
+    /// track, or its first clip.
+    pub(crate) fn active_clip(&self) -> Option<&Clip> {
+        let track = self.project.tracks.get(self.active_track())?;
+        track
+            .clips
+            .get(self.selected_clip)
+            .or_else(|| track.clips.first())
+    }
+
+    /// Mutable access to the clip the piano roll edits.
+    pub(crate) fn active_clip_mut(&mut self) -> Option<&mut Clip> {
+        let index = self.resolve_active_clip()?;
+        self.project
+            .tracks
+            .get_mut(self.selected_instrument)?
+            .clips
+            .get_mut(index)
+    }
+
+    /// Index of the clip the piano roll edits.
+    pub(crate) fn resolve_active_clip(&self) -> Option<usize> {
+        let track = self.project.tracks.get(self.active_track())?;
+        if self.selected_clip < track.clips.len() {
+            Some(self.selected_clip)
+        } else if track.clips.is_empty() {
+            None
+        } else {
+            Some(0)
+        }
+    }
+
+    /// The notes the piano roll edits.
+    pub(crate) fn active_notes(&self) -> &[ClipNote] {
+        self.active_clip().map_or(&[], |clip| clip.notes.as_slice())
+    }
+
+    /// Mutable access to the notes the piano roll edits.
+    pub(crate) fn active_notes_mut(&mut self) -> Option<&mut Vec<ClipNote>> {
+        self.active_clip_mut().map(|clip| &mut clip.notes)
+    }
+
     /// Window title for a plug-in window: uses the hosted plug-in name when the
-    /// instrument is backed by an external bundle.
-    pub(crate) fn instrument_window_title(&self, instrument_id: usize) -> String {
-        let Some(instrument) = self.project.instruments.get(instrument_id) else {
+    /// track is backed by an external bundle.
+    pub(crate) fn instrument_window_title(&self, track_id: usize) -> String {
+        let Some(track) = self.project.tracks.get(track_id) else {
             return "Plug-in".to_owned();
         };
-        if instrument.synth_kind == SynthKind::External && !instrument.plugin_path.is_empty() {
-            return format!("{} \u{00B7} Hosted plug-in", instrument.name);
+        let Some(generator) = track.generator() else {
+            return format!("{} \u{00B7} Folder", track.name);
+        };
+        if generator.kind.synth_kind() == Some(SynthKind::External)
+            && !generator.plugin_path.is_empty()
+        {
+            return format!("{} \u{00B7} Hosted plug-in", track.name);
         }
-        format!(
-            "{} \u{00B7} {}",
-            instrument.name,
-            synth_kind_label(instrument.synth_kind)
-        )
+        let label = generator
+            .kind
+            .synth_kind()
+            .map_or_else(|| "Sample".to_owned(), synth_kind_label);
+        format!("{} \u{00B7} {}", track.name, label)
     }
 }
 
@@ -129,19 +181,20 @@ impl PulseForgeApp {
     pub(crate) fn select_note(
         &mut self,
         _index: usize,
-        instrument: usize,
+        track: usize,
         pitch: u8,
         start_step: u64,
         shift: bool,
         ctrl: bool,
     ) {
+        let clip = self.resolve_active_clip().unwrap_or(0);
         let item = Selection::Note {
-            pattern: self.selected_pattern,
-            instrument,
+            track,
+            clip,
             pitch,
             start_step,
         };
-        self.selected_instrument = instrument;
+        self.selected_instrument = track;
         self.status = format!("Selected note {} at step {}.", note_name(pitch), start_step);
         self.select_item(item, shift, ctrl);
     }
@@ -197,11 +250,11 @@ impl PulseForgeApp {
             return;
         }
         self.push_history();
-        let Some(pattern) = self.project.patterns.get_mut(self.selected_pattern) else {
+        let Some(clip) = self.active_clip_mut() else {
             return;
         };
         let mut moved = 0;
-        for note in &mut pattern.notes {
+        for note in &mut clip.notes {
             let key = (note.pitch, note.start_step);
             if !selected.is_empty() && !selected.contains(&key) {
                 continue;
@@ -248,31 +301,30 @@ impl PulseForgeApp {
         self.selection_anchor = None;
     }
 
-    /// Ordered list of the notes in the current pattern, used for range select.
+    /// Ordered list of the notes in the current clip, used for range select.
     pub(crate) fn note_order(&self) -> Vec<Selection> {
-        self.project
-            .patterns
-            .get(self.selected_pattern)
-            .map(|pattern| {
-                let mut notes: Vec<_> = pattern.notes.iter().collect();
-                notes.sort_by_key(|note| (note.start_step, note.pitch));
-                notes
-                    .into_iter()
-                    .map(|note| Selection::Note {
-                        pattern: self.selected_pattern,
-                        instrument: note.instrument_id,
-                        pitch: note.pitch,
-                        start_step: note.start_step,
-                    })
-                    .collect()
+        let track = self.active_track();
+        let clip_index = self.resolve_active_clip().unwrap_or(0);
+        let Some(clip) = self.active_clip() else {
+            return Vec::new();
+        };
+        let mut notes: Vec<_> = clip.notes.iter().collect();
+        notes.sort_by_key(|note| (note.start_step, note.pitch));
+        notes
+            .into_iter()
+            .map(|note| Selection::Note {
+                track,
+                clip: clip_index,
+                pitch: note.pitch,
+                start_step: note.start_step,
             })
-            .unwrap_or_default()
+            .collect()
     }
 
     /// Clip order across the arrangement, used for ctrl range selection.
     pub(crate) fn clip_order(&self) -> Vec<Selection> {
         let mut clips = Vec::new();
-        for (lane, data) in self.project.lanes.iter().enumerate() {
+        for (lane, data) in self.project.tracks.iter().enumerate() {
             for (clip, item) in data.clips.iter().enumerate() {
                 clips.push((item.start_step, lane, clip));
             }
@@ -314,7 +366,7 @@ impl PulseForgeApp {
     /// Mixer channels, master last, used for range selection in the mixer and
     /// the arrangement track headers.
     pub(crate) fn channel_order(&self) -> Vec<Selection> {
-        (0..=self.project.lanes.len())
+        (0..=self.project.tracks.len())
             .map(Selection::MixerChannel)
             .collect()
     }
@@ -328,7 +380,7 @@ impl PulseForgeApp {
     /// Selects a mixer channel, honouring shift (toggle) and ctrl (range).
     pub(crate) fn select_channel(&mut self, channel: usize) {
         let (shift, ctrl) = (self.mod_shift, self.mod_ctrl);
-        if channel < self.project.lanes.len() {
+        if channel < self.project.tracks.len() {
             self.selected_lane = channel;
         }
         self.selected_mixer_channel = channel;

@@ -146,7 +146,7 @@ impl PulseForgeApp {
                 .floor()
                 .max(0.0) as usize;
             let pitch = PIANO_MIN_PITCH + (PIANO_ROWS - 1 - row.min(PIANO_ROWS - 1)) as u8;
-            let hovered_note = self.project.patterns[self.selected_pattern]
+            let hovered_note = self.project.patterns[self.selected_clip]
                 .notes
                 .iter()
                 .find(|note| {

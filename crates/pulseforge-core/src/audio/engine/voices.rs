@@ -1,8 +1,13 @@
-//! Step triggering, arpeggios, voice allocation and MIDI note handling.
+//! Clip scheduling, arpeggios, voice allocation and MIDI note handling.
 
 use super::*;
 
 impl AudioEngine {
+    /// Fires every note and audio clip that starts at `position_tick`.
+    ///
+    /// # Parameters
+    ///
+    /// - `position_tick`: transport position in sixteenths of a step.
     pub(crate) fn trigger_step(&mut self, position_tick: u64) {
         let position = position_tick / 16;
         let substep = (position_tick % 16) as u8;
@@ -15,92 +20,69 @@ impl AudioEngine {
         for voice in &mut self.voices {
             if voice.active && voice.release_at_tick == Some(position_tick) {
                 voice.released = true;
-                self.releasing_instruments.push(voice.instrument_id);
+                self.releasing_instruments.push(voice.track_id);
             }
         }
         self.releasing_instruments.sort_unstable();
         self.releasing_instruments.dedup();
         for index in 0..self.releasing_instruments.len() {
-            let instrument_id = self.releasing_instruments[index];
-            self.release_automation(instrument_id);
+            let track_id = self.releasing_instruments[index];
+            self.release_automation(track_id);
         }
         self.trigger_events.clear();
-        if let Some(pattern_id) = self.selected_pattern {
-            if let Some(pattern) = self.project.patterns.get(pattern_id) {
-                let step = position % pattern.length_steps.max(1);
-                if substep == 0 {
-                    for hit in pattern.step_hits.iter().filter(|hit| hit.step == step) {
-                        let lane_id = self
-                            .project
-                            .instruments
-                            .get(hit.instrument_id)
-                            .map_or(0, |instrument| instrument.default_mixer_lane)
-                            .min(self.project.lanes.len().saturating_sub(1));
-                        self.trigger_events.push(TriggerEvent::InstrumentHit {
-                            instrument_id: hit.instrument_id,
-                            lane_id,
+        for (track_id, track) in self.project.tracks.iter().enumerate() {
+            for (clip_index, clip) in track.clips.iter().enumerate() {
+                if position < clip.start_step || position >= clip.end_step() {
+                    continue;
+                }
+                if clip.is_audio() {
+                    if position == clip.start_step && substep == 0 {
+                        self.trigger_events.push(TriggerEvent::AudioClip {
+                            track_id,
+                            clip_index,
                         });
                     }
+                    continue;
                 }
-                let local_tick = step.saturating_mul(16) + u64::from(substep);
-                for note in &pattern.notes {
-                    let lane_id = self
-                        .project
-                        .instruments
-                        .get(note.instrument_id)
-                        .map_or(0, |instrument| instrument.default_mixer_lane)
-                        .min(self.project.lanes.len().saturating_sub(1));
-                    push_note_triggers(
-                        &mut self.trigger_events,
-                        note,
-                        local_tick,
-                        lane_id,
-                        pattern.length_steps,
-                    );
-                }
-            }
-        } else {
-            for (lane_id, lane) in self.project.lanes.iter().enumerate() {
-                for (clip_index, clip) in lane.clips.iter().enumerate() {
-                    if position < clip.start_step
-                        || position >= clip.start_step.saturating_add(clip.length_steps)
-                    {
+                let local_tick = position
+                    .saturating_sub(clip.start_step)
+                    .saturating_add(clip.offset_steps)
+                    .saturating_mul(16)
+                    .saturating_add(u64::from(substep));
+                for note in &clip.notes {
+                    // A note may repeat; every repeat lands on its own tick.
+                    let trigger = note
+                        .trigger_offsets()
+                        .into_iter()
+                        .find(|(offset, _)| note.start_tick().saturating_add(*offset) == local_tick)
+                        .map(|(_, velocity)| ClipNote {
+                            velocity,
+                            ..*note
+                        });
+                    let Some(note) = trigger else {
                         continue;
-                    }
-                    let local_step = position - clip.start_step;
-                    match &clip.source {
-                        ClipSource::Pattern { pattern_id } => {
-                            let Some(pattern) = self.project.patterns.get(*pattern_id) else {
+                    };
+                    // A clip on a folder plays through every source track below
+                    // it, passing the folder's MIDI FX on the way down.
+                    if track.is_group() {
+                        for child in Track::descendants(&self.project.tracks, track_id) {
+                            let Some(target) = self.project.tracks.get(child) else {
                                 continue;
                             };
-                            let step = local_step % pattern.length_steps;
-                            if substep == 0 {
-                                for hit in pattern.step_hits.iter().filter(|hit| hit.step == step) {
-                                    self.trigger_events.push(TriggerEvent::InstrumentHit {
-                                        instrument_id: hit.instrument_id,
-                                        lane_id,
-                                    });
-                                }
+                            if target.is_group() {
+                                continue;
                             }
-                            let local_tick = step.saturating_mul(16) + u64::from(substep);
-                            for note in &pattern.notes {
-                                push_note_triggers(
-                                    &mut self.trigger_events,
-                                    note,
-                                    local_tick,
-                                    lane_id,
-                                    pattern.length_steps,
-                                );
-                            }
+                            let note = self.midi_chain_note(track_id, child, note);
+                            self.trigger_events.push(TriggerEvent::Note {
+                                track_id: child,
+                                note,
+                            });
                         }
-                        ClipSource::Audio { .. } => {
-                            if local_step == 0 && substep == 0 {
-                                self.trigger_events.push(TriggerEvent::AudioClip {
-                                    lane_id,
-                                    clip_index,
-                                });
-                            }
-                        }
+                    } else {
+                        self.trigger_events.push(TriggerEvent::Note {
+                            track_id,
+                            note,
+                        });
                     }
                 }
             }
@@ -108,36 +90,31 @@ impl AudioEngine {
         self.drain_arpeggio(position_tick);
         for index in 0..self.trigger_events.len() {
             match self.trigger_events[index] {
-                TriggerEvent::InstrumentHit {
-                    instrument_id,
-                    lane_id,
-                } => self.trigger_instrument(instrument_id, lane_id),
-                TriggerEvent::Note { note, lane_id } => {
-                    if self.schedule_arpeggio(&note, lane_id, position_tick) {
+                TriggerEvent::Note { track_id, note } => {
+                    if self.schedule_arpeggio(&note, track_id, position_tick) {
                         continue;
                     }
                     self.start_voice(
-                        note.instrument_id,
-                        lane_id,
+                        track_id,
                         note.pitch,
                         note.velocity,
                         Some(position_tick.saturating_add(note.duration_ticks())),
                     );
                 }
                 TriggerEvent::AudioClip {
-                    lane_id,
+                    track_id,
                     clip_index,
                 } => {
                     let offset_steps = self
                         .project
-                        .lanes
-                        .get(lane_id)
-                        .and_then(|lane| lane.clips.get(clip_index))
+                        .tracks
+                        .get(track_id)
+                        .and_then(|track| track.clips.get(clip_index))
                         .map_or(0, |clip| clip.offset_steps);
                     let seconds_per_step = 60.0 / f64::from(self.project.bpm) / 4.0;
                     if let Some(runtime) = self
                         .audio_clips
-                        .get_mut(lane_id)
+                        .get_mut(track_id)
                         .and_then(|clips| clips.get_mut(clip_index))
                     {
                         runtime.cursor = runtime.sample.as_ref().map_or(0.0, |sample| {
@@ -150,18 +127,60 @@ impl AudioEngine {
         }
     }
 
+    /// Applies the MIDI FX of every folder between `source` and `target`, then
+    /// the target's own.
+    ///
+    /// # Parameters
+    ///
+    /// - `source`: the track owning the clip.
+    /// - `target`: the source track that will play the note.
+    /// - `note`: the note as written in the clip.
+    ///
+    /// # Returns
+    ///
+    /// The note after each folder in the path has processed it.
+    pub(crate) fn midi_chain_note(
+        &self,
+        source: TrackId,
+        target: TrackId,
+        note: ClipNote,
+    ) -> ClipNote {
+        let mut note = note;
+        let mut chain = Track::ancestors(&self.project.tracks, target);
+        chain.reverse();
+        for ancestor in chain {
+            let stop = ancestor == source;
+            if let Some(track) = self.project.tracks.get(ancestor) {
+                note = track.midi_fx.process(note);
+            }
+            if stop {
+                break;
+            }
+        }
+        match self.project.tracks.get(target) {
+            Some(track) => track.midi_fx.process(note),
+            None => note,
+        }
+    }
+
     /// Expands a played note into arpeggiator events. Returns true when the
-    /// instrument has an arpeggiator, so the original note must not sound.
-    pub(crate) fn schedule_arpeggio(
-        &mut self,
-        note: &PianoNote,
-        lane_id: usize,
-        tick: u64,
-    ) -> bool {
-        let Some(instrument) = self.project.instruments.get(note.instrument_id) else {
+    /// track has an arpeggiator, so the original note must not sound.
+    ///
+    /// # Parameters
+    ///
+    /// - `note`: the note that was triggered.
+    /// - `track_id`: the track that would play it.
+    /// - `tick`: position of the note in sixteenths.
+    pub(crate) fn schedule_arpeggio(&mut self, note: &ClipNote, track_id: usize, tick: u64) -> bool {
+        let Some(generator) = self
+            .project
+            .tracks
+            .get(track_id)
+            .and_then(Track::generator)
+        else {
             return false;
         };
-        let arp = instrument.arpeggio;
+        let arp = generator.arpeggio;
         if !arp.enabled {
             return false;
         }
@@ -189,8 +208,7 @@ impl AudioEngine {
             self.arp_queue.push(ArpEvent {
                 at_tick,
                 release_tick: at_tick.saturating_add(gate_ticks),
-                instrument_id: note.instrument_id,
-                lane_id,
+                track_id,
                 pitch,
                 velocity: note.velocity,
             });
@@ -212,8 +230,7 @@ impl AudioEngine {
             }
             self.arp_queue.swap_remove(index);
             self.start_voice(
-                event.instrument_id,
-                event.lane_id,
+                event.track_id,
                 event.pitch,
                 event.velocity,
                 Some(event.release_tick),
@@ -221,65 +238,59 @@ impl AudioEngine {
         }
     }
 
-    pub(crate) fn trigger_instrument(&mut self, instrument_id: usize, mixer_lane: usize) {
-        let Some(instrument) = self.project.instruments.get(instrument_id) else {
-            return;
-        };
-        if !self.instrument_audible(instrument_id) {
-            return;
-        }
-        let synth_enabled = instrument.synth_enabled;
-        let synth_note = instrument.synth_note;
-        if synth_enabled {
-            self.start_voice(
-                instrument_id,
-                mixer_lane,
-                synth_note,
-                100,
-                Some(self.position_steps.saturating_mul(16).saturating_add(16)),
-            );
-        } else {
-            // Sample-only instruments still drive envelope and LFO automation.
-            self.trigger_automation(instrument_id);
-        }
-        if self
+    /// Starts the one-shot sample of a sample-player track, if it has one.
+    ///
+    /// # Parameters
+    ///
+    /// - `track_id`: the track whose sample is played.
+    fn start_sample_voice(&mut self, track_id: usize) {
+        if !self
             .instrument_samples
-            .get(instrument_id)
+            .get(track_id)
             .is_some_and(Option::is_some)
         {
-            let slot = self
-                .sample_voices
-                .iter()
-                .position(|voice| !voice.active)
-                .or_else(|| {
-                    self.sample_voices
-                        .iter()
-                        .position(|voice| voice.instrument_id == instrument_id)
-                });
-            if let Some(slot) = slot {
-                self.sample_voices[slot] = SampleVoice {
-                    instrument_id,
-                    mixer_lane,
-                    cursor: 0.0,
-                    active: true,
-                };
-            }
+            return;
+        }
+        let slot = self
+            .sample_voices
+            .iter()
+            .position(|voice| !voice.active)
+            .or_else(|| {
+                self.sample_voices
+                    .iter()
+                    .position(|voice| voice.track_id == track_id)
+            });
+        if let Some(slot) = slot {
+            self.sample_voices[slot] = SampleVoice {
+                track_id,
+                cursor: 0.0,
+                active: true,
+            };
         }
     }
 
-    pub(crate) fn next_audio_clips(&mut self, lane_id: usize) -> [f32; 2] {
+    /// Streams the audio clips of one track.
+    ///
+    /// # Parameters
+    ///
+    /// - `track_id`: the track to render.
+    ///
+    /// # Returns
+    ///
+    /// The summed stereo frame of every audio clip on the track.
+    pub(crate) fn next_audio_clips(&mut self, track_id: usize) -> [f32; 2] {
         let mut output = [0.0; 2];
         if !self.playing {
             // A stopped transport must not keep streaming clips; rewind so the
             // next start plays from the clip head.
-            for runtime in &mut self.audio_clips[lane_id] {
+            for runtime in &mut self.audio_clips[track_id] {
                 runtime.active = false;
                 runtime.finished = false;
                 runtime.cursor = 0.0;
             }
             return output;
         }
-        let clip_count = self.project.lanes[lane_id].clips.len();
+        let clip_count = self.project.tracks[track_id].clips.len();
         let global_gain = self.project.sample_gain;
         let global_pan = self.project.sample_pan;
         let global_pitch = self.project.sample_pitch;
@@ -287,18 +298,20 @@ impl AudioEngine {
         let seconds_per_step = 60.0 / f64::from(self.project.bpm) / 4.0;
         let position = self.position_steps;
         for clip_index in 0..clip_count {
-            let (start, length, offset, clip_gain, clip_pan, clip_pitch) =
-                match &self.project.lanes[lane_id].clips[clip_index] {
-                    clip if matches!(clip.source, ClipSource::Audio { .. }) => (
-                        clip.start_step,
-                        clip.length_steps,
-                        clip.offset_steps,
-                        clip.sample_gain,
-                        clip.sample_pan,
-                        clip.sample_pitch,
-                    ),
-                    _ => continue,
-                };
+            let (start, length, offset, clip_gain, clip_pan, clip_pitch) = {
+                let clip = &self.project.tracks[track_id].clips[clip_index];
+                if !clip.is_audio() {
+                    continue;
+                }
+                (
+                    clip.start_step,
+                    clip.length_steps,
+                    clip.offset_steps,
+                    clip.sample_gain,
+                    clip.sample_pan,
+                    clip.sample_pitch,
+                )
+            };
             let gain = (global_gain * clip_gain).clamp(0.0, 1.0);
             let pan = (global_pan + clip_pan).clamp(-1.0, 1.0);
             let left_gain = ((1.0 - pan) * 0.5).sqrt() * gain;
@@ -306,7 +319,7 @@ impl AudioEngine {
             // Semitone transpose is a playback-rate change.
             let rate = 2.0_f64.powf(f64::from(global_pitch + clip_pitch) / 12.0);
             let end = start.saturating_add(length);
-            let runtime = &mut self.audio_clips[lane_id][clip_index];
+            let runtime = &mut self.audio_clips[track_id][clip_index];
             if position < start || position >= end {
                 // Outside the clip: rewind so entering it plays from its start.
                 if runtime.active || runtime.finished {
@@ -344,43 +357,39 @@ impl AudioEngine {
         output
     }
 
-    /// Applies the instrument power switch and solo state.
-    pub(crate) fn instrument_audible(&self, instrument_id: usize) -> bool {
-        let Some(instrument) = self.project.instruments.get(instrument_id) else {
-            return false;
-        };
-        if !instrument.enabled {
-            return false;
-        }
-        !self.project.instrument_solo_active() || instrument.solo
-    }
-
     /// Applies the track power switch and solo state.
-    pub(crate) fn lane_audible(&self, lane_id: usize) -> bool {
-        let Some(lane) = self.project.lanes.get(lane_id) else {
-            return false;
-        };
-        if !lane.enabled {
-            return false;
-        }
-        !self.project.lane_solo_active() || lane.solo
+    ///
+    /// # Parameters
+    ///
+    /// - `track_id`: the track to test.
+    ///
+    /// # Returns
+    ///
+    /// `false` when the track is off, or when some other track is soloed.
+    pub(crate) fn track_audible(&self, track_id: usize) -> bool {
+        track_audible(&self.project, track_id, self.project.track_solo_active())
     }
 
-    /// Frees the oldest voice for `instrument_id` when its configured limit is
+    /// Frees the oldest voice for `track_id` when its configured limit is
     /// reached, so a low voice count actually constrains polyphony.
-    pub(crate) fn enforce_voice_limit(&mut self, instrument_id: usize) {
+    ///
+    /// # Parameters
+    ///
+    /// - `track_id`: the track whose voices are limited.
+    pub(crate) fn enforce_voice_limit(&mut self, track_id: usize) {
         let limit = self
             .project
-            .instruments
-            .get(instrument_id)
-            .map_or(VOICE_COUNT, |instrument| {
-                usize::from(instrument.voices.voice_count)
+            .tracks
+            .get(track_id)
+            .and_then(Track::generator)
+            .map_or(VOICE_COUNT, |generator| {
+                usize::from(generator.voices.voice_count)
             })
             .clamp(1, VOICE_COUNT);
         let active = self
             .voices
             .iter()
-            .filter(|voice| voice.active && voice.instrument_id == instrument_id)
+            .filter(|voice| voice.active && voice.track_id == track_id)
             .count();
         if active < limit {
             return;
@@ -390,54 +399,74 @@ impl AudioEngine {
             if to_free == 0 {
                 break;
             }
-            if voice.active && voice.instrument_id == instrument_id {
+            if voice.active && voice.track_id == track_id {
                 voice.active = false;
                 to_free -= 1;
             }
         }
     }
 
+    /// Starts a voice, a sample or a hosted note for one track.
+    ///
+    /// # Parameters
+    ///
+    /// - `track_id`: the track that plays the note.
+    /// - `note`: MIDI note number.
+    /// - `velocity`: MIDI velocity, 1..=127.
+    /// - `release_at_tick`: position at which the note releases, `None` when it
+    ///   is held until a matching note-off.
     pub(crate) fn start_voice(
         &mut self,
-        instrument_id: usize,
-        mixer_lane: usize,
+        track_id: usize,
         note: u8,
         velocity: u8,
         release_at_tick: Option<u64>,
     ) {
-        if velocity == 0 || !self.project.instruments[instrument_id].synth_enabled {
+        let Some(generator) = self
+            .project
+            .tracks
+            .get(track_id)
+            .and_then(Track::generator)
+            .cloned()
+        else {
+            return;
+        };
+        if velocity == 0 || !self.track_audible(track_id) {
             return;
         }
+        // Sample players ignore the pitch: a note fires the loaded sample.
+        if generator.kind.sample().is_some() {
+            self.trigger_automation(track_id);
+            self.start_sample_voice(track_id);
+            return;
+        }
+        let Some(synth_kind) = generator.kind.synth_kind() else {
+            return;
+        };
         // External generators are hosted by VST3/CLAP; the note goes to the
         // hosted instance and this engine only mixes its output.
-        if self.project.instruments[instrument_id].synth_kind == SynthKind::External {
-            self.trigger_automation(instrument_id);
-            let id = instrument_host_id(instrument_id);
+        if synth_kind == SynthKind::External {
+            self.trigger_automation(track_id);
+            let id = instrument_host_id(track_id);
             if let Some(hosted) = self.hosted.get_mut(&id) {
                 hosted.play_note(note, f32::from(velocity) / 127.0);
             }
             return;
         }
-        if !self.instrument_audible(instrument_id) {
-            return;
-        }
-        self.enforce_voice_limit(instrument_id);
-        self.trigger_automation(instrument_id);
-        let is_monophonic = matches!(
-            self.project.instruments[instrument_id].synth_kind,
-            SynthKind::Ms20
-        );
+        self.enforce_voice_limit(track_id);
+        self.trigger_automation(track_id);
+        let is_monophonic = matches!(synth_kind, SynthKind::Ms20);
         let slot = if is_monophonic {
             self.voices
                 .iter()
-                .position(|voice| voice.active && voice.instrument_id == instrument_id)
+                .position(|voice| voice.active && voice.track_id == track_id)
                 .or_else(|| self.voices.iter().position(|voice| !voice.active))
         } else {
             self.voices
                 .iter()
                 .position(|voice| {
                     voice.active
-                        && voice.instrument_id == instrument_id
+                        && voice.track_id == track_id
                         && voice.note == note
                         && voice.release_at_tick.is_none() == release_at_tick.is_none()
                 })
@@ -445,8 +474,7 @@ impl AudioEngine {
         };
         if let Some(slot) = slot {
             self.voices[slot] = Voice {
-                instrument_id,
-                mixer_lane,
+                track_id,
                 note,
                 phase: 0.0,
                 second_phase: 0.0,
@@ -462,28 +490,29 @@ impl AudioEngine {
         }
     }
 
-    pub(crate) fn handle_midi_note(
-        &mut self,
-        instrument_id: usize,
-        note: u8,
-        velocity: u8,
-        on: bool,
-    ) {
-        if instrument_id >= self.project.instruments.len() {
+    /// Handles a live MIDI note from the UI.
+    ///
+    /// # Parameters
+    ///
+    /// - `track_id`: the track the note was played on.
+    /// - `note`: MIDI note number.
+    /// - `velocity`: MIDI velocity, 1..=127.
+    /// - `on`: `true` for note-on, `false` for note-off.
+    pub(crate) fn handle_midi_note(&mut self, track_id: usize, note: u8, velocity: u8, on: bool) {
+        if track_id >= self.project.tracks.len() {
             return;
         }
-        let lane = self.project.instruments[instrument_id].default_mixer_lane;
         if on && velocity > 0 {
-            self.start_voice(instrument_id, lane, note, velocity, None);
+            self.start_voice(track_id, note, velocity, None);
         } else {
-            self.release_automation(instrument_id);
-            let id = instrument_host_id(instrument_id);
+            self.release_automation(track_id);
+            let id = instrument_host_id(track_id);
             if let Some(hosted) = self.hosted.get_mut(&id) {
                 hosted.note_off(note);
             }
             for voice in &mut self.voices {
                 if voice.active
-                    && voice.instrument_id == instrument_id
+                    && voice.track_id == track_id
                     && voice.note == note
                     && voice.release_at_tick.is_none()
                 {

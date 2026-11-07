@@ -88,12 +88,12 @@ impl PulseForgeApp {
                 return Some(instrument.plugin_state.clone());
             }
         }
-        let lane_count = self.project.lanes.len();
-        for channel in 0..=lane_count {
-            let slots = if channel == lane_count {
+        let track_count = self.project.tracks.len();
+        for channel in 0..=track_count {
+            let slots = if channel == track_count {
                 &self.project.master.inserts
             } else {
-                &self.project.lanes[channel].inserts
+                &self.project.tracks[channel].inserts
             };
             for (slot, effect) in slots.iter().enumerate() {
                 if pulseforge_core::hosted::effect_host_id(channel, slot) == id {
@@ -247,12 +247,12 @@ impl PulseForgeApp {
                 self.project.instruments[instrument_id].plugin_state = state;
             }
         }
-        let lane_count = self.project.lanes.len();
-        for channel in 0..=lane_count {
-            let slot_count = if channel == lane_count {
+        let track_count = self.project.tracks.len();
+        for channel in 0..=track_count {
+            let slot_count = if channel == track_count {
                 self.project.master.inserts.len()
             } else {
-                self.project.lanes[channel].inserts.len()
+                self.project.tracks[channel].inserts.len()
             };
             for slot in 0..slot_count {
                 let has_plugin = self
@@ -276,10 +276,10 @@ impl PulseForgeApp {
 
     /// Plug-in path of an insert slot, when it holds a hosted bundle.
     pub(crate) fn effect_slot_path(&self, channel: usize, slot: usize) -> Option<String> {
-        let slots = if channel == self.project.lanes.len() {
+        let slots = if channel == self.project.tracks.len() {
             &self.project.master.inserts
         } else {
-            &self.project.lanes.get(channel)?.inserts
+            &self.project.tracks.get(channel)?.inserts
         };
         let path = &slots.get(slot)?.plugin_path;
         (!path.is_empty()).then(|| path.clone())
