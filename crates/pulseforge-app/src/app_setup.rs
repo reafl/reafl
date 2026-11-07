@@ -60,7 +60,7 @@ impl PulseForgeApp {
             selected_mixer_channel: 0,
             automation_target_kind: AutomationTargetKind::Instrument,
             automation_track_id: 0,
-            automation_track_parameter: TrackParameter::Gain,
+            automation_track_parameter: TrackParameter::Generator(InstrumentParameter::Gain),
             automation_channel_id: 0,
             automation_slot_id: 0,
             automation_effect_parameter: EffectParameter::Mix,

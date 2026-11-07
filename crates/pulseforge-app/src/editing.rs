@@ -36,8 +36,8 @@ impl PulseForgeApp {
     /// note at the selection's pitch when a note is selected.
     pub(crate) fn apply_repeat_to_selection(&mut self) {
         let Some(Selection::Note {
-            pattern,
-            instrument,
+            track,
+            clip,
             pitch,
             start_step,
         }) = self.selection
@@ -48,15 +48,17 @@ impl PulseForgeApp {
         let count = self.note_repeat_count;
         let ticks = self.note_repeat_ticks;
         let decay = self.note_repeat_decay;
-        let Some(pattern) = self.project.tracks.get_mut(pattern) else {
+        let Some(clip) = self
+            .project
+            .tracks
+            .get_mut(track)
+            .and_then(|track| track.clips.get_mut(clip))
+        else {
             return;
         };
         let mut updated = 0;
-        for note in &mut pattern.notes {
-            if note.instrument_id == instrument
-                && note.pitch == pitch
-                && note.start_step == start_step
-            {
+        for note in &mut clip.notes {
+            if note.pitch == pitch && note.start_step == start_step {
                 note.repeat_count = count;
                 note.repeat_ticks = ticks;
                 note.repeat_decay = decay;

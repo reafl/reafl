@@ -100,10 +100,7 @@ impl PulseForgeApp {
         {
             return format!("{} \u{00B7} Hosted plug-in", track.name);
         }
-        let label = generator
-            .kind
-            .synth_kind()
-            .map_or_else(|| "Sample".to_owned(), synth_kind_label);
+        let label = generator.kind.synth_kind().map_or("Sample", synth_kind_label);
         format!("{} \u{00B7} {}", track.name, label)
     }
 }
