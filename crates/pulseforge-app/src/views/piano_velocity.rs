@@ -58,7 +58,7 @@ impl PulseForgeApp {
                     egui::pos2((x + step_width - 1.0).max(x + 3.0), rect.bottom()),
                 ),
                 1.0,
-                lane_color(instrument),
+                lane_color(self.selected_instrument),
             );
         }
         let (pressed, down, released) = context.input(|input| {

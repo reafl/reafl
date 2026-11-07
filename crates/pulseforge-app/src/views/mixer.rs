@@ -244,9 +244,9 @@ impl PulseForgeApp {
         draw_eq_curve(ui, *eq);
         // The inspector edits the same bands as the strip, so it offers the
         // same automation targets.
-        let eq_target = |parameter: project::MixerParameter| ParameterTarget::MixerChannel {
+        let eq_target = |parameter: project::MixerParameter| ParameterTarget::Track {
             track_id: channel,
-            parameter,
+            parameter: TrackParameter::Mixer(parameter),
         };
         ui.horizontal(|ui| {
             changed |= Knob::new("LOW", -12.0, 12.0, " dB")
