@@ -170,20 +170,33 @@ impl PulseForgeApp {
 
     pub(crate) fn render_clip_picker(&mut self, ui: &mut egui::Ui) {
         ui.heading("Clip picker");
-        ui.label("Drag a pattern or sample to the timeline.");
+        ui.label("Drag a clip on the active track, or a WAV, to the timeline.");
         ui.separator();
+        let track = self.selected_instrument;
+        let clips: Vec<(usize, String, u64)> = self
+            .project
+            .tracks
+            .get(track)
+            .map(|track| {
+                track
+                    .clips
+                    .iter()
+                    .enumerate()
+                    .map(|(index, clip)| (index, clip.name.clone(), clip.length_steps))
+                    .collect()
+            })
+            .unwrap_or_default();
         egui::ScrollArea::vertical()
             .max_height(280.0)
             .show(ui, |ui| {
-                for pattern_id in 0..self.project.tracks.len() {
-                    let name = self.project.tracks[pattern_id].name.clone();
-                    // The selected pattern is the one the arrangement pen
-                    // places, so the picker marks it.
-                    let selected = pattern_id == self.selected_clip;
+                for (clip_index, name, length_steps) in clips.clone() {
+                    // The selected clip is the one the piano roll edits, so the
+                    // picker marks it.
+                    let selected = clip_index == self.selected_clip;
                     let mut button = egui::Button::new(if selected {
-                        format!("\u{25B8} [P]  {name}")
+                        format!("\u{25B8} [C]  {name}")
                     } else {
-                        format!("[P]  {name}")
+                        format!("[C]  {name}")
                     })
                     .sense(egui::Sense::click_and_drag());
                     if selected {
@@ -191,23 +204,24 @@ impl PulseForgeApp {
                     }
                     let response = ui.add_sized([ui.available_width(), 32.0], button);
                     if response.clicked() {
-                        self.selected_clip = pattern_id;
-                        self.arrangement_source = Some(ClipSource::Pattern { pattern_id });
+                        self.selected_clip = clip_index;
+                        self.arrangement_source = Some(ClipPlacement::Notes { length_steps });
                     }
                     if response.double_clicked() {
-                        self.selected_clip = pattern_id;
+                        self.selected_clip = clip_index;
                         self.windows.piano_roll = true;
                     }
                     if response.drag_started() {
-                        self.pattern_drag = Some(ClipSource::Pattern { pattern_id });
+                        self.pattern_drag = Some(ClipPlacement::Notes { length_steps });
                     }
                 }
             });
-        if ui.button("+ New pattern").clicked() {
-            self.selected_clip = self.project.add_pattern();
+        if ui.button("+ New clip").clicked() {
+            let start = self.arrangement_pan_steps;
+            self.add_clip(track, start, 16, None);
+            self.selected_clip = self.project.tracks[track].clips.len().saturating_sub(1);
             self.sync_project();
-        }
-        ui.separator();
+        }        ui.separator();
         ui.label("Audio clip");
         ui.add(
             egui::TextEdit::singleline(&mut self.new_audio_path)
@@ -232,12 +246,12 @@ impl PulseForgeApp {
             egui::Button::new(audio_label).sense(egui::Sense::click_and_drag()),
         );
         if audio_response.drag_started() && !self.new_audio_path.trim().is_empty() {
-            self.pattern_drag = Some(ClipSource::Audio {
+            self.pattern_drag = Some(ClipPlacement::Audio {
                 path: self.new_audio_path.trim().to_owned(),
             });
         }
         if audio_response.clicked() && !self.new_audio_path.trim().is_empty() {
-            self.arrangement_source = Some(ClipSource::Audio {
+            self.arrangement_source = Some(ClipPlacement::Audio {
                 path: self.new_audio_path.trim().to_owned(),
             });
             self.add_audio_clip(self.arrangement_pan_steps, self.selected_lane);

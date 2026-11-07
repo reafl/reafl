@@ -266,11 +266,11 @@ impl PulseForgeApp {
                     channel_name(*destination, &self.project)
                 ));
                 let mut gain = self.project.sends[*source][*destination];
-                let send_target = ParameterTarget::MixerChannel {
+                let send_target = ParameterTarget::Track {
                     track_id: *source,
-                    parameter: project::MixerParameter::Send {
+                    parameter: TrackParameter::Mixer(project::MixerParameter::Send {
                         destination: *destination,
-                    },
+                    }),
                 };
                 let response = ui.add(
                     egui::Slider::new(&mut gain, 0.0..=0.95)
@@ -420,26 +420,24 @@ impl PulseForgeApp {
     pub(crate) fn selection_label(&self) -> String {
         match self.selection {
             Some(Selection::Note {
-                pattern,
-                instrument,
+                track,
+                clip,
                 pitch,
                 start_step,
             }) => self
                 .project
                 .tracks
-                .get(pattern)
-                .and_then(|pattern| {
-                    pattern.notes.iter().find(|note| {
-                        note.instrument_id == instrument
-                            && note.pitch == pitch
-                            && note.start_step == start_step
-                    })
+                .get(track)
+                .and_then(|track| track.clips.get(clip))
+                .and_then(|clip| {
+                    clip.notes
+                        .iter()
+                        .find(|note| note.pitch == pitch && note.start_step == start_step)
                 })
                 .map_or_else(
                     || "note".to_owned(),
                     |note| format!("note {} @ {}", note_name(note.pitch), note.start_step),
-                ),
-            Some(Selection::Instrument(instrument)) => self
+                ),            Some(Selection::Instrument(instrument)) => self
                 .project
                 .tracks
                 .get(instrument)
@@ -451,18 +449,13 @@ impl PulseForgeApp {
                 .and_then(|lane| lane.clips.get(clip))
                 .map_or_else(
                     || "clip".to_owned(),
-                    |item| match &item.source {
-                        ClipSource::Pattern { pattern_id } => {
-                            self.project.tracks.get(*pattern_id).map_or_else(
-                                || "pattern clip".to_owned(),
-                                |pattern| pattern.name.clone(),
-                            )
-                        }
-                        ClipSource::Audio { path } => std::path::Path::new(path)
+                    |item| match &item.audio_path {
+                        Some(path) => std::path::Path::new(path)
                             .file_stem()
                             .and_then(|stem| stem.to_str())
                             .unwrap_or("audio clip")
                             .to_owned(),
+                        None => item.name.clone(),
                     },
                 ),
             Some(Selection::MixerChannel(channel)) => self
