@@ -8,8 +8,8 @@ impl PulseForgeApp {
     pub(crate) fn clamp_automation_indices(&mut self) {
         // Indices can go stale when an instrument is removed while this window
         // is open, which used to panic here.
-        self.automation_instrument_id = self
-            .automation_instrument_id
+        self.automation_track_id = self
+            .automation_track_id
             .min(self.project.tracks.len().saturating_sub(1));
         self.automation_channel_id = self.automation_channel_id.min(self.project.tracks.len());
         self.automation_mixer_channel_id = self
@@ -30,12 +30,12 @@ impl PulseForgeApp {
     pub(crate) fn focus_automation_target(&mut self, target: ParameterTarget) {
         match target {
             ParameterTarget::Track {
-                instrument_id,
+                track_id,
                 parameter,
             } => {
                 self.automation_target_kind = AutomationTargetKind::Instrument;
-                self.automation_instrument_id = instrument_id;
-                self.automation_instrument_parameter = parameter;
+                self.automation_track_id = track_id;
+                self.automation_track_parameter = parameter;
             }
             ParameterTarget::InsertEffect {
                 track_id,
@@ -47,22 +47,14 @@ impl PulseForgeApp {
                 self.automation_slot_id = slot_id;
                 self.automation_effect_parameter = parameter;
             }
-            ParameterTarget::MixerChannel {
-                track_id,
-                parameter,
-            } => {
-                self.automation_target_kind = AutomationTargetKind::Mixer;
-                self.automation_mixer_channel_id = track_id;
-                self.automation_mixer_parameter = parameter;
-            }
             ParameterTarget::Clip {
-                lane_id,
+                track_id,
                 clip_id,
                 parameter,
             } => {
                 self.automation_target_kind = AutomationTargetKind::Clip;
                 self.automation_sample_defaults = false;
-                self.automation_clip_lane = lane_id;
+                self.automation_clip_lane = track_id;
                 self.automation_clip_id = clip_id;
                 self.automation_clip_parameter = parameter;
             }
@@ -132,17 +124,17 @@ impl PulseForgeApp {
     pub(crate) fn selected_automation_target(&self) -> Option<ParameterTarget> {
         let target = match self.automation_target_kind {
             AutomationTargetKind::Instrument => ParameterTarget::Track {
-                instrument_id: self.automation_instrument_id,
-                parameter: self.automation_instrument_parameter,
+                track_id: self.automation_track_id,
+                parameter: self.automation_track_parameter,
             },
             AutomationTargetKind::InsertEffect => ParameterTarget::InsertEffect {
                 track_id: self.automation_channel_id,
                 slot_id: self.automation_slot_id,
                 parameter: self.automation_effect_parameter,
             },
-            AutomationTargetKind::Mixer => ParameterTarget::MixerChannel {
+            AutomationTargetKind::Mixer => ParameterTarget::Track {
                 track_id: self.automation_mixer_channel_id,
-                parameter: self.automation_mixer_parameter,
+                parameter: TrackParameter::Mixer(self.automation_mixer_parameter),
             },
             AutomationTargetKind::Clip => {
                 if self.automation_sample_defaults {
@@ -151,7 +143,7 @@ impl PulseForgeApp {
                     }
                 } else {
                     ParameterTarget::Clip {
-                        lane_id: self.automation_clip_lane,
+                        track_id: self.automation_clip_lane,
                         clip_id: self.automation_clip_id,
                         parameter: self.automation_clip_parameter,
                     }
@@ -182,37 +174,37 @@ impl PulseForgeApp {
         }
     }
 
-    /// Instrument picker: which instrument and which of its parameters.
+    /// Track picker: which track and which of its parameters.
+    ///
+    /// A folder also lists the child parameters it forwards through
+    /// `Track::group_targets`, so one lane can drive a whole submix.
     fn pick_instrument_target(&mut self, ui: &mut egui::Ui) -> Option<ParameterTarget> {
         if self.project.tracks.is_empty() {
-            ui.label("Add an instrument first.");
+            ui.label("Add a track first.");
             return None;
         }
-        self.automation_instrument_id = self
-            .automation_instrument_id
-            .min(self.project.tracks.len() - 1);
-        egui::ComboBox::from_id_salt("automation_instrument")
-            .selected_text(&self.project.tracks[self.automation_instrument_id].name)
+        self.automation_track_id = self.automation_track_id.min(self.project.tracks.len() - 1);
+        egui::ComboBox::from_id_salt("automation_track")
+            .selected_text(&self.project.tracks[self.automation_track_id].name)
             .show_ui(ui, |ui| {
-                for (instrument_id, instrument) in self.project.tracks.iter().enumerate() {
-                    ui.selectable_value(
-                        &mut self.automation_instrument_id,
-                        instrument_id,
-                        &instrument.name,
-                    );
+                for (track_id, track) in self.project.tracks.iter().enumerate() {
+                    ui.selectable_value(&mut self.automation_track_id, track_id, &track.name);
                 }
             });
-        let synth_kind = self.project.tracks[self.automation_instrument_id].synth_kind;
-        let parameters = instrument_parameter_options(synth_kind);
-        if !parameters.contains(&self.automation_instrument_parameter) {
-            self.automation_instrument_parameter = parameters[0];
+        let parameters = Track::automation_parameters(&self.project.tracks, self.automation_track_id);
+        if parameters.is_empty() {
+            ui.label("This track has no automatable parameters.");
+            return None;
         }
-        egui::ComboBox::from_id_salt("automation_instrument_parameter")
-            .selected_text(self.automation_instrument_parameter.label())
+        if !parameters.contains(&self.automation_track_parameter) {
+            self.automation_track_parameter = parameters[0];
+        }
+        egui::ComboBox::from_id_salt("automation_track_parameter")
+            .selected_text(self.automation_track_parameter.label())
             .show_ui(ui, |ui| {
                 for parameter in parameters {
                     ui.selectable_value(
-                        &mut self.automation_instrument_parameter,
+                        &mut self.automation_track_parameter,
                         parameter,
                         parameter.label(),
                     );
@@ -220,7 +212,6 @@ impl PulseForgeApp {
             });
         self.selected_automation_target()
     }
-
     /// Insert-effect picker: channel, slot and parameter.
     fn pick_insert_target(&mut self, ui: &mut egui::Ui) -> Option<ParameterTarget> {
         let master_id = self.project.tracks.len();
