@@ -4,10 +4,10 @@ name: Create a release build for all pushes to main
 on:
   # Runs on pushes targeting the default branch
   push:
-    branches: ["main"]
+    branches: ["main", "dev"]
     tags: ["v*.*.*"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "dev"]
     tags: ["v*.*.*"]
 
   # Allows you to run this workflow manually from the Actions tab
@@ -59,7 +59,7 @@ jobs:
         run: cargo build --workspace --release --target x86_64-pc-windows-gnu
       - name: Create Release
         uses: softprops/action-gh-release@v3
-        if: github.reftype == "tag"
+        if: github.reftype == 'tag'
         with:
           release_name: Release ${{ github.ref }}
           files: |
