@@ -1,0 +1,39 @@
+# Builds and tests the workspace on both supported desktop platforms.
+#
+# The platform shims are `cfg`-gated (native plug-in editor windows and cursor
+# control are Windows-only, the editor handle is an X11 id on Linux), so a
+# Windows-only API used unconditionally only fails on the Linux runner and the
+# reverse only fails on the Windows one. Running both keeps each half compiled.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Install ALSA headers
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - name: Check every target
+        run: cargo check --workspace --message-format short
+      - name: Run the tests
+        run: cargo test --workspace
+      - name: Build the docs
+        run: cargo doc --workspace --no-deps

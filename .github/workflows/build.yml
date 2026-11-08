@@ -26,12 +26,10 @@ concurrency:
   group: "build_linux"
   cancel-in-progress: true
 
+
 jobs:
   # Single deploy job since we're just deploying
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -44,9 +42,9 @@ jobs:
       - name: Install ALSA
         run: sudo apt-get install -y libasound2-dev
       - name: Run cargo check
-        run: cargo check --workspace
+        run: cargo check --workspace --all-targets --message-format short
       - name: Run cargo clippy
-        run: cargo clippy --workspace
+        run: cargo clippy --workspace --all-targets
       - name: Run cargo test
         run: cargo test --workspace --all-features -- --test-threads=1
       - name: Build release binaries
