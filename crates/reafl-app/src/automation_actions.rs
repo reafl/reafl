@@ -18,7 +18,7 @@ impl ReaflApp {
             points: vec![AutomationPoint {
                 step: 0,
                 value: base,
-                curve: AutomationCurve::Linear,
+                curve: AutomationCurve::Smooth,
             }],
             ..AutomationTrack::default()
         });
