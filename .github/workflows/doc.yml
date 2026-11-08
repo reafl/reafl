@@ -3,9 +3,9 @@ name: Deploy documentation to Pages
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "dev"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "dev"]
 
   workflow_dispatch:
 
