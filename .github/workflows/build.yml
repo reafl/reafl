@@ -58,6 +58,9 @@ jobs:
           files: |
             target/release/pulseforge.exe
             target/release/pulseforge
+          files: |
+            target/release/pulseforge.exe
+            target/release/pulseforge
           body: Release
           draft: false
           prerelease: true
