@@ -61,15 +61,4 @@ jobs:
           body: Release
           draft: false
           prerelease: true
-      - name: Run cargo doc
-        run: cargo doc --workspace --no-deps --document-private-items
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          # Upload entire repository
-          path: 'target/doc'
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
+          tag_name: ${{ github.ref }}
