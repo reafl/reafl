@@ -67,7 +67,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
-          release_name: Release ${{ github.ref }}
+          name: Release ${{ github.ref }}
           files: |
             target/x86_64-pc-windows-gnu/release/pulseforge.exe
             target/release/pulseforge
