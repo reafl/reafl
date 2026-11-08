@@ -5,8 +5,10 @@ on:
   # Runs on pushes targeting the default branch
   push:
     branches: ["main"]
+    tags: ["v*.*.*"]
   pull_request:
     branches: ["main"]
+    tags: ["v*.*.*"]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -16,7 +18,7 @@ env:
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -39,6 +41,8 @@ jobs:
         with:
           toolchain: stable
           override: true
+      - name: Add windows target
+        run: rustup target add x86_64-pc-windows-gnu
       - name: Install audio dependencies
         run: sudo apt-get install -y libasound2-dev
       - name: Install GUI dependencies
@@ -49,16 +53,16 @@ jobs:
         run: cargo clippy --workspace --all-targets
       - name: Run cargo test
         run: cargo test --workspace --all-features -- --test-threads=1
-      - name: Build release binaries
+      - name: Build Linux release binaries
         run: cargo build --workspace --release
+      - name: Build Windows release binaries
+        run: cargo build --workspace --release --target x86_64-pc-windows-gnu
       - name: Create Release
         uses: softprops/action-gh-release@v3
+        if: github.reftype == "tag"
         with:
           release_name: Release ${{ github.ref }}
           files: |
-            target/release/pulseforge.exe
+            target/x86_64-pc-windows-gnu/release/pulseforge.exe
             target/release/pulseforge
           body: Release
-          draft: false
-          prerelease: true
-          tag_name: ${{ github.ref }}
