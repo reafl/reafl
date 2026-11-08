@@ -39,8 +39,10 @@ jobs:
         with:
           toolchain: stable
           override: true
-      - name: Install ALSA
+      - name: Install audio dependencies
         run: sudo apt-get install -y libasound2-dev
+      - name: Install GUI dependencies
+        run: sudo apt-get install -y libxcb-shape0-dev libxcb-xfixes0-dev libx11-dev
       - name: Run cargo check
         run: cargo check --workspace --all-targets --message-format short
       - name: Run cargo clippy
