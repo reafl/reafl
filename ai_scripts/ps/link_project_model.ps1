@@ -1,4 +1,4 @@
-param([string]$Root = "crates/pulseforge-core/src/project/model")
+param([string]$Root = "crates/reafl-core/src/project/model")
 
 # The slices reference each other's types, so each module imports its siblings.
 $siblings = @{

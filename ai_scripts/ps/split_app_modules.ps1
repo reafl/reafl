@@ -1,6 +1,6 @@
 param(
-    [string]$Source = "crates/pulseforge-app/src/lib.rs",
-    [string]$TargetDir = "crates/pulseforge-app/src"
+    [string]$Source = "crates/reafl-app/src/lib.rs",
+    [string]$TargetDir = "crates/reafl-app/src"
 )
 
 # Moves a contiguous block of top-level items out of the monolith and into its

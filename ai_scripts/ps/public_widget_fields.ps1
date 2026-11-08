@@ -1,4 +1,4 @@
-param([string]$Dir = "crates/pulseforge-widgets/src")
+param([string]$Dir = "crates/reafl-widgets/src")
 
 # Makes the public widget data structures' fields visible to the other windows.
 $targets = @('power.rs', 'mixer_strip.rs', 'knob.rs')

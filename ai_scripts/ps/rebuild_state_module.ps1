@@ -1,8 +1,8 @@
-param([string]$Root = "crates/pulseforge-app/src")
+param([string]$Root = "crates/reafl-app/src")
 
 # Rebuilds state.rs from the committed monolith, widening only struct fields and
 # leaving enum variants alone.
-$original = & git show HEAD:crates/pulseforge-app/src/lib.rs
+$original = & git show HEAD:crates/reafl-app/src/lib.rs
 $chunk = $original[169..332]
 
 $out = @()

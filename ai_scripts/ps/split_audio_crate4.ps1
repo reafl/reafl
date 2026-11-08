@@ -1,6 +1,6 @@
-param([string]$Root = "crates/pulseforge-core/src")
+param([string]$Root = "crates/reafl-core/src")
 
-# Rebuilds crates/pulseforge-core/src/audio.rs into audio/{mod,model,engine,dsp,tests}.rs.
+# Rebuilds crates/reafl-core/src/audio.rs into audio/{mod,model,engine,dsp,tests}.rs.
 # Run with -Restore to put audio.rs back first.
 
 $source = Join-Path $Root 'audio.rs'

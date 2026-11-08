@@ -1,12 +1,12 @@
 param(
-    [string]$Source = "crates/pulseforge-app/src/lib.rs",
-    [string]$TargetDir = "crates/pulseforge-widgets/src"
+    [string]$Source = "crates/reafl-app/src/lib.rs",
+    [string]$TargetDir = "crates/reafl-widgets/src"
 )
 
 $WidgetImports = @(
     'use eframe::egui;',
-    'use pulseforge_core::project::{EffectParameter, InsertFxSlot, ParameterTarget, ThreeBandEq};',
-    'use pulseforge_settings::settings;',
+    'use reafl_core::project::{EffectParameter, InsertFxSlot, ParameterTarget, ThreeBandEq};',
+    'use reafl_settings::settings;',
     '',
     'use crate::context_menu::{ContextAction, ContextMenu, MenuItem, PowerIntent};',
     'use crate::fader_math::{fader_gain, fader_label, fader_position};',

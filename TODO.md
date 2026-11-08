@@ -9,7 +9,7 @@ A file to keep track of TODOs and unimplemented features.
 # Engine
 
 - Create a way to quickly evaluate user-inputted mathematic formulas. They should support +-/*%^ exp sqrt sin cos tan.
-  *Done: `pulseforge_core::expr` parses and evaluates formulas (`+ - * / % ^`, `exp ln sqrt abs floor round sin cos tan`, `pi`, `e`, variable `x`), and the automation window turns one into a sampled curve lane.*
+  *Done: `reafl_core::expr` parses and evaluates formulas (`+ - * / % ^`, `exp ln sqrt abs floor round sin cos tan`, `pi`, `e`, variable `x`), and the automation window turns one into a sampled curve lane.*
 
 # UI
 

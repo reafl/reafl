@@ -1,4 +1,4 @@
-param([string]$Root = "crates/pulseforge-app/src")
+param([string]$Root = "crates/reafl-app/src")
 
 # Every small state type is shared between the app modules, so their fields and
 # trait implementations are crate-visible too.

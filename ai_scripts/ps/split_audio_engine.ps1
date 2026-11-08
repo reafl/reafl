@@ -1,6 +1,6 @@
 param(
-    [string]$Source = "crates/pulseforge-core/src/audio/engine.rs",
-    [string]$Root = "crates/pulseforge-core/src/audio/engine"
+    [string]$Source = "crates/reafl-core/src/audio/engine.rs",
+    [string]$Root = "crates/reafl-core/src/audio/engine"
 )
 
 if (-not (Test-Path $Root)) { New-Item -ItemType Directory -Force $Root | Out-Null }

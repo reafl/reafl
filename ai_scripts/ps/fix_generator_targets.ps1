@@ -22,7 +22,7 @@ $pattern = 'ParameterTarget::Track \{\s*instrument_id,\s*parameter: (InstrumentP
 $replacement = 'ParameterTarget::Track { track_id: instrument_id, parameter: TrackParameter::Generator($1) }'
 
 $changed = 0
-foreach ($file in Get-ChildItem 'crates/pulseforge-app/src' -Recurse -Filter *.rs) {
+foreach ($file in Get-ChildItem 'crates/reafl-app/src' -Recurse -Filter *.rs) {
     $text = [System.IO.File]::ReadAllText($file.FullName)
     $updated = [regex]::Replace($text, $pattern, $replacement)
     if ($updated -ne $text) {

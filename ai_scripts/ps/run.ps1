@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Runs PulseForge, forwarding any extra arguments to the app.
+    Runs reafl, forwarding any extra arguments to the app.
 
 .DESCRIPTION
     Thin wrapper around `cargo run --` so command lines do not need repeating.
@@ -19,7 +19,7 @@
 #>
 [CmdletBinding(PositionalBinding = $false)]
 param(
-    # Arguments passed straight to the PulseForge binary.
+    # Arguments passed straight to the reafl binary.
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$AppArgs
 )

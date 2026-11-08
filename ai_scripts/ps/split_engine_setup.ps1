@@ -1,4 +1,4 @@
-$src = 'crates/pulseforge-core/src/audio/engine/mod.rs'
+$src = 'crates/reafl-core/src/audio/engine/mod.rs'
 $lines = Get-Content $src
 
 function Find-Index($pattern, $from) {
@@ -33,10 +33,10 @@ $setupFile = @(
     '',
     'impl AudioEngine {'
 ) + $setup1 + @('') + $setup2 + @('}', '')
-Set-Content -Path 'crates/pulseforge-core/src/audio/engine/setup.rs' -Value $setupFile -Encoding utf8
+Set-Content -Path 'crates/reafl-core/src/audio/engine/setup.rs' -Value $setupFile -Encoding utf8
 
 $head = $lines[0..($A - 1)]
 while ($head.Count -gt 0 -and $head[$head.Count - 1].Trim() -eq '') { $head = $head[0..($head.Count - 2)] }
 Set-Content -Path $src -Value ($head + @('') + $indexBlock + @('}', '')) -Encoding utf8
 
-foreach ($f in 'mod.rs','setup.rs') { "{0,5} {1}" -f (Get-Content "crates/pulseforge-core/src/audio/engine/$f").Count, $f }
+foreach ($f in 'mod.rs','setup.rs') { "{0,5} {1}" -f (Get-Content "crates/reafl-core/src/audio/engine/$f").Count, $f }

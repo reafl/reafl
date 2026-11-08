@@ -1,4 +1,4 @@
-param([string]$Dir = "crates/pulseforge-app/src")
+param([string]$Dir = "crates/reafl-app/src")
 
 # Moves trailing doc comments that were cut with the wrong module back to the
 # item they belong to.

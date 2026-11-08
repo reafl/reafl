@@ -5,7 +5,7 @@
 .DESCRIPTION
     Runs `cargo test --workspace`. The hosting crate keeps its real-bundle
     tests `#[ignore]`d because they need installed VST3/CLAP plug-ins; run them
-    with `cargo test -p pulseforge-core -- --ignored` on a machine that has
+    with `cargo test -p reafl-core -- --ignored` on a machine that has
     some.
 
 .EXAMPLE

@@ -15,7 +15,7 @@ param()
 
 $ErrorActionPreference = 'Stop'
 
-$files = Get-ChildItem 'crates/pulseforge-core/src/audio' -Recurse -Filter *.rs
+$files = Get-ChildItem 'crates/reafl-core/src/audio' -Recurse -Filter *.rs
 $changed = 0
 foreach ($file in $files) {
     $text = Get-Content $file.FullName -Raw

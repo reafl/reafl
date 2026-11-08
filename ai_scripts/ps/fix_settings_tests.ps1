@@ -1,4 +1,4 @@
-$p = 'crates/pulseforge-settings/src/settings/tests.rs'
+$p = 'crates/reafl-settings/src/settings/tests.rs'
 $lines = Get-Content $p
 $start = -1
 for ($i = 0; $i -lt $lines.Count; $i++) {

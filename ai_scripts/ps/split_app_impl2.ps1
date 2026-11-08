@@ -1,10 +1,10 @@
 param(
-    [string]$Source = "crates/pulseforge-app/src/lib.rs",
-    [string]$Root = "crates/pulseforge-app/src"
+    [string]$Source = "crates/reafl-app/src/lib.rs",
+    [string]$Root = "crates/reafl-app/src"
 )
 
-# Splits a contiguous run of `PulseForgeApp` methods out of the app file and into
-# its own module, wrapped in its own `impl PulseForgeApp` block.
+# Splits a contiguous run of `ReaflApp` methods out of the app file and into
+# its own module, wrapped in its own `impl ReaflApp` block.
 function Cut-Range {
     param(
         [string]$First,
@@ -44,7 +44,7 @@ function Cut-Range {
     $path = Join-Path $Root $Target
     $dir = Split-Path -Parent $path
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }
-    $block = @('impl PulseForgeApp {') + $chunk + @('}', '')
+    $block = @('impl ReaflApp {') + $chunk + @('}', '')
     if ($Append -and (Test-Path $path)) {
         Add-Content -LiteralPath $path -Value $block
     }

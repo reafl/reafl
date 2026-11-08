@@ -24,7 +24,7 @@ param()
 $ErrorActionPreference = 'Stop'
 
 $utf8 = New-Object System.Text.UTF8Encoding($false)
-$roots = @('crates/pulseforge-app/src')
+$roots = @('crates/reafl-app/src')
 
 $map = [ordered]@{
     'ParameterTarget::Instrument'                      = 'ParameterTarget::Track'

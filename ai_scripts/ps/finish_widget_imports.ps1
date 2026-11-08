@@ -1,4 +1,4 @@
-param([string]$Dir = "crates/pulseforge-widgets/src")
+param([string]$Dir = "crates/reafl-widgets/src")
 
 # Adds a missing `project` import and the automation keys, and moves the last
 # document comment a cut left behind onto the item it describes.
@@ -15,14 +15,14 @@ function Insert-BeforeFirstItem {
     Set-Content -LiteralPath $path -Value ($head + $Lines + @('') + $rest)
 }
 
-Insert-BeforeFirstItem 'effect_parameters' @('use pulseforge_core::project;')
-Insert-BeforeFirstItem 'mixer_strip' @('use pulseforge_core::project;')
+Insert-BeforeFirstItem 'effect_parameters' @('use reafl_core::project;')
+Insert-BeforeFirstItem 'mixer_strip' @('use reafl_core::project;')
 Insert-BeforeFirstItem 'automation_bridge' @(
     '/// Key of the automated target list published every frame.',
-    'pub const AUTOMATED_TARGETS_KEY: &str = "pulseforge.automated_targets";',
+    'pub const AUTOMATED_TARGETS_KEY: &str = "reafl.automated_targets";',
     '',
     '/// Key of the automated live value list published every frame.',
-    'pub const AUTOMATED_VALUES_KEY: &str = "pulseforge.automated_values";'
+    'pub const AUTOMATED_VALUES_KEY: &str = "reafl.automated_values";'
 )
 
 # Drop the orphaned doc comment at the end of knob.rs and put it on PowerSwitch.

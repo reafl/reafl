@@ -1,12 +1,12 @@
 $files = @(
-    'crates/pulseforge-core/src/audio/dsp.rs',
-    'crates/pulseforge-core/src/audio/model.rs',
-    'crates/pulseforge-core/src/audio/engine/mod.rs',
-    'crates/pulseforge-core/src/audio/engine/commands.rs',
-    'crates/pulseforge-core/src/audio/engine/render.rs',
-    'crates/pulseforge-core/src/audio/engine/voices.rs',
-    'crates/pulseforge-core/src/audio/engine/automation.rs',
-    'crates/pulseforge-core/src/audio/engine/setup.rs'
+    'crates/reafl-core/src/audio/dsp.rs',
+    'crates/reafl-core/src/audio/model.rs',
+    'crates/reafl-core/src/audio/engine/mod.rs',
+    'crates/reafl-core/src/audio/engine/commands.rs',
+    'crates/reafl-core/src/audio/engine/render.rs',
+    'crates/reafl-core/src/audio/engine/voices.rs',
+    'crates/reafl-core/src/audio/engine/automation.rs',
+    'crates/reafl-core/src/audio/engine/setup.rs'
 )
 foreach ($p in $files) {
     if (-not (Test-Path $p)) { continue }

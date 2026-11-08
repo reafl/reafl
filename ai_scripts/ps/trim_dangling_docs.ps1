@@ -1,4 +1,4 @@
-param([string]$Root = "crates/pulseforge-app/src")
+param([string]$Root = "crates/reafl-app/src")
 
 # Trims doc or attribute lines that a cut left dangling at the end of a module.
 foreach ($name in @('cursor.rs', 'hosted_meta.rs', 'state.rs', 'layout.rs', 'app_state.rs', 'update.rs')) {

@@ -1,4 +1,4 @@
-param([string]$Dir = "crates/pulseforge-widgets/src")
+param([string]$Dir = "crates/reafl-widgets/src")
 
 # Replaces the shotgun glob imports with the explicit ones each module needs.
 $extras = @{
@@ -47,7 +47,7 @@ $extras = @{
 foreach ($entry in $extras.GetEnumerator()) {
     $path = Join-Path $Dir "$($entry.Key).rs"
     $lines = Get-Content -LiteralPath $path
-    $kept = $lines | Where-Object { $_ -notmatch '^use crate::\w+::\*;$' -and $_ -notmatch '^use pulseforge_core::project;$' }
+    $kept = $lines | Where-Object { $_ -notmatch '^use crate::\w+::\*;$' -and $_ -notmatch '^use reafl_core::project;$' }
     $insertAt = 0
     for ($i = 0; $i -lt $kept.Count; $i++) {
         if ($kept[$i] -match '^pub ') { $insertAt = $i; break }

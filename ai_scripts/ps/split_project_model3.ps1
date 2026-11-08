@@ -1,4 +1,4 @@
-param([string]$Root = "crates/pulseforge-core/src/project")
+param([string]$Root = "crates/reafl-core/src/project")
 
 $source = Join-Path $Root 'model.rs'
 $folder = Join-Path $Root 'model'

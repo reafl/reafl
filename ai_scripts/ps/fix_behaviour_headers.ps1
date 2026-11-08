@@ -1,4 +1,4 @@
-$dir = 'crates/pulseforge-core/src/project/behaviour'
+$dir = 'crates/reafl-core/src/project/behaviour'
 foreach ($f in Get-ChildItem $dir -Filter *.rs) {
     $lines = Get-Content $f.FullName
     if ($lines[0] -notmatch 'use super::\*;\s+impl Project \{') { continue }

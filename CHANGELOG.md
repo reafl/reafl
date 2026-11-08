@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to PulseForge. Commits written by AI are marked `AI:`.
+All notable changes to reafl. Commits written by AI are marked `AI:`.
 
 Every batch of changes is committed to git as its own commit whose message
 starts with `AI: `, so history maps one commit to one reviewed batch.
@@ -59,29 +59,29 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ### Changed
 
-- The workspace is split into one crate per concern: `pulseforge-core` (model and
-  engine), `pulseforge-plugins`, `pulseforge-hosting`, `pulseforge-profiling`,
-  `pulseforge-widgets` (all shared egui drawing), `pulseforge-settings`
-  (settings + CLI), `pulseforge-tasks` (background jobs) and `pulseforge-app`
-  (the editor). The `pulseforge` binary is now a thin `run()` call.
-- `pulseforge-core` is modularised: `project/` holds `model` (data), `behaviour`
+- The workspace is split into one crate per concern: `reafl-core` (model and
+  engine), `reafl-plugins`, `reafl-hosting`, `reafl-profiling`,
+  `reafl-widgets` (all shared egui drawing), `reafl-settings`
+  (settings + CLI), `reafl-tasks` (background jobs) and `reafl-app`
+  (the editor). The `reafl` binary is now a thin `run()` call.
+- `reafl-core` is modularised: `project/` holds `model` (data), `behaviour`
   (normalising, automation lookup, lane edits) and tests, while `audio/` holds
   `model` (samples, commands, voices), `engine` (the renderer), `dsp` (free
   helpers and WAV I/O) and tests.
-- `pulseforge-plugins` built-ins are now one module per processor behind a
+- `reafl-plugins` built-ins are now one module per processor behind a
   `BuiltinProcessor` trait: `builtin/{eq,reverb,delay,modulation,waveshaper,params}.rs`,
   with `BuiltinEffect` only dispatching, so a new effect is one file plus one
   line in the constructor.
-- `pulseforge-app` no longer holds one giant file: the `PulseForgeApp` methods
+- `reafl-app` no longer holds one giant file: the `ReaflApp` methods
   live in `views/{arrangement,automation,mixer,panels,piano,plugins,rack,settings,toolbar}.rs`
   plus `actions`, `app_setup`, `automation_actions`, `automation_display`, `clips`,
   `hosting`, `input`, `instruments`, `project_io`, `samples`, `selection`,
   `transport`, and the shared helpers in `geometry`, `labels`, `snap`.
-- New `pulseforge_widgets::control::ValueControl`: one control type for sliders,
+- New `reafl_widgets::control::ValueControl`: one control type for sliders,
   knobs, number boxes, toggles and enums, each bound to a `&mut` value with an
   optional `ParameterTarget` (automation ring, live value, lane menu) and an
   optional `on_change` callback. The arpeggiator gate is the first user.
-- New `pulseforge_widgets::shape`: `DrawPoint`/`PointStyle` for lane points,
+- New `reafl_widgets::shape`: `DrawPoint`/`PointStyle` for lane points,
   `ScreenCurve` (line, fill and cable) and the samplers `sample_curve`,
   `value_at` and `eq_response_curve` shared by the EQ display and the lanes.
 - Every crate is now organised as one module per concern, so no file carries a
@@ -97,8 +97,8 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
   `views/{settings,sample_browser,clip_windows}` and `editing`, `debug_panel`,
   `tests`. `views/timeline.rs` hands the frame geometry to the painting and
   input passes as an immutable `TimelineGeometry`.
-- `pulseforge-core`, `pulseforge-plugins`, `pulseforge-app` and
-  `pulseforge-widgets` carry `#![warn(missing_docs)]` and are fully documented:
+- `reafl-core`, `reafl-plugins`, `reafl-app` and
+  `reafl-widgets` carry `#![warn(missing_docs)]` and are fully documented:
   every public type, field, variant and method has rustdoc, with `# Parameters`,
   `# Returns` and `# Errors` sections where they apply, so `cargo doc` produces
   the reference without gaps.
@@ -171,7 +171,7 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 - **The workspace builds on Linux again.** `Vst3Ui::open_editor` called
   `WindowHandle::from_hwnd`, which `vst3-host` only defines on Windows, so the
-  Linux job failed to compile `pulseforge-hosting`. A new `window_handle` helper
+  Linux job failed to compile `reafl-hosting`. A new `window_handle` helper
   picks the constructor per platform — `from_hwnd` on Windows, `from_nsview` on
   macOS, `from_x11` on Linux — and returns [`HostError::NoEditor`] where no
   embedding backend exists. Native editor windows still only exist on Windows;
@@ -312,7 +312,7 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
   mixer's "+ Track" button opens the preset list on right click and adds a
   channel pre-loaded with that chain.
 
-- `pulseforge_core::expr`: a dependency-free formula evaluator (`+ - * / % ^`,
+- `reafl_core::expr`: a dependency-free formula evaluator (`+ - * / % ^`,
   `exp ln sqrt abs floor round sin cos tan`, `pi`, `e`, variable `x`) with
   tests, plus a formula field in the automation window that samples an
   expression into a real curve lane.
@@ -358,7 +358,7 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 - Horizontal zoom range widened from 0.35–4× to 0.2–8×; Ctrl+click on the
   arrangement ruler resets it to 100 %.
 
-- `pulseforge-profiling` crate: an in-editor debugger.
+- `reafl-profiling` crate: an in-editor debugger.
   - Lock-free span recorder (`profile_scope!`, `profile_span!`) that is safe on
     the audio thread and costs one atomic load while disabled.
   - Background aggregator that folds the last few seconds of spans into a

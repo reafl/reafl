@@ -1,5 +1,5 @@
-$src = 'crates/pulseforge-core/src/project/behaviour.rs'
-$dir = 'crates/pulseforge-core/src/project/behaviour'
+$src = 'crates/reafl-core/src/project/behaviour.rs'
+$dir = 'crates/reafl-core/src/project/behaviour'
 if (Test-Path $dir) { throw "already exists: $dir" }
 New-Item -ItemType Directory -Path $dir | Out-Null
 $lines = Get-Content $src

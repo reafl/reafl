@@ -1,4 +1,4 @@
-param([string]$Root = "crates/pulseforge-core/src/audio")
+param([string]$Root = "crates/reafl-core/src/audio")
 
 $common = @(
     'use std::{',
@@ -16,7 +16,7 @@ $common = @(
     '    BufferSize, SampleFormat, Stream,',
     '    traits::{DeviceTrait, HostTrait, StreamTrait},',
     '};',
-    'use pulseforge_profiling::{Channel, SlotCounters, profile_scope, set_thread_channel};',
+    'use reafl_profiling::{Channel, SlotCounters, profile_scope, set_thread_channel};',
     '',
     'use crate::{',
     '    hosted::{HostedSlot, effect_host_id, instrument_host_id},',

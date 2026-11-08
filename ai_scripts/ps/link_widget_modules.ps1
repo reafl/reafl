@@ -1,4 +1,4 @@
-param([string]$Dir = "crates/pulseforge-widgets/src")
+param([string]$Dir = "crates/reafl-widgets/src")
 
 $allModules = @(
     'anim', 'automation_bridge', 'context_menu', 'effect_parameters', 'eq_curve', 'fader',

@@ -1,4 +1,4 @@
-param([string]$Root = "crates/pulseforge-core/src/audio")
+param([string]$Root = "crates/reafl-core/src/audio")
 
 # The submodules need the same imports the monolith had, and the data types they
 # share have to be visible across the module tree.
@@ -18,7 +18,7 @@ $header = @(
     '    BufferSize, SampleFormat, Stream,',
     '    traits::{DeviceTrait, HostTrait, StreamTrait},',
     '};',
-    'use pulseforge_profiling::{Channel, SlotCounters, profile_scope, set_thread_channel};',
+    'use reafl_profiling::{Channel, SlotCounters, profile_scope, set_thread_channel};',
     '',
     'use crate::{',
     '    hosted::{HostedSlot, effect_host_id, instrument_host_id},',

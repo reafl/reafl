@@ -16,8 +16,8 @@ param()
 $ErrorActionPreference = 'Stop'
 
 $roots = @(
-    'crates/pulseforge-app/src',
-    'crates/pulseforge-widgets/src'
+    'crates/reafl-app/src',
+    'crates/reafl-widgets/src'
 )
 
 $map = [ordered]@{

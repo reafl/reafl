@@ -1,6 +1,6 @@
 param(
-    [string]$From = "crates/pulseforge-app/src",
-    [string]$To = "crates/pulseforge-widgets/src"
+    [string]$From = "crates/reafl-app/src",
+    [string]$To = "crates/reafl-widgets/src"
 )
 
 function Move-Module {
@@ -12,22 +12,22 @@ function Move-Module {
     $body = $body | ForEach-Object { $_ -replace '^pub\(crate\) ', 'pub ' }
     $header = @("//! " + ($lines[0] -replace '^//! ', ''), "") + $Use.Split("`n") + @("")
     Set-Content -LiteralPath $path -Value ($header + $body)
-    Write-Host "moved $Name.rs into pulseforge-widgets"
+    Write-Host "moved $Name.rs into reafl-widgets"
 }
 
 Move-Module theme @"
 use eframe::egui;
-use pulseforge_settings as settings;
+use reafl_settings as settings;
 "@
 Move-Module icons @"
 use eframe::egui;
 "@
 Move-Module tooltip @"
 use eframe::egui;
-use pulseforge_settings as settings;
+use reafl_settings as settings;
 "@
 Move-Module presets @"
 use std::fs;
 
-use pulseforge_core::project::InsertFxSlot;
+use reafl_core::project::InsertFxSlot;
 "@

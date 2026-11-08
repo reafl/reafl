@@ -1,5 +1,5 @@
 [package]
-name = "pulseforge"
+name = "reafl"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
@@ -7,18 +7,18 @@ description = "A Rust-native pattern-based digital audio workstation"
 
 [workspace]
 members = [
-    "crates/pulseforge-app",
-    "crates/pulseforge-core",
-    "crates/pulseforge-hosting",
-    "crates/pulseforge-plugins",
-    "crates/pulseforge-profiling",
-    "crates/pulseforge-settings",
-    "crates/pulseforge-tasks",
-    "crates/pulseforge-widgets",
+    "crates/reafl-app",
+    "crates/reafl-core",
+    "crates/reafl-hosting",
+    "crates/reafl-plugins",
+    "crates/reafl-profiling",
+    "crates/reafl-settings",
+    "crates/reafl-tasks",
+    "crates/reafl-widgets",
 ]
 resolver = "3"
 
 [dependencies]
 eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
-pulseforge-app = { path = "crates/pulseforge-app" }
-pulseforge-profiling = { path = "crates/pulseforge-profiling" }
+reafl-app = { path = "crates/reafl-app" }
+reafl-profiling = { path = "crates/reafl-profiling" }

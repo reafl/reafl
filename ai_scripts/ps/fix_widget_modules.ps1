@@ -1,4 +1,4 @@
-param([string]$Dir = "crates/pulseforge-widgets/src")
+param([string]$Dir = "crates/reafl-widgets/src")
 
 # Moves the doc comment that a cut left at the end of one module onto the first
 # item of the next module.
@@ -53,7 +53,7 @@ Move-TailDoc fader.rs lane_slider.rs
 Move-TailDoc lane_slider.rs meter.rs
 Move-TailDoc meter.rs eq_curve.rs
 
-$shared = @('use pulseforge_core::project;', 'use crate::theme::lane_color;')
+$shared = @('use reafl_core::project;', 'use crate::theme::lane_color;')
 foreach ($name in @(
     'knob.rs', 'power.rs', 'mixer_strip.rs', 'time_edit.rs', 'effect_parameters.rs',
     'automation_bridge.rs', 'fader.rs', 'lane_slider.rs', 'meter.rs', 'eq_curve.rs'

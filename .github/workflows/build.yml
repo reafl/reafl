@@ -65,7 +65,7 @@ jobs:
         with:
           name: Release ${{ github.ref }}
           files: |
-            target/x86_64-pc-windows-gnu/release/pulseforge.exe
-            target/release/pulseforge
+            target/x86_64-pc-windows-gnu/release/reafl.exe
+            target/release/reafl
           body: Release for ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}

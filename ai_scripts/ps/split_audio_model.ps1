@@ -1,4 +1,4 @@
-$src = 'crates/pulseforge-core/src/audio/model.rs'
+$src = 'crates/reafl-core/src/audio/model.rs'
 $lines = Get-Content $src
 
 function Find-Index($pattern, $from) {
@@ -30,7 +30,7 @@ $sampleFile = @(
     'use crate::project::DefaultSample;',
     ''
 ) + $sample + @('')
-Set-Content -Path 'crates/pulseforge-core/src/audio/sample.rs' -Value $sampleFile -Encoding utf8
+Set-Content -Path 'crates/reafl-core/src/audio/sample.rs' -Value $sampleFile -Encoding utf8
 
 $outputFile = @(
     '//! The UI-side half of the audio engine: device setup and the command handle.',
@@ -38,10 +38,10 @@ $outputFile = @(
     'use super::*;',
     ''
 ) + $output + @('')
-Set-Content -Path 'crates/pulseforge-core/src/audio/output.rs' -Value $outputFile -Encoding utf8
+Set-Content -Path 'crates/reafl-core/src/audio/output.rs' -Value $outputFile -Encoding utf8
 
 $rest = $lines[0..($A - 1)] + $lines[$B..($C - 1)] + $lines[$D..($lines.Count - 1)]
 Set-Content -Path $src -Value $rest -Encoding utf8
 
-foreach ($f in 'model.rs','sample.rs','output.rs') { "{0,5} {1}" -f (Get-Content "crates/pulseforge-core/src/audio/$f").Count, $f }
-Get-Content 'crates/pulseforge-core/src/audio/mod.rs' | Select-Object -First 40
+foreach ($f in 'model.rs','sample.rs','output.rs') { "{0,5} {1}" -f (Get-Content "crates/reafl-core/src/audio/$f").Count, $f }
+Get-Content 'crates/reafl-core/src/audio/mod.rs' | Select-Object -First 40

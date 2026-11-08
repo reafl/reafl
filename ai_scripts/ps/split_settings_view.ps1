@@ -1,4 +1,4 @@
-$src = 'crates/pulseforge-app/src/views/settings.rs'
+$src = 'crates/reafl-app/src/views/settings.rs'
 $lines = Get-Content $src
 
 function Find-Index($pattern, $from) {
@@ -22,14 +22,14 @@ $tail = $lines[$C..($lines.Count - 1)]
 while ($tail.Count -gt 0 -and $tail[$tail.Count - 1].Trim() -eq '') { $tail = $tail[0..($tail.Count - 2)] }
 if ($tail[$tail.Count - 1].Trim() -eq '}') { $tail = $tail[0..($tail.Count - 2)] }
 
-Set-Content -Path 'crates/pulseforge-app/src/views/sample_browser.rs' -Value (@(
+Set-Content -Path 'crates/reafl-app/src/views/sample_browser.rs' -Value (@(
     '//! The sample browser and the loading helpers it calls.',
     '',
     'use crate::*;',
     '',
-    'impl PulseForgeApp {'
+    'impl ReaflApp {'
 ) + $tail + @('}', '')) -Encoding utf8
 
 Set-Content -Path $src -Value ($head + @('}', '')) -Encoding utf8
 
-foreach ($f in 'crates/pulseforge-app/src/views/settings.rs','crates/pulseforge-app/src/views/sample_browser.rs') { "{0,5} {1}" -f (Get-Content $f).Count, $f }
+foreach ($f in 'crates/reafl-app/src/views/settings.rs','crates/reafl-app/src/views/sample_browser.rs') { "{0,5} {1}" -f (Get-Content $f).Count, $f }

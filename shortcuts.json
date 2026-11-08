@@ -1,6 +1,6 @@
 {
   "version": 5,
-  "description": "PulseForge shortcut template. Runtime bindings live in settings.json; this file documents the shipped defaults and the action identifiers accepted by Settings::bind.",
+  "description": "reafl shortcut template. Runtime bindings live in settings.json; this file documents the shipped defaults and the action identifiers accepted by Settings::bind.",
   "programmatic_api": {
     "rust": [
       "settings.bind(ShortcutAction::Undo, \"Ctrl+U\");",
@@ -9,7 +9,7 @@
       "settings.actions_for_chord(\"Ctrl+Z\");",
       "settings.reset_shortcuts();"
     ],
-    "notes": "Chords are plain data (Ctrl/Shift/Alt plus a key name from settings::KEY_NAMES). Adding a command means adding a ShortcutAction variant and a handler in PulseForgeApp::perform."
+    "notes": "Chords are plain data (Ctrl/Shift/Alt plus a key name from settings::KEY_NAMES). Adding a command means adding a ShortcutAction variant and a handler in ReaflApp::perform."
   },
   "shortcuts": [
     {

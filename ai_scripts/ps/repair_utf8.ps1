@@ -14,14 +14,14 @@
     untouched.
 
 .EXAMPLE
-    pwsh -File ai_scripts/ps/repair_utf8.ps1 -Roots crates/pulseforge-core/src,crates/pulseforge-app/src
+    pwsh -File ai_scripts/ps/repair_utf8.ps1 -Roots crates/reafl-core/src,crates/reafl-app/src
 #>
 [CmdletBinding()]
 param(
     [string[]] $Roots = @(
-        'crates/pulseforge-core/src',
-        'crates/pulseforge-app/src',
-        'crates/pulseforge-widgets/src'
+        'crates/reafl-core/src',
+        'crates/reafl-app/src',
+        'crates/reafl-widgets/src'
     )
 )
 

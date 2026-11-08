@@ -2318,111 +2318,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
-name = "pulseforge"
-version = "0.1.0"
-dependencies = [
- "eframe",
- "pulseforge-app",
- "pulseforge-profiling",
-]
-
-[[package]]
-name = "pulseforge-app"
-version = "0.1.0"
-dependencies = [
- "clack-extensions",
- "clack-host",
- "clap",
- "eframe",
- "midir",
- "pulseforge-core",
- "pulseforge-hosting",
- "pulseforge-plugins",
- "pulseforge-profiling",
- "pulseforge-settings",
- "pulseforge-tasks",
- "pulseforge-widgets",
- "raw-window-handle",
- "serde",
- "serde_json",
- "vst3-host",
-]
-
-[[package]]
-name = "pulseforge-core"
-version = "0.1.0"
-dependencies = [
- "cpal",
- "hound",
- "pulseforge-hosting",
- "pulseforge-plugins",
- "pulseforge-profiling",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "pulseforge-hosting"
-version = "0.1.0"
-dependencies = [
- "clack-extensions",
- "clack-host",
- "raw-window-handle",
- "vst3-host",
- "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "pulseforge-plugins"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "pulseforge-profiling"
-version = "0.1.0"
-dependencies = [
- "crossbeam-queue",
- "egui",
- "egui_glow",
- "glow",
- "sysinfo",
-]
-
-[[package]]
-name = "pulseforge-settings"
-version = "0.1.0"
-dependencies = [
- "clap",
- "eframe",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "pulseforge-tasks"
-version = "0.1.0"
-dependencies = [
- "pulseforge-core",
- "pulseforge-plugins",
- "pulseforge-profiling",
- "serde_json",
-]
-
-[[package]]
-name = "pulseforge-widgets"
-version = "0.1.0"
-dependencies = [
- "eframe",
- "pulseforge-core",
- "pulseforge-settings",
- "serde_json",
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "pxfm"
 version = "0.1.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2469,6 +2364,111 @@ name = "raw-window-handle"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
+
+[[package]]
+name = "reafl"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "reafl-app",
+ "reafl-profiling",
+]
+
+[[package]]
+name = "reafl-app"
+version = "0.1.0"
+dependencies = [
+ "clack-extensions",
+ "clack-host",
+ "clap",
+ "eframe",
+ "midir",
+ "raw-window-handle",
+ "reafl-core",
+ "reafl-hosting",
+ "reafl-plugins",
+ "reafl-profiling",
+ "reafl-settings",
+ "reafl-tasks",
+ "reafl-widgets",
+ "serde",
+ "serde_json",
+ "vst3-host",
+]
+
+[[package]]
+name = "reafl-core"
+version = "0.1.0"
+dependencies = [
+ "cpal",
+ "hound",
+ "reafl-hosting",
+ "reafl-plugins",
+ "reafl-profiling",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "reafl-hosting"
+version = "0.1.0"
+dependencies = [
+ "clack-extensions",
+ "clack-host",
+ "raw-window-handle",
+ "vst3-host",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "reafl-plugins"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "reafl-profiling"
+version = "0.1.0"
+dependencies = [
+ "crossbeam-queue",
+ "egui",
+ "egui_glow",
+ "glow",
+ "sysinfo",
+]
+
+[[package]]
+name = "reafl-settings"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "eframe",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "reafl-tasks"
+version = "0.1.0"
+dependencies = [
+ "reafl-core",
+ "reafl-plugins",
+ "reafl-profiling",
+ "serde_json",
+]
+
+[[package]]
+name = "reafl-widgets"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "reafl-core",
+ "reafl-settings",
+ "serde_json",
+ "windows-sys 0.59.0",
+]
 
 [[package]]
 name = "redox_syscall"

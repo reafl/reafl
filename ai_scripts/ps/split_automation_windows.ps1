@@ -1,4 +1,4 @@
-$path = 'crates/pulseforge-app/src/views/automation.rs'
+$path = 'crates/reafl-app/src/views/automation.rs'
 $lines = Get-Content $path
 $start = -1
 for ($i = 0; $i -lt $lines.Count; $i++) {
@@ -29,12 +29,12 @@ $header = @(
     '',
     'use crate::*;',
     '',
-    'impl PulseForgeApp {'
+    'impl ReaflApp {'
 )
-Set-Content -Path 'crates/pulseforge-app/src/views/clip_windows.rs' -Value ($header + $methods + @('}', '')) -Encoding utf8
+Set-Content -Path 'crates/reafl-app/src/views/clip_windows.rs' -Value ($header + $methods + @('}', '')) -Encoding utf8
 
 Set-Content -Path $path -Value ($before + $after) -Encoding utf8
 
 "cut lines $($start+1)..$($end+1)"
 "automation.rs -> $((Get-Content $path).Count) lines"
-"clip_windows.rs -> $((Get-Content 'crates/pulseforge-app/src/views/clip_windows.rs').Count) lines"
+"clip_windows.rs -> $((Get-Content 'crates/reafl-app/src/views/clip_windows.rs').Count) lines"

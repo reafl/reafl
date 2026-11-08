@@ -1,4 +1,4 @@
-param([string]$Path = "crates/pulseforge-widgets/src/knob.rs")
+param([string]$Path = "crates/reafl-widgets/src/knob.rs")
 
 # Splits `Knob::show` into a body that also hands back the widget response, so
 # the unified control can attach tooltips and menus to the same widget.

@@ -1,4 +1,4 @@
-param([string]$Root = "crates/pulseforge-core/src/audio")
+param([string]$Root = "crates/reafl-core/src/audio")
 
 # Rebuilds each audio submodule as: doc comment, shared imports, body. The body
 # starts at the first data or impl declaration, which drops the leftovers of the

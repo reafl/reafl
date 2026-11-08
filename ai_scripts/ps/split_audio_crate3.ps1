@@ -1,4 +1,4 @@
-param([string]$Root = "crates/pulseforge-core/src")
+param([string]$Root = "crates/reafl-core/src")
 
 $source = Join-Path $Root 'audio.rs'
 $target = Join-Path $Root 'audio'

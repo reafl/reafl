@@ -1,9 +1,9 @@
 param(
-    [string]$Source = "crates/pulseforge-app/src/views/arrangement.rs",
-    [string]$Root = "crates/pulseforge-app/src/views"
+    [string]$Source = "crates/reafl-app/src/views/arrangement.rs",
+    [string]$Root = "crates/reafl-app/src/views"
 )
 
-# Splits a run of PulseForgeApp methods out of one view module into another.
+# Splits a run of ReaflApp methods out of one view module into another.
 function Cut-Methods {
     param([string]$First, [string]$Last, [string]$Target, [string]$Title)
     $lines = Get-Content -LiteralPath $Source
@@ -27,7 +27,7 @@ function Cut-Methods {
 
     $chunk = $lines[$startIdx..$endIdx]
     $path = Join-Path $Root $Target
-    Set-Content -LiteralPath $path -Value (@("//! $Title", '', 'use crate::*;', '') + @('impl PulseForgeApp {') + $chunk + @('}', ''))
+    Set-Content -LiteralPath $path -Value (@("//! $Title", '', 'use crate::*;', '') + @('impl ReaflApp {') + $chunk + @('}', ''))
 
     $remaining = @()
     if ($startIdx -gt 0) { $remaining += $lines[0..($startIdx - 1)] }

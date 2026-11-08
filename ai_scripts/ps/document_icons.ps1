@@ -1,4 +1,4 @@
-param([string]$Path = "crates/pulseforge-widgets/src/icons.rs")
+param([string]$Path = "crates/reafl-widgets/src/icons.rs")
 
 $names = @{
     'Rack' = 'channel rack window'

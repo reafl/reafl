@@ -1,8 +1,8 @@
-# PulseForge
+# reafl
 
 NOTE: This project uses generative AI as its main development platform (for now). Any commit marked with AI: will be fully written by AI, any commit marked with pAI was partially written.
 
-PulseForge is an original pattern-based DAW prototype written in Rust for
+reafl is an original pattern-based DAW prototype written in Rust for
 Windows and Linux. It uses a persistent arrangement workspace with separate,
 movable channel-rack, piano-roll, mixer, mixer-routing, and MIDI-routing windows.
 
@@ -156,7 +156,7 @@ Every switch is optional; with no arguments the app uses `settings.json` and
 `session.json` in the working directory.
 
 ```text
-pulseforge [-s|--settings FILE] [-p|--project FILE] [-d|--debug] [--no-audio]
+reafl [-s|--settings FILE] [-p|--project FILE] [-d|--debug] [--no-audio]
 ```
 
 | Option | Effect |
@@ -172,7 +172,7 @@ pulseforge [-s|--settings FILE] [-p|--project FILE] [-d|--debug] [--no-audio]
 
 ## Debugging and profiling
 
-`pulseforge-profiling` is a separate crate with four layers:
+`reafl-profiling` is a separate crate with four layers:
 
 - **Recorder** (`span`): `profile_scope!("name")` records a named, nested scope
   into a lock-free queue. Names are `&'static str`, so recording never
@@ -209,7 +209,7 @@ When the driver offers GL 4.3 that reduction runs in a compute shader
 
 ## Plug-ins
 
-The plug-in layer is its own crate, `pulseforge-plugins`:
+The plug-in layer is its own crate, `reafl-plugins`:
 
 - `builtin` holds the DSP for the included processors.
 - `registry` lists generators and effects so the picker and engine share one
@@ -219,7 +219,7 @@ The plug-in layer is its own crate, `pulseforge-plugins`:
 
 ### VST3 and CLAP hosting
 
-A second crate, `pulseforge-hosting`, owns the real hosting. It wraps two
+A second crate, `reafl-hosting`, owns the real hosting. It wraps two
 battle-tested crates ? `vst3-host` for VST3 and `clack-host` for CLAP ? behind
 one small API, so the DAW never depends on either format directly.
 
@@ -232,13 +232,13 @@ A load returns two halves, because the formats disagree on threading:
   `vst3-host`'s own helpers use); CLAP hands out a `Send`
   `StartedPluginAudioProcessor` while the `!Send` `PluginInstance` stays behind.
 
-`pulseforge-core::hosted::HostedSlot` bridges the block/sample mismatch: the
+`reafl-core::hosted::HostedSlot` bridges the block/sample mismatch: the
 engine renders one sample at a time, so each slot accumulates a 64-frame block,
 processes it, and replays the processed block one sample later. That costs
 exactly one block of latency per plug-in (?1.3 ms at 48 kHz) and allocates
 nothing in the callback.
 
-Editors attach as native child windows: `pulseforge_hosting::editor::EditorWindow`
+Editors attach as native child windows: `reafl_hosting::editor::EditorWindow`
 creates a `WS_CHILD` window under the DAW window, and its rectangle is kept in
 sync with the egui wrapper every frame. Because it is a real OS window it always
 paints above the egui surface, so it is hidden when its plug-in window closes.
@@ -265,7 +265,7 @@ restores it right after the bundle is reloaded. `HostedUi::save_preset` writes a
 `vst3-host` but is not enabled, because the isolated path cannot host an
 embedded editor.
 
-`pulseforge-core` re-exports the plug-in types, so call sites keep a single
+`reafl-core` re-exports the plug-in types, so call sites keep a single
 import path.
 
 ## Performance model
@@ -386,15 +386,15 @@ per minute and its English automatic-caption transcript. It covers the
 Browser-to-channel-rack workflow, step and piano-roll editing, pattern/song
 playback, linked pattern copies and making them unique, sample-clip repetition,
 mixer inserts, automation, recording, and rendering. The samples are not a
-literal review of every encoded frame. PulseForge uses the editing insights
+literal review of every encoded frame. reafl uses the editing insights
 that fit its scope. A follow-up transcript audit reinforced the value of
 separate instrument/effect windows, sample-player workflows, editable clip and
 note boundaries, and a visible tool cursor; those are now represented in the
 prototype. Tempo-synced sample stretching/pitch controls and audio/MIDI
 recording remain future work. WAV rendering is available from the Render WAV
-window. The workspace is split into `pulseforge-plugins` (built-in DSP, plug-in
-registry, and external plug-in discovery), `pulseforge-hosting` (real VST3 and
-CLAP hosting plus the native editor window), `pulseforge-core` (project model,
+window. The workspace is split into `reafl-plugins` (built-in DSP, plug-in
+registry, and external plug-in discovery), `reafl-hosting` (real VST3 and
+CLAP hosting plus the native editor window), `reafl-core` (project model,
 audio engine, and parameter smoothing) and the root crate (egui interface and
 platform integration). The interface, plug-ins, and assets remain original
 rather than copied from the reference.

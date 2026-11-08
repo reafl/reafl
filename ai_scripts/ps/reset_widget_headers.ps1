@@ -1,9 +1,9 @@
-param([string]$Dir = "crates/pulseforge-widgets/src")
+param([string]$Dir = "crates/reafl-widgets/src")
 
 $headers = @{
     'knob' = @(
         'use eframe::egui;',
-        'use pulseforge_core::project::ParameterTarget;',
+        'use reafl_core::project::ParameterTarget;',
         '',
         'use crate::automation_bridge::{automation_context_menu, request_automation_lane, target_is_automated, target_live_value};',
         'use crate::platform;'
@@ -17,8 +17,8 @@ $headers = @{
     )
     'mixer_strip' = @(
         'use eframe::egui;',
-        'use pulseforge_core::project::{MixerParameter, ParameterTarget};',
-        'use pulseforge_settings::settings;',
+        'use reafl_core::project::{MixerParameter, ParameterTarget};',
+        'use reafl_settings::settings;',
         '',
         'use crate::automation_bridge::{automation_context_menu, target_is_automated, target_live_value};',
         'use crate::context_menu::{ContextAction, ContextMenu, MenuItem};',
@@ -32,13 +32,13 @@ $headers = @{
     )
     'time_edit' = @(
         'use eframe::egui;',
-        'use pulseforge_core::project;',
+        'use reafl_core::project;',
         '',
         'use crate::automation_bridge::automation_context_menu;'
     )
     'effect_parameters' = @(
         'use eframe::egui;',
-        'use pulseforge_core::project::{EffectParameter, InsertFxSlot, ParameterTarget};',
+        'use reafl_core::project::{EffectParameter, InsertFxSlot, ParameterTarget};',
         '',
         'use crate::automation_bridge::{automation_context_menu, target_live_value};',
         'use crate::knob::Knob;',
@@ -46,7 +46,7 @@ $headers = @{
     )
     'automation_bridge' = @(
         'use eframe::egui;',
-        'use pulseforge_core::project::ParameterTarget;'
+        'use reafl_core::project::ParameterTarget;'
     )
     'fader' = @(
         'use eframe::egui;',
@@ -57,7 +57,7 @@ $headers = @{
     )
     'lane_slider' = @(
         'use eframe::egui;',
-        'use pulseforge_core::project::ParameterTarget;',
+        'use reafl_core::project::ParameterTarget;',
         '',
         'use crate::automation_bridge::{automation_context_menu, target_live_value};'
     )
@@ -68,7 +68,7 @@ $headers = @{
     )
     'eq_curve' = @(
         'use eframe::egui;',
-        'use pulseforge_core::project::ThreeBandEq;',
+        'use reafl_core::project::ThreeBandEq;',
         '',
         'use crate::theme::active_theme;'
     )
@@ -99,16 +99,16 @@ $header = @(
     '//! Small hover and text helpers.',
     '',
     'use eframe::egui;',
-    'use pulseforge_settings::settings;',
+    'use reafl_settings::settings;',
     '',
     '/// Key of the stored tooltip mode.',
-    'pub const TOOLTIP_MODE_KEY: &str = "pulseforge.tooltip_mode";',
+    'pub const TOOLTIP_MODE_KEY: &str = "reafl.tooltip_mode";',
     '',
     '/// Key of the stored tooltip delay, in seconds.',
-    'pub const TOOLTIP_DELAY_KEY: &str = "pulseforge.tooltip_delay";',
+    'pub const TOOLTIP_DELAY_KEY: &str = "reafl.tooltip_delay";',
     '',
     '/// Key the hovered widget text is published under for the status bar.',
-    'pub const HOVER_TEXT_KEY: &str = "pulseforge.hover_text";',
+    'pub const HOVER_TEXT_KEY: &str = "reafl.hover_text";',
     ''
 )
 Set-Content -LiteralPath $tooltipPath -Value ($header + $body)

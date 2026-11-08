@@ -1,6 +1,6 @@
 param(
-    [string]$Source = "crates/pulseforge-app/src/views/plugins.rs",
-    [string]$Root = "crates/pulseforge-app/src/views"
+    [string]$Source = "crates/reafl-app/src/views/plugins.rs",
+    [string]$Root = "crates/reafl-app/src/views"
 )
 
 function Cut-Methods {
@@ -25,7 +25,7 @@ function Cut-Methods {
     while ($endIdx -ge $startIdx -and ($lines[$endIdx].Trim() -eq '' -or $lines[$endIdx] -match '^\s*///')) { $endIdx-- }
 
     $chunk = $lines[$startIdx..$endIdx]
-    Set-Content -LiteralPath (Join-Path $Root $Target) -Value (@("//! $Title", '', 'use crate::*;', '') + @('impl PulseForgeApp {') + $chunk + @('}', ''))
+    Set-Content -LiteralPath (Join-Path $Root $Target) -Value (@("//! $Title", '', 'use crate::*;', '') + @('impl ReaflApp {') + $chunk + @('}', ''))
 
     $remaining = @()
     if ($startIdx -gt 0) { $remaining += $lines[0..($startIdx - 1)] }

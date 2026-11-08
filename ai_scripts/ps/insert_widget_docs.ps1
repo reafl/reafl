@@ -1,4 +1,4 @@
-param([string]$Root = "crates/pulseforge-widgets/src")
+param([string]$Root = "crates/reafl-widgets/src")
 
 # Inserts the missing rustdoc lines above the public items that still lack them.
 $docs = @(

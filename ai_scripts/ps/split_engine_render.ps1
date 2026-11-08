@@ -1,6 +1,6 @@
 param(
-    [string]$Source = "crates/pulseforge-core/src/audio/engine/render.rs",
-    [string]$Root = "crates/pulseforge-core/src/audio/engine"
+    [string]$Source = "crates/reafl-core/src/audio/engine/render.rs",
+    [string]$Root = "crates/reafl-core/src/audio/engine"
 )
 
 function Cut-Methods {

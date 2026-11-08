@@ -1,4 +1,4 @@
-param([string]$Path = "crates/pulseforge-core/src/audio/model.rs")
+param([string]$Path = "crates/reafl-core/src/audio/model.rs")
 
 # The sibling modules need the engine type, a method and two field groups that the
 # monolith had all in one file.

@@ -21,6 +21,6 @@ $ErrorActionPreference = 'Stop'
 & cargo doc --workspace --no-deps --document-private-items
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if (-not $NoOpen) {
-    Start-Process 'target/doc/pulseforge_profiling/index.html'
+    Start-Process 'target/doc/reafl_profiling/index.html'
 }
 exit 0

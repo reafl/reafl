@@ -1,0 +1,15 @@
+[package]
+name = "reafl-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Audio engine and project model for reafl"
+
+[dependencies]
+cpal = "0.15.3"
+hound = "3.5.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reafl-plugins = { path = "../reafl-plugins" }
+reafl-hosting = { path = "../reafl-hosting" }
+reafl-profiling = { path = "../reafl-profiling" }

@@ -1,4 +1,4 @@
-param([string]$Root = "crates/pulseforge-widgets/src")
+param([string]$Root = "crates/reafl-widgets/src")
 
 # Documents the mixer strip data model and the icon set.
 $stripPath = Join-Path $Root 'mixer_strip.rs'

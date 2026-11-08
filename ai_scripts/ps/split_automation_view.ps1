@@ -1,4 +1,4 @@
-$path = 'crates/pulseforge-app/src/views/automation.rs'
+$path = 'crates/reafl-app/src/views/automation.rs'
 $lines = Get-Content $path
 
 function Find-Index($pattern, $from) {
@@ -16,7 +16,7 @@ $D = Find-Index '^        ui\.separator\(\);' $C
 $E = Find-Index '^        // Quick formula tool' 0
 $F = Find-Index '^        ui\.separator\(\);' $E
 $G = Find-Index '^        let mut changed = false;' 0
-$H = Find-Index '^impl PulseForgeApp \{$' $C
+$H = Find-Index '^impl ReaflApp \{$' $C
 $I = Find-Index 'pub\(crate\) fn add_formula_automation' $H
 "anchors A=$A L=$L B=$B C=$C D=$D E=$E F=$F G=$G H=$H I=$I count=$($lines.Count)"
 
@@ -34,7 +34,7 @@ $targetFile = @(
     '',
     'use crate::*;',
     '',
-    'impl PulseForgeApp {',
+    'impl ReaflApp {',
     '    /// Keeps the remembered instrument, channel and slot indices inside the',
     '    /// current project, so opening the window after a removal cannot panic.',
     '    fn clamp_automation_indices(&mut self) {'
@@ -68,14 +68,14 @@ $targetFile = @(
     '}',
     ''
 )
-Set-Content -Path 'crates/pulseforge-app/src/views/automation_target.rs' -Value $targetFile -Encoding utf8
+Set-Content -Path 'crates/reafl-app/src/views/automation_target.rs' -Value $targetFile -Encoding utf8
 
 $formulaFile = @(
     '//! The formula tool of the automation window.',
     '',
     'use crate::*;',
     '',
-    'impl PulseForgeApp {',
+    'impl ReaflApp {',
     '    /// Shows the formula editor, a live preview and the button that samples',
     '    /// the expression into a lane.',
     '    ///',
@@ -90,14 +90,14 @@ $formulaFile = @(
     '}',
     ''
 )
-Set-Content -Path 'crates/pulseforge-app/src/views/automation_formula.rs' -Value $formulaFile -Encoding utf8
+Set-Content -Path 'crates/reafl-app/src/views/automation_formula.rs' -Value $formulaFile -Encoding utf8
 
 $tracksFile = @(
     '//! The editable list of automation lanes.',
     '',
     'use crate::*;',
     '',
-    'impl PulseForgeApp {',
+    'impl ReaflApp {',
     '    /// Draws one block per lane: name, target, clip range and the controls of',
     '    /// the selected modulation source.',
     '    ///',
@@ -110,7 +110,7 @@ $tracksFile = @(
     '}',
     ''
 )
-Set-Content -Path 'crates/pulseforge-app/src/views/automation_tracks.rs' -Value $tracksFile -Encoding utf8
+Set-Content -Path 'crates/reafl-app/src/views/automation_tracks.rs' -Value $tracksFile -Encoding utf8
 
 $newMain = @(
     '//! The automation window.',
@@ -122,7 +122,7 @@ $newMain = @(
     '',
     'use crate::*;',
     '',
-    'impl PulseForgeApp {',
+    'impl ReaflApp {',
     '    /// Draws the automation window.',
     '    ///',
     '    /// # Parameters',
@@ -148,4 +148,4 @@ $newMain = @(
 )
 Set-Content -Path $path -Value $newMain -Encoding utf8
 
-Get-ChildItem 'crates/pulseforge-app/src/views/automation*.rs' | ForEach-Object { "{0,5} {1}" -f (Get-Content $_.FullName).Count, $_.Name }
+Get-ChildItem 'crates/reafl-app/src/views/automation*.rs' | ForEach-Object { "{0,5} {1}" -f (Get-Content $_.FullName).Count, $_.Name }

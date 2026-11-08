@@ -1,0 +1,12 @@
+[package]
+name = "reafl-tasks"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Background job runner for reafl's blocking work"
+
+[dependencies]
+serde_json = "1.0"
+reafl-core = { path = "../reafl-core" }
+reafl-plugins = { path = "../reafl-plugins" }
+reafl-profiling = { path = "../reafl-profiling" }

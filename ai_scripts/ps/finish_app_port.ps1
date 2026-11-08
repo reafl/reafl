@@ -24,7 +24,7 @@ param()
 $ErrorActionPreference = 'Stop'
 
 $utf8 = New-Object System.Text.UTF8Encoding($false)
-$files = Get-ChildItem 'crates/pulseforge-app/src' -Recurse -Filter *.rs
+$files = Get-ChildItem 'crates/reafl-app/src' -Recurse -Filter *.rs
 
 $changed = 0
 foreach ($file in $files) {

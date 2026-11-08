@@ -1,4 +1,4 @@
-param([string]$Path = "crates/pulseforge-core/src/audio/model.rs")
+param([string]$Path = "crates/reafl-core/src/audio/model.rs")
 
 # Everything in the data module is crate-internal to the engine; the sibling
 # modules reach into these fields and helpers directly.

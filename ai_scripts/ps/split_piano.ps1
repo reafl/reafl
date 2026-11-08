@@ -1,4 +1,4 @@
-$src = 'crates/pulseforge-app/src/views/piano.rs'
+$src = 'crates/reafl-app/src/views/piano.rs'
 $lines = Get-Content $src
 
 function Find-Index($pattern, $from) {
@@ -22,14 +22,14 @@ $grid = $lines[$C..($lines.Count - 1)]
 while ($grid.Count -gt 0 -and $grid[$grid.Count - 1].Trim() -eq '') { $grid = $grid[0..($grid.Count - 2)] }
 if ($grid[$grid.Count - 1].Trim() -eq '}') { $grid = $grid[0..($grid.Count - 2)] }
 
-Set-Content -Path 'crates/pulseforge-app/src/views/piano_grid.rs' -Value (@(
+Set-Content -Path 'crates/reafl-app/src/views/piano_grid.rs' -Value (@(
     '//! The piano-roll note grid and its box-selection helpers.',
     '',
     'use crate::*;',
     '',
-    'impl PulseForgeApp {'
+    'impl ReaflApp {'
 ) + $grid + @('}', '')) -Encoding utf8
 
 Set-Content -Path $src -Value ($head + @('}', '')) -Encoding utf8
 
-Get-ChildItem 'crates/pulseforge-app/src/views/piano*.rs' | ForEach-Object { "{0,5} {1}" -f (Get-Content $_.FullName).Count, $_.Name }
+Get-ChildItem 'crates/reafl-app/src/views/piano*.rs' | ForEach-Object { "{0,5} {1}" -f (Get-Content $_.FullName).Count, $_.Name }

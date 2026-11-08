@@ -1,4 +1,4 @@
-param([string]$Path = "crates/pulseforge-widgets/src/control.rs")
+param([string]$Path = "crates/reafl-widgets/src/control.rs")
 
 # Adds the `compact` field to every `Spec` initialiser.
 $lines = Get-Content -LiteralPath $Path

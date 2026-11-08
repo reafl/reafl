@@ -1,4 +1,4 @@
-param([string]$Path = "crates/pulseforge-core/src/audio/engine.rs")
+param([string]$Path = "crates/reafl-core/src/audio/engine.rs")
 
 # The offline renderer in `dsp` drives the engine directly, so the engine's
 # fields and helpers have to be visible inside the crate.

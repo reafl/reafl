@@ -1,4 +1,4 @@
-param([string]$Root = "crates/pulseforge-app/src")
+param([string]$Root = "crates/reafl-app/src")
 
 # Moves the entry point out of the cursor module and back to the crate root.
 $cursorPath = Join-Path $Root 'cursor.rs'
@@ -7,7 +7,7 @@ $libPath = Join-Path $Root 'lib.rs'
 $cursor = Get-Content -LiteralPath $cursorPath
 $start = 0
 for ($i = 0; $i -lt $cursor.Count; $i++) {
-    if ($cursor[$i] -match '^/// Starts the PulseForge editor') { $start = $i; break }
+    if ($cursor[$i] -match '^/// Starts the reafl editor') { $start = $i; break }
 }
 $runBlock = $cursor[$start..($cursor.Count - 1)]
 $kept = $cursor[0..($start - 1)]

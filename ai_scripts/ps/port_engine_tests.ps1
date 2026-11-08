@@ -3,7 +3,7 @@
     Ports the engine unit tests to the track model.
 
 .DESCRIPTION
-    Mechanical rewrites for `crates/pulseforge-core/src/audio/tests.rs`:
+    Mechanical rewrites for `crates/reafl-core/src/audio/tests.rs`:
 
       * `project.instruments`            -> `project.tracks`
       * `ParameterTarget::Instrument { track_id, parameter: X }` ->
@@ -25,7 +25,7 @@ param()
 $ErrorActionPreference = 'Stop'
 
 $utf8 = New-Object System.Text.UTF8Encoding($false)
-$path = 'crates/pulseforge-core/src/audio/tests.rs'
+$path = 'crates/reafl-core/src/audio/tests.rs'
 $text = [System.IO.File]::ReadAllText($path)
 $original = $text
 

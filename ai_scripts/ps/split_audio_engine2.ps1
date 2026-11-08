@@ -1,4 +1,4 @@
-param([string]$Audio = "crates/pulseforge-core/src/audio")
+param([string]$Audio = "crates/reafl-core/src/audio")
 
 $source = Join-Path $Audio 'engine.rs'
 $folder = Join-Path $Audio 'engine'

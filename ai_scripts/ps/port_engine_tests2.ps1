@@ -17,7 +17,7 @@ param()
 $ErrorActionPreference = 'Stop'
 
 $utf8 = New-Object System.Text.UTF8Encoding($false)
-$path = 'crates/pulseforge-core/src/audio/tests.rs'
+$path = 'crates/reafl-core/src/audio/tests.rs'
 $text = [System.IO.File]::ReadAllText($path)
 $original = $text
 

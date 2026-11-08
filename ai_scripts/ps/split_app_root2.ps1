@@ -1,4 +1,4 @@
-param([string]$Source = "crates/pulseforge-app/src/lib.rs", [string]$Root = "crates/pulseforge-app/src")
+param([string]$Source = "crates/reafl-app/src/lib.rs", [string]$Root = "crates/reafl-app/src")
 
 $lines = Get-Content -LiteralPath $Source
 $taken = New-Object 'System.Collections.Generic.HashSet[int]'

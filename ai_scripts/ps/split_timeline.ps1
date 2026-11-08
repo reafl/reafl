@@ -1,4 +1,4 @@
-$path = 'crates/pulseforge-app/src/views/timeline.rs'
+$path = 'crates/reafl-app/src/views/timeline.rs'
 $lines = Get-Content $path
 
 function Find-Index($pattern, $from) {
@@ -56,7 +56,7 @@ $rowsFile = @(
     '',
     'use crate::*;',
     '',
-    'impl PulseForgeApp {',
+    'impl ReaflApp {',
     '    /// Draws every visible arrangement row and applies the context-menu and',
     '    /// duplication requests the interactions collected.',
     '    ///',
@@ -80,14 +80,14 @@ $rowsFile = @(
     '}',
     ''
 )
-Set-Content -Path 'crates/pulseforge-app/src/views/timeline_rows.rs' -Value $rowsFile -Encoding utf8
+Set-Content -Path 'crates/reafl-app/src/views/timeline_rows.rs' -Value $rowsFile -Encoding utf8
 
 $paintFile = @(
     '//! Painting the timeline ruler and the bar/beat grid.',
     '',
     'use crate::*;',
     '',
-    'impl PulseForgeApp {',
+    'impl ReaflApp {',
     '    /// Draws the bar ruler above the rows, including the loop marker.',
     '    ///',
     '    /// # Parameters',
@@ -117,14 +117,14 @@ $paintFile = @(
     '}',
     ''
 )
-Set-Content -Path 'crates/pulseforge-app/src/views/timeline_paint.rs' -Value $paintFile -Encoding utf8
+Set-Content -Path 'crates/reafl-app/src/views/timeline_paint.rs' -Value $paintFile -Encoding utf8
 
 $inputFile = @(
     '//! Pointer and wheel interaction of the arrangement timeline.',
     '',
     'use crate::*;',
     '',
-    'impl PulseForgeApp {',
+    'impl ReaflApp {',
     '    /// Turns clicks, drags and the wheel over the timeline into selection,',
     '    /// clip gestures, painting, slicing and panning.',
     '    ///',
@@ -150,7 +150,7 @@ $inputFile = @(
     '}',
     ''
 )
-Set-Content -Path 'crates/pulseforge-app/src/views/timeline_input.rs' -Value $inputFile -Encoding utf8
+Set-Content -Path 'crates/reafl-app/src/views/timeline_input.rs' -Value $inputFile -Encoding utf8
 
 $mainFile = @(
     '//! The arrangement timeline.',
@@ -194,7 +194,7 @@ $mainFile = @(
     '    pub(crate) first_lane: usize,',
     '}',
     '',
-    'impl PulseForgeApp {',
+    'impl ReaflApp {',
     '    /// Draws the whole arrangement timeline.',
     '    ///',
     '    /// # Parameters',
@@ -255,4 +255,4 @@ $mainFile = @(
 )
 Set-Content -Path $path -Value $mainFile -Encoding utf8
 
-Get-ChildItem 'crates/pulseforge-app/src/views/timeline*.rs' | ForEach-Object { "{0,5} {1}" -f (Get-Content $_.FullName).Count, $_.Name }
+Get-ChildItem 'crates/reafl-app/src/views/timeline*.rs' | ForEach-Object { "{0,5} {1}" -f (Get-Content $_.FullName).Count, $_.Name }

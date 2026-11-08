@@ -1,4 +1,4 @@
-$src = 'crates/pulseforge-app/src/lib.rs'
+$src = 'crates/reafl-app/src/lib.rs'
 $lines = Get-Content $src
 
 function Find-Index($pattern, $from) {
@@ -13,9 +13,9 @@ function Doc-Start($index) {
     return $i
 }
 
-$A = Find-Index '^impl PulseForgeApp \{$' 0
-$B = Find-Index '^impl PulseForgeApp \{\}$' 0
-$C = Find-Index '^impl PulseForgeApp \{$' ($B + 1)
+$A = Find-Index '^impl ReaflApp \{$' 0
+$B = Find-Index '^impl ReaflApp \{\}$' 0
+$C = Find-Index '^impl ReaflApp \{$' ($B + 1)
 $D = Doc-Start (Find-Index '^    fn render_debug_panel' 0)
 $E = Doc-Start (Find-Index '^    fn render_plugin_windows' 0)
 $T = Find-Index '^#\[cfg\(test\)\]' 0
@@ -35,27 +35,27 @@ $editingFile = @(
     '',
     'use crate::*;',
     '',
-    'impl PulseForgeApp {'
+    'impl ReaflApp {'
 ) + $editing + @('}', '')
-Set-Content -Path 'crates/pulseforge-app/src/editing.rs' -Value $editingFile -Encoding utf8
+Set-Content -Path 'crates/reafl-app/src/editing.rs' -Value $editingFile -Encoding utf8
 
 $debugFile = @(
     '//! The debug and profiler window.',
     '',
     'use crate::*;',
     '',
-    'impl PulseForgeApp {'
+    'impl ReaflApp {'
 ) + $debug + @('}', '')
-Set-Content -Path 'crates/pulseforge-app/src/debug_panel.rs' -Value $debugFile -Encoding utf8
+Set-Content -Path 'crates/reafl-app/src/debug_panel.rs' -Value $debugFile -Encoding utf8
 
 $windowsFile = @(
     '//! The floating windows of hosted and built-in plug-ins.',
     '',
     'use crate::*;',
     '',
-    'impl PulseForgeApp {'
+    'impl ReaflApp {'
 ) + $pluginWindows + @('}', '')
-Set-Content -Path 'crates/pulseforge-app/src/views/plugin_windows.rs' -Value $windowsFile -Encoding utf8
+Set-Content -Path 'crates/reafl-app/src/views/plugin_windows.rs' -Value $windowsFile -Encoding utf8
 
 $testsFile = @(
     '//! Unit tests for the editor state and its helpers.',
@@ -65,9 +65,9 @@ $testsFile = @(
 # drop the closing brace of the old `mod tests`
 while ($testsFile.Count -gt 0 -and $testsFile[$testsFile.Count - 1].Trim() -eq '') { $testsFile = $testsFile[0..($testsFile.Count - 2)] }
 if ($testsFile[$testsFile.Count - 1].Trim() -eq '}') { $testsFile = $testsFile[0..($testsFile.Count - 2)] }
-Set-Content -Path 'crates/pulseforge-app/src/tests.rs' -Value ($testsFile + @('')) -Encoding utf8
+Set-Content -Path 'crates/reafl-app/src/tests.rs' -Value ($testsFile + @('')) -Encoding utf8
 
 $keep = $lines[0..($A - 1)]
 Set-Content -Path $src -Value ($keep + @('')) -Encoding utf8
 
-Get-ChildItem 'crates/pulseforge-app/src/*.rs' | ForEach-Object { "{0,5} {1}" -f (Get-Content $_.FullName).Count, $_.Name }
+Get-ChildItem 'crates/reafl-app/src/*.rs' | ForEach-Object { "{0,5} {1}" -f (Get-Content $_.FullName).Count, $_.Name }

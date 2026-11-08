@@ -1,4 +1,4 @@
-param([string]$Root = "crates/pulseforge-core/src/audio/engine")
+param([string]$Root = "crates/reafl-core/src/audio/engine")
 
 # The split left a duplicate module doc in the root and an extra brace at the end
 # of the last chunk.

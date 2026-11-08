@@ -1,4 +1,4 @@
-param([string]$Dir = "crates/pulseforge-widgets/src")
+param([string]$Dir = "crates/reafl-widgets/src")
 
 function Insert-BeforeFirstItem {
     param([string]$Name, [string[]]$Lines)
@@ -13,10 +13,10 @@ function Insert-BeforeFirstItem {
     Set-Content -LiteralPath $path -Value ($head + $Lines + @('') + $rest)
 }
 
-Insert-BeforeFirstItem 'fader' @('use pulseforge_core::project::ParameterTarget;')
-Insert-BeforeFirstItem 'time_edit' @('use pulseforge_core::project::ParameterTarget;')
+Insert-BeforeFirstItem 'fader' @('use reafl_core::project::ParameterTarget;')
+Insert-BeforeFirstItem 'time_edit' @('use reafl_core::project::ParameterTarget;')
 Insert-BeforeFirstItem 'mixer_strip' @(
-    'use pulseforge_core::project::{InsertFxSlot, ThreeBandEq};',
+    'use reafl_core::project::{InsertFxSlot, ThreeBandEq};',
     '',
     'use crate::eq_curve::draw_eq_curve;',
     'use crate::fader_math::fader_label;',

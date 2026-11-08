@@ -1,5 +1,5 @@
-$src = 'crates/pulseforge-core/src/project/model/targets.rs'
-$model = 'crates/pulseforge-core/src/project/model'
+$src = 'crates/reafl-core/src/project/model/targets.rs'
+$model = 'crates/reafl-core/src/project/model'
 $lines = Get-Content $src
 
 function Find-Index($pattern, $from) {

@@ -1,4 +1,4 @@
-param([string]$Root = "crates/pulseforge-core/src/audio")
+param([string]$Root = "crates/reafl-core/src/audio")
 
 $common = Get-Content -LiteralPath (Join-Path $Root 'model_imports.txt')
 
