@@ -39,8 +39,11 @@ jobs:
         with:
           toolchain: stable
           override: true
+<<<<<<< HEAD
       - name: Install ALSA
         run: sudo apt-get install -y libasound2-dev
+=======
+>>>>>>> dda7b9f52a64ce590a17e4b11dd05445f16f5f76
       - name: Run cargo doc
         run: cargo doc --workspace --no-deps --document-private-items
       - name: Setup Pages
