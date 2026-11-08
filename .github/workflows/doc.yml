@@ -30,6 +30,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Cache build folder
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: build_folder_docs
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:

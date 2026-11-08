@@ -4,10 +4,10 @@ name: Create a release build for all pushes to main
 on:
   # Runs on pushes targeting the default branch
   push:
-    branches: ["main"]
+    branches: ["main", "dev"]
     tags: ["v*.*.*"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "dev"]
     tags: ["v*.*.*"]
 
   # Allows you to run this workflow manually from the Actions tab
@@ -36,6 +36,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Cache build folder
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: build_folder_build
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -47,6 +52,8 @@ jobs:
         run: sudo apt-get install -y libasound2-dev
       - name: Install GUI dependencies
         run: sudo apt-get install -y libxcb-shape0-dev libxcb-xfixes0-dev libx11-dev
+      - name: Install Windows dependencies
+        run: sudo apt-get install -y mingw-w64
       - name: Run cargo check
         run: cargo check --workspace --all-targets --message-format short
       - name: Run cargo clippy
@@ -59,7 +66,7 @@ jobs:
         run: cargo build --workspace --release --target x86_64-pc-windows-gnu
       - name: Create Release
         uses: softprops/action-gh-release@v3
-        if: github.reftype == "tag"
+        if: github.reftype == 'tag'
         with:
           release_name: Release ${{ github.ref }}
           files: |
