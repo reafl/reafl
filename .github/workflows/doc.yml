@@ -1,12 +1,10 @@
 # Simple workflow for deploying static content to GitHub Pages
 name: Deploy documentation to Pages
 
+
 on:
   push:
-    branches: ["main", "dev"]
-  pull_request:
-    branches: ["main", "dev"]
-
+    tags: ["v*.*.*"]
   workflow_dispatch:
 
 env:

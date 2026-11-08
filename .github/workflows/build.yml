@@ -4,10 +4,6 @@ name: Create a release build for all pushes to main
 on:
   # Runs on pushes targeting the default branch
   push:
-    branches: ["main", "dev"]
-    tags: ["v*.*.*"]
-  pull_request:
-    branches: ["main", "dev"]
     tags: ["v*.*.*"]
 
   # Allows you to run this workflow manually from the Actions tab
@@ -71,4 +67,5 @@ jobs:
           files: |
             target/x86_64-pc-windows-gnu/release/pulseforge.exe
             target/release/pulseforge
-          body: Release
+          body: Release for ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
