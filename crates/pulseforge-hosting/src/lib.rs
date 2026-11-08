@@ -14,6 +14,12 @@
 //! VST3 shares one `Plugin` behind a mutex because the crate's own helpers do
 //! the same; CLAP hands out a `Send` processing handle while the instance stays
 //! on the UI thread.
+//!
+//! Native editor embedding is implemented for Windows only: [`editor::EditorWindow`]
+//! creates a child `HWND` there and returns `None` everywhere else, so the
+//! wrapper reports "could not create a native window" instead of embedding. The
+//! VST3 handle wrapper still knows the macOS and X11 constructors, because the
+//! VST3 platform type differs per OS even where no window is created yet.
 
 pub mod clap;
 pub mod editor;

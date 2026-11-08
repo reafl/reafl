@@ -169,6 +169,16 @@ starts with `AI: `, so history maps one commit to one reviewed batch.
 
 ### Fixed
 
+- **The workspace builds on Linux again.** `Vst3Ui::open_editor` called
+  `WindowHandle::from_hwnd`, which `vst3-host` only defines on Windows, so the
+  Linux job failed to compile `pulseforge-hosting`. A new `window_handle` helper
+  picks the constructor per platform — `from_hwnd` on Windows, `from_nsview` on
+  macOS, `from_x11` on Linux — and returns [`HostError::NoEditor`] where no
+  embedding backend exists. Native editor windows still only exist on Windows;
+  elsewhere the wrapper reports it instead of failing to build.
+- Linux plug-in discovery now also scans the per-user and `/usr/local` locations
+  installers actually use (`~/.vst`, `~/.vst3`, `~/.clap`,
+  `/usr/local/lib/{vst,vst3,clap}`) instead of only `/usr/lib`.
 - **Solo and mute now follow the track tree.** Solo used to compare the solo
   flags of two flat lists, so soloing a child inside a folder silenced it (its
   folder was not soloed and dropped the submix) and soloing a folder silenced

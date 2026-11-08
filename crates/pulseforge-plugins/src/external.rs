@@ -140,9 +140,19 @@ pub fn default_plugin_directories() -> Vec<(PluginFormat, PathBuf)> {
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
+        // System locations, then the per-user ones every Linux plug-in
+        // installer writes to (`~/.vst3`, `~/.clap`).
         directories.push((PluginFormat::Vst2, PathBuf::from("/usr/lib/vst")));
+        directories.push((PluginFormat::Vst2, PathBuf::from("/usr/local/lib/vst")));
         directories.push((PluginFormat::Vst3, PathBuf::from("/usr/lib/vst3")));
+        directories.push((PluginFormat::Vst3, PathBuf::from("/usr/local/lib/vst3")));
         directories.push((PluginFormat::Clap, PathBuf::from("/usr/lib/clap")));
+        directories.push((PluginFormat::Clap, PathBuf::from("/usr/local/lib/clap")));
+        if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+            directories.push((PluginFormat::Vst2, home.join(".vst")));
+            directories.push((PluginFormat::Vst3, home.join(".vst3")));
+            directories.push((PluginFormat::Clap, home.join(".clap")));
+        }
     }
     directories
 }

@@ -9,6 +9,50 @@ use std::sync::{Arc, Mutex};
 
 use vst3_host::{WindowHandle, midi::MidiChannel, plugin::Plugin};
 
+/// Wraps the parent window in the handle type `vst3-host` expects.
+///
+/// Every platform has its own constructor because VST3 types the embedding
+/// handle differently: an `HWND` on Windows, an `NSView` on macOS and a 32-bit
+/// X11 window id on Linux.
+///
+/// # Parameters
+///
+/// - `parent`: the native window the editor attaches to.
+///
+/// # Returns
+///
+/// The platform handle, or an error on a platform without an embedding path.
+///
+/// # Errors
+///
+/// Returns [`HostError::NoEditor`] when the target has no embedding backend.
+fn window_handle(parent: ParentWindow) -> HostResult<WindowHandle> {
+    #[cfg(windows)]
+    {
+        // SAFETY: the caller keeps the parent window alive while the editor is
+        // attached, which is all `from_hwnd` requires.
+        return Ok(unsafe { WindowHandle::from_hwnd(parent.0 as *mut core::ffi::c_void) });
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // SAFETY: as above, the `NSView` outlives the attachment.
+        return Ok(unsafe { WindowHandle::from_nsview(parent.0 as *mut core::ffi::c_void) });
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // The VST3 X11 platform type expects the window id itself, not a
+        // pointer to it.
+        return Ok(WindowHandle::from_x11(parent.0 as u32));
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        let _ = parent;
+        Err(HostError::NoEditor(
+            "plug-in editors cannot be embedded on this platform".to_owned(),
+        ))
+    }
+}
+
 struct Core {
     plugin: Mutex<Plugin>,
     info: BundleInfo,
@@ -157,8 +201,7 @@ impl Vst3Ui {
             )));
         }
         let _ = plugin.resize_editor(width as i32, height as i32);
-        // SAFETY: the caller owns `parent` for as long as the editor is open.
-        let handle = unsafe { WindowHandle::from_hwnd(parent.0 as *mut core::ffi::c_void) };
+        let handle = window_handle(parent)?;
         plugin
             .open_editor(handle)
             .map_err(|e| HostError::Vst3(e.to_string()))?;
